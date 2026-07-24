@@ -76,7 +76,7 @@ def rejection_reason(
         if width <= 0 or (atr > 0 and width > MAX_FORMING_PRZ_WIDTH_ATR * atr):
             return "degenerate_prz"
 
-    stop, _ = compute_stop(candidate, atr)
+    stop, _, _ = compute_stop(candidate, atr)
     if (candidate.bullish and price < stop) or (not candidate.bullish and price > stop):
         return "violated"
 

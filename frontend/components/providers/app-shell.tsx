@@ -32,6 +32,7 @@ export function AppShell({ children }: AppShellProps) {
 }
 
 function getPageTitle(pathname: string | null): string {
+  if (pathname?.startsWith("/rsi-strategy")) return "趋势RSI策略";
   if (pathname?.startsWith("/dashboard")) return "分析工作台";
   if (pathname?.startsWith("/position")) return "仓位管理";
   if (pathname?.startsWith("/vibe")) return "AI 交易助手";

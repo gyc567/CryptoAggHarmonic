@@ -29,6 +29,7 @@ from app.infra.pyharmonics_adapter import (
 )
 from app.domain.signals import resolve_analysis_type
 from app.services.signal_engine import build_signal, extract_candidates
+from app.infra.analysis_cache import AnalysisCache, get_analysis_cache
 from app.infra.supabase_client import upload_chart, get_chart_url
 from app.services.chart import validate_chart_size
 from app.services.chart_store import save_chart_locally
@@ -88,13 +89,37 @@ def _extract_sentiment(text: Optional[str]) -> Optional[str]:
 class AnalysisOrchestrator:
     """Orchestrates the full analysis pipeline."""
 
-    def __init__(self, prompt_context: Optional[dict] = None):
+    def __init__(self, prompt_context: Optional[dict] = None, cache: Optional[AnalysisCache] = None):
         """Initialize orchestrator.
 
         Args:
             prompt_context: Loaded prompt_intent.yaml dict.
+            cache: Analysis cache (defaults to the shared process-wide instance).
         """
         self.prompt_context = prompt_context or {}
+        self.cache = cache or get_analysis_cache()
+
+    def _restore_cached(self, cached: dict, analysis_id: str,
+                        user_id: Optional[str], start_time: float) -> AnalysisData:
+        """Rebuild an AnalysisData from a cache entry.
+
+        缓存命中后：分配新 analysis_id、用缓存的 PNG 重新分发图表（Supabase 签名 URL
+        会过期、本地文件可能不在当前容器，绝不复用旧 URL）、刷新 timing。
+        """
+        data = AnalysisData.model_validate_json(cached["analysis_json"])
+        data.analysis_id = analysis_id
+        if cached.get("chart_png"):
+            chart = ChartMeta(format="png", width=data.chart.width, height=data.chart.height)
+            data.chart = self._distribute_chart(chart, analysis_id, cached["chart_png"], user_id)
+        elif data.chart and data.chart.url:
+            # 无 PNG 字节可重分发时，旧链接不可信，清空
+            data.chart = ChartMeta(format="png")
+        data.timing = TimingInfo(
+            started_at=str(int(start_time)),
+            duration_ms=int((time.time() - start_time) * 1000),
+            completed_at=str(int(time.time())),
+        )
+        return data
 
     @staticmethod
     def _build_trade_signal(candle_data, interval, detection_result: dict,
@@ -213,7 +238,22 @@ class AnalysisOrchestrator:
         except AppError:
             raise
 
-        # Step 3: Detect patterns
+        # Step 3: 缓存检查（形态检测对同一组 K 线是确定的，命中则跳过全部重计算）
+        cache_key = self.cache.make_key(
+            market=market.value,
+            symbol=symbol,
+            interval=interval.value,
+            analysis_type=analysis_type.value,
+            limit_to=request.limit_to,
+            percent_complete=request.percent_complete,
+            candles=request.candles,
+            fingerprint=AnalysisCache.candle_fingerprint(candle_data),
+        )
+        cached = self.cache.get(cache_key)
+        if cached:
+            return self._restore_cached(cached, analysis_id, user_id, start_time)
+
+        # Step 4: Detect patterns
         detection_result = detect_patterns(
             candle_data=candle_data,
             limit_to=request.limit_to,
@@ -229,7 +269,7 @@ class AnalysisOrchestrator:
             timing.duration_ms = int((time.time() - start_time) * 1000)
             timing.completed_at = str(int(time.time()))
 
-            return AnalysisData(
+            data = AnalysisData(
                 analysis_id=analysis_id,
                 status=Status.NO_RESULT,
                 market=market,
@@ -240,6 +280,8 @@ class AnalysisOrchestrator:
                 technical_result=technical,
                 timing=timing,
             )
+            self.cache.set(cache_key, data.model_dump_json())
+            return data
 
         # Step 4: Technical result (+ executable trade signal, best-effort)
         signal = self._build_trade_signal(
@@ -275,9 +317,11 @@ class AnalysisOrchestrator:
 
         # Step 6: Chart (single render, then distribute via Supabase or local)
         chart = ChartMeta()
+        chart_png: Optional[bytes] = None
         try:
             image_bytes, chart_meta = render_chart(detection_result, dpi=150)
             if validate_chart_size(image_bytes):
+                chart_png = image_bytes
                 chart = chart_meta
                 chart = self._distribute_chart(chart, analysis_id, image_bytes, user_id)
             else:
@@ -294,7 +338,7 @@ class AnalysisOrchestrator:
         timing.duration_ms = int((time.time() - start_time) * 1000)
         timing.completed_at = str(int(time.time()))
 
-        return AnalysisData(
+        data = AnalysisData(
             analysis_id=analysis_id,
             status=Status.COMPLETED,
             market=market,
@@ -307,3 +351,5 @@ class AnalysisOrchestrator:
             chart=chart,
             timing=timing,
         )
+        self.cache.set(cache_key, data.model_dump_json(), chart_png=chart_png)
+        return data

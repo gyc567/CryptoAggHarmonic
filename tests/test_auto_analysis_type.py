@@ -19,6 +19,8 @@ def make_signal(formed: bool) -> Signal:
         pattern_name="gartley", family="XABCD", formed=formed,
         entry_zone=(108.0, 112.0), entry_reference=110.0,
         stop_loss=99.0, stop_basis="X/PRZ invalidation - 0.5*ATR",
+        stop_level="standard",
+        invalidation_point=99.5,
         targets=(target,), net_rr_tp1=1.2, net_rr_tp2=2.4,
         confluence_score=80,
     )

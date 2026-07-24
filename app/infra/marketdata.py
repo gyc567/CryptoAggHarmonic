@@ -5,6 +5,7 @@ keep working when the upstream `pyharmonics` connectors fail (e.g. due to
 network, library or rate-limit issues).
 """
 import logging
+import os
 from typing import Optional
 
 import pandas as pd
@@ -41,7 +42,9 @@ class DirectBinanceCandleData(CandleData):
         CandleData.MONTH_1: "1M",
     }
 
-    BASE_URL = "https://api.binance.com"
+    # ``api.binance.com`` is geo-blocked in some regions (e.g. returns HTTP 451).
+    # Allow operators to point at an accessible mirror such as ``https://api.binance.us``.
+    BASE_URL = os.getenv("BINANCE_API_BASE_URL", "https://api.binance.com")
 
     def __init__(
         self,

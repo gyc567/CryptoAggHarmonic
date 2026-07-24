@@ -1,0 +1,102 @@
+"""API routes for the trend-RSI strategy module.
+
+Methodology: EMA200 defines the trend direction; RSI(14) leaving an
+extreme zone defines entry timing. See ``app.domain.rsi_trend``.
+"""
+import logging
+import uuid
+
+from flask import Blueprint, Response, jsonify, request
+
+from app.api.auth import is_local_dev_mode, require_auth
+from app.domain.rsi_trend_schemas import RsiTrendBacktestRequest, RsiTrendScanRequest
+from app.infra.supabase_client import (
+    consume_ledger_quota,
+    log_audit_event,
+    release_ledger_quota,
+    reserve_user_quota,
+)
+from app.services import rsi_trend_service
+
+logger = logging.getLogger(__name__)
+
+rsi_trend_bp = Blueprint("rsi_trend", __name__, url_prefix="/api/rsi-trend")
+
+
+def _success(data: dict) -> Response:
+    return jsonify({"success": True, "data": data}), 200
+
+
+def _error(code: str, message: str, status: int = 400, retryable: bool = False) -> Response:
+    return jsonify(
+        {
+            "success": False,
+            "error": {"code": code, "message": message, "retryable": retryable},
+        }
+    ), status
+
+
+def _reserve_quota(user_id: str, ref_id: str):
+    """Reserve 1 quota unit unless running in local dev mode."""
+    if is_local_dev_mode():
+        return None
+    reserved, _, ledger_id = reserve_user_quota(user_id, ref_id, units=1)
+    if not reserved:
+        return False
+    return ledger_id
+
+
+@rsi_trend_bp.route("/scan", methods=["GET"])
+@require_auth
+def scan(user):
+    """Scan the latest market state and recent trend-RSI signals."""
+    try:
+        req = RsiTrendScanRequest(**request.args.to_dict())
+    except Exception as e:
+        return _error("INVALID_PARAMS", f"参数错误: {e}")
+
+    ref_id = str(uuid.uuid4())
+    ledger_id = _reserve_quota(user["id"], ref_id)
+    if ledger_id is False:
+        return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429)
+
+    try:
+        data = rsi_trend_service.scan(req)
+    except Exception:
+        if ledger_id:
+            release_ledger_quota(ledger_id)
+        raise
+    if ledger_id:
+        consume_ledger_quota(ledger_id)
+    log_audit_event(user["id"], "rsi_trend_scan", "strategy", ref_id,
+                    {"symbol": req.symbol, "interval": req.interval})
+    return _success(data)
+
+
+@rsi_trend_bp.route("/backtest", methods=["POST"])
+@require_auth
+def backtest(user):
+    """Run a full trend-RSI strategy backtest over a historical window."""
+    payload = request.get_json(force=True, silent=True) or {}
+    try:
+        req = RsiTrendBacktestRequest(**payload)
+    except Exception as e:
+        return _error("INVALID_PARAMS", f"参数错误: {e}")
+
+    ref_id = str(uuid.uuid4())
+    ledger_id = _reserve_quota(user["id"], ref_id)
+    if ledger_id is False:
+        return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429)
+
+    try:
+        data = rsi_trend_service.backtest(req)
+    except Exception:
+        if ledger_id:
+            release_ledger_quota(ledger_id)
+        raise
+    if ledger_id:
+        consume_ledger_quota(ledger_id)
+    log_audit_event(user["id"], "rsi_trend_backtest", "strategy", ref_id,
+                    {"symbol": req.symbol, "interval": req.interval,
+                     "lookback_days": req.lookback_days})
+    return _success(data)

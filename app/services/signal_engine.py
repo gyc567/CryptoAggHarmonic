@@ -248,6 +248,7 @@ def build_signal(
     candidates: list[Candidate],
     divergences: Optional[dict] = None,
     stability_detector: Optional[Callable[[pd.DataFrame], Optional[str]]] = None,
+    stop_level: str = "standard",
 ) -> Optional[Signal]:
     """Build the best executable signal from candidates, or None.
 
@@ -290,7 +291,7 @@ def build_signal(
     best: Optional[Signal] = None
     best_rank: tuple = ()
     for candidate in valid:
-        stop, stop_basis = compute_stop(candidate, atr)
+        stop, stop_basis, invalidation_point = compute_stop(candidate, atr, stop_level)
 
         # Quant-trap veto (false breakouts, stop hunts, PRZ failure...).
         trap_score, trap_veto, _reasons = quant_trap_risk(
@@ -343,13 +344,14 @@ def build_signal(
             entry_reference=round(entry, 8),
             stop_loss=stop,
             stop_basis=stop_basis,
+            stop_level=stop_level,
+            invalidation_point=invalidation_point,
             targets=targets,
             net_rr_tp1=rr1 if rr1 is not None else 0.0,
             net_rr_tp2=rr2 if rr2 is not None else 0.0,
             confluence_score=int(round(score)),
             confluence=factors,
             htf_trend=trend,
-            invalidation=stop,
             sharpe=_clamp_sharpe(sharpe),
             regime=regime,
             position_multiplier=position_mult,

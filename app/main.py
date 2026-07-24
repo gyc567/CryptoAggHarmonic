@@ -9,6 +9,7 @@ import uuid
 from app.api.middleware import register_error_handlers, log_request_middleware
 from app.api.auth import require_auth, check_quota, is_local_dev_mode
 from app.api.vibe_routes import vibe_bp
+from app.api.rsi_trend_routes import rsi_trend_bp
 from app.domain.enums import Market, Interval, AnalysisType, ErrorCode
 from app.domain.schemas import (
     AnalyzeRequest,
@@ -39,6 +40,9 @@ log_request_middleware(app)
 
 # Register vibe blueprint
 app.register_blueprint(vibe_bp)
+
+# Register trend-RSI strategy blueprint
+app.register_blueprint(rsi_trend_bp)
 
 
 # Simple CORS support for local dev / preview origins

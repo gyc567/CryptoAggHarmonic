@@ -27,4 +27,5 @@ RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /
 USER appuser
 
 # During debugging, this entry point will be overridden. For more information, please refer to https://aka.ms/vscode-docker-python-debug
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app.main:app"]
+# gunicorn.conf.py: gevent worker（SSE 长连接）+ 多进程（CPU 并行）
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app.main:app"]

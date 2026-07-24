@@ -63,9 +63,11 @@ def make_signal(**overrides):
         pattern_name="gartley", family="XABCD", formed=True,
         entry_zone=(108.0, 112.0), entry_reference=110.0,
         stop_loss=99.0, stop_basis="X/PRZ invalidation - 0.5*ATR",
+        stop_level="standard",
+        invalidation_point=99.5,
         targets=(target,), net_rr_tp1=1.2, net_rr_tp2=2.4,
         confluence_score=80, confluence={"rsi": 15},
-        htf_trend="bullish", invalidation=99.0,
+        htf_trend="bullish",
     )
     base.update(overrides)
     return Signal(**base)
@@ -82,7 +84,8 @@ class TestSignalToDict:
         assert d["targets"][0]["close_pct"] == 50
         assert d["confluence"] == {"rsi": 15}
         assert d["htf_trend"] == "bullish"
-        assert d["invalidation"] == 99.0
+        assert d["stop_level"] == "standard"
+        assert d["invalidation_point"] == 99.5
         # confluence dict is a copy
         d["confluence"]["rsi"] = 0
         assert signal.confluence["rsi"] == 15
@@ -146,15 +149,16 @@ class TestIsSwept:
 class TestComputeStop:
     def test_bullish_gartley_stops_below_x(self):
         # gartley: X=100 < PRZ low=108 -> anchor is X
-        stop, basis = compute_stop(make_candidate(), atr=2.0)
-        assert stop == 100.0 - ATR_STOP_BUFFER * 2.0
+        stop, basis, inv = compute_stop(make_candidate(), atr=2.0)
+        assert stop == 100.0 - ATR_STOP_BUFFER["standard"] * 2.0
         assert "ATR" in basis
+        assert inv == 100.0
 
     def test_bullish_gartley_prz_below_x(self):
         # PRZ below X -> anchor is PRZ low
         c = make_candidate(points=(115.0, 150.0, 120.0, 140.0, 110.0))
-        stop, _ = compute_stop(c, atr=2.0)
-        assert stop == 108.0 - ATR_STOP_BUFFER * 2.0
+        stop, _, _ = compute_stop(c, atr=2.0)
+        assert stop == 108.0 - ATR_STOP_BUFFER["standard"] * 2.0
 
     def test_bearish_gartley_stops_above_x(self):
         c = make_candidate(
@@ -162,9 +166,10 @@ class TestComputeStop:
             points=(150.0, 100.0, 130.0, 110.0, 140.0),
             completion_min=138.0, completion_max=142.0,
         )
-        stop, basis = compute_stop(c, atr=2.0)
-        assert stop == 150.0 + ATR_STOP_BUFFER * 2.0
+        stop, basis, inv = compute_stop(c, atr=2.0)
+        assert stop == 150.0 + ATR_STOP_BUFFER["standard"] * 2.0
         assert "ATR" in basis
+        assert inv == 150.0
 
     def test_bearish_gartley_prz_above_x(self):
         c = make_candidate(
@@ -172,8 +177,8 @@ class TestComputeStop:
             points=(145.0, 100.0, 130.0, 110.0, 140.0),
             completion_min=148.0, completion_max=152.0,
         )
-        stop, _ = compute_stop(c, atr=2.0)
-        assert stop == 152.0 + ATR_STOP_BUFFER * 2.0
+        stop, _, _ = compute_stop(c, atr=2.0)
+        assert stop == 152.0 + ATR_STOP_BUFFER["standard"] * 2.0
 
     def test_extended_pattern_bullish_uses_prz_not_x(self):
         # butterfly completes beyond X -> anchor is PRZ low even though X lower
@@ -182,8 +187,8 @@ class TestComputeStop:
             points=(100.0, 150.0, 120.0, 140.0, 95.0),
             completion_min=94.0, completion_max=96.0,
         )
-        stop, _ = compute_stop(c, atr=2.0)
-        assert stop == 94.0 - ATR_STOP_BUFFER * 2.0
+        stop, _, _ = compute_stop(c, atr=2.0)
+        assert stop == 94.0 - ATR_STOP_BUFFER["standard"] * 2.0
 
     def test_extended_pattern_bearish_uses_prz(self):
         c = make_candidate(
@@ -191,13 +196,13 @@ class TestComputeStop:
             points=(150.0, 100.0, 130.0, 110.0, 155.0),
             completion_min=154.0, completion_max=156.0,
         )
-        stop, _ = compute_stop(c, atr=2.0)
-        assert stop == 156.0 + ATR_STOP_BUFFER * 2.0
+        stop, _, _ = compute_stop(c, atr=2.0)
+        assert stop == 156.0 + ATR_STOP_BUFFER["standard"] * 2.0
 
     def test_extended_pattern_case_insensitive(self):
         c = make_candidate(name="Deep Crab")
-        stop, _ = compute_stop(c, atr=2.0)
-        assert stop == 108.0 - ATR_STOP_BUFFER * 2.0
+        stop, _, _ = compute_stop(c, atr=2.0)
+        assert stop == 108.0 - ATR_STOP_BUFFER["standard"] * 2.0
 
 
 class TestComputeTargets:

@@ -58,13 +58,14 @@ class Signal(BaseModel):
     entry_reference: float
     stop_loss: float
     stop_basis: Optional[str] = None
+    stop_level: Optional[str] = None  # conservative | standard | aggressive
+    invalidation_point: Optional[float] = None  # structural invalidation point
     targets: list[SignalTarget] = Field(default_factory=list)
     net_rr_tp1: Optional[float] = None
     net_rr_tp2: Optional[float] = None
     confluence_score: Optional[int] = None
     confluence: dict = Field(default_factory=dict)
     htf_trend: Optional[str] = None
-    invalidation: Optional[float] = None
     # v4 validity metadata
     reasoning: Optional[str] = None
     sharpe: Optional[float] = None

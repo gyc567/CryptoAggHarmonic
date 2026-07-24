@@ -8,6 +8,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  TrendingUp,
   Wallet,
   Zap,
 } from "lucide-react";
@@ -20,6 +21,7 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS = [
+  { href: "/rsi-strategy", label: "趋势RSI策略", icon: TrendingUp },
   { href: "/dashboard", label: "分析", icon: BarChart3 },
   { href: "/position", label: "仓位", icon: Wallet },
   { href: "/vibe", label: "AI 交易助手", icon: Sparkles },

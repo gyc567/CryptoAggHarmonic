@@ -22,7 +22,16 @@ FIB_TP1 = 0.382
 FIB_TP2 = 0.618
 FIB_TP3 = 1.272
 
-ATR_STOP_BUFFER = 0.5
+# Stop-loss risk levels (三档止损体系)
+# Level 1 Conservative: PRZ外 + 1.0*ATR  — 新手,高波动市场
+# Level 2 Standard:     D点外 + 0.5*ATR  — 推荐日常使用
+# Level 3 Aggressive:   D点内 + 0.25*ATR — 高手,低波动市场
+STOP_LOSS_LEVELS = {"conservative", "standard", "aggressive"}
+ATR_STOP_BUFFER = {
+    "conservative": 1.0,
+    "standard": 0.5,
+    "aggressive": 0.25,
+}
 ATR_PRZ_SWEEP = 0.3
 
 # Binance USDT-M taker fee both sides (0.05% x 2) plus slippage allowance.
@@ -98,14 +107,15 @@ class Signal:
     entry_zone: tuple      # (low, high)
     entry_reference: float
     stop_loss: float
-    stop_basis: str
+    stop_basis: str        # human-readable stop placement reason
+    stop_level: str        # conservative | standard | aggressive
+    invalidation_point: float  # structural point where pattern is invalidated
     targets: tuple         # tuple[SignalTarget, ...]
     net_rr_tp1: float
     net_rr_tp2: float
     confluence_score: int
     confluence: dict = field(default_factory=dict)
     htf_trend: str = "unknown"
-    invalidation: float = 0.0
     reasoning: str = ""
     sharpe: Optional[float] = None
     regime: str = "normal"
@@ -125,6 +135,8 @@ class Signal:
             "entry_reference": self.entry_reference,
             "stop_loss": self.stop_loss,
             "stop_basis": self.stop_basis,
+            "stop_level": self.stop_level,
+            "invalidation_point": self.invalidation_point,
             "targets": [
                 {
                     "label": t.label,
@@ -140,7 +152,6 @@ class Signal:
             "confluence_score": self.confluence_score,
             "confluence": dict(self.confluence),
             "htf_trend": self.htf_trend,
-            "invalidation": self.invalidation,
             "reasoning": self.reasoning,
             "sharpe": self.sharpe,
             "regime": self.regime,
@@ -175,18 +186,52 @@ def is_swept(low: float, high: float, close: float, prz_low: float, prz_high: fl
 # --- Stop loss ----------------------------------------------------------------
 
 
-def compute_stop(candidate: Candidate, atr: float) -> tuple[float, str]:
+def compute_stop(candidate: Candidate, atr: float,
+                 level: str = "standard") -> tuple[float, str, str]:
     """Stop at the structural invalidation point plus an ATR buffer.
 
-    Returns (stop_price, basis_label).
+    Args:
+        candidate: the harmonic pattern candidate
+        atr: current ATR value for the symbol/timeframe
+        level: "conservative" | "standard" | "aggressive"
+
+    Returns (stop_price, stop_basis, invalidation_point).
+        stop_basis: human-readable reason for stop placement
+        invalidation_point: the structural point where the pattern is invalidated
     """
-    buffer = ATR_STOP_BUFFER * atr
+    if level not in STOP_LOSS_LEVELS:
+        level = "standard"
+    buffer = ATR_STOP_BUFFER[level] * atr
     extended = candidate.name.lower() in EXTENDED_PATTERNS
+
     if candidate.bullish:
-        anchor = candidate.prz_low if extended else min(candidate.x_price, candidate.prz_low)
-        return round(anchor - buffer, 8), "X/PRZ invalidation - 0.5*ATR"
-    anchor = candidate.prz_high if extended else max(candidate.x_price, candidate.prz_high)
-    return round(anchor + buffer, 8), "X/PRZ invalidation + 0.5*ATR"
+        if level == "conservative":
+            # Conservative: PRZ外 + 1.0*ATR（新手/高波动）
+            anchor = candidate.prz_low
+            basis = f"PRZ外 invalidation - {ATR_STOP_BUFFER[level]:.2f}*ATR"
+        elif level == "aggressive":
+            # Aggressive: D点内（X附近）+ 0.25*ATR
+            anchor = min(candidate.x_price, candidate.prz_low)
+            basis = f"X点 invalidation - {ATR_STOP_BUFFER[level]:.2f}*ATR"
+        else:
+            # Standard: X点/PRZ外 + 0.5*ATR
+            anchor = candidate.prz_low if extended else min(candidate.x_price, candidate.prz_low)
+            basis = f"X/PRZ invalidation - {ATR_STOP_BUFFER[level]:.2f}*ATR"
+        invalidation = round(anchor, 8)
+        return round(anchor - buffer, 8), basis, invalidation
+
+    # Bearish
+    if level == "conservative":
+        anchor = candidate.prz_high
+        basis = f"PRZ外 invalidation + {ATR_STOP_BUFFER[level]:.2f}*ATR"
+    elif level == "aggressive":
+        anchor = max(candidate.x_price, candidate.prz_high)
+        basis = f"X点 invalidation + {ATR_STOP_BUFFER[level]:.2f}*ATR"
+    else:
+        anchor = candidate.prz_high if extended else max(candidate.x_price, candidate.prz_high)
+        basis = f"X/PRZ invalidation + {ATR_STOP_BUFFER[level]:.2f}*ATR"
+    invalidation = round(anchor, 8)
+    return round(anchor + buffer, 8), basis, invalidation
 
 
 # --- Take profits -------------------------------------------------------------
@@ -283,7 +328,7 @@ def reasoning_from_signal(signal: Signal) -> str:
     lines = [
         f"方向：{direction}（{signal.pattern_name} · {signal.family} · {formed}）",
         f"入场区：{signal.entry_zone[0]:.2f} – {signal.entry_zone[1]:.2f}（参考 {signal.entry_reference:.2f}）",
-        f"止损：{signal.stop_loss:.2f}（{signal.stop_basis}）",
+        f"止损：{signal.stop_loss:.2f}（{signal.stop_basis}，失效点 {signal.invalidation_point:.2f}）",
     ]
     if signal.targets:
         tps = " / ".join(
