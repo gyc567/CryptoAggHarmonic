@@ -26,9 +26,19 @@ EMA_TREND_SPAN = 200
 EMA_FAST_SPAN = 50
 OVERSOLD = 30.0
 OVERBOUGHT = 70.0
+PULLBACK_OVERSOLD = 40.0
+PULLBACK_OVERBOUGHT = 60.0
 REWARD_RISK = 2.0
 # Bars needed before EMA200 is meaningful; no signals inside the warm-up zone.
 WARMUP_BARS = EMA_TREND_SPAN
+
+# RSI entry-zone presets.  "extreme" is the original 30/70 mean-reversion rule;
+# "pullback" uses shallower 40/60 zones to catch more trend pullbacks.
+RSI_ZONES = {
+    "extreme": (OVERSOLD, OVERBOUGHT),
+    "pullback": (PULLBACK_OVERSOLD, PULLBACK_OVERBOUGHT),
+}
+
 
 LONG = "long"
 SHORT = "short"
@@ -41,14 +51,16 @@ class StrategySignal:
     direction: str  # LONG | SHORT
     entry_price: float  # close of the signal bar
     stop_loss: float
-    target_price: float  # 1:2 reward-to-risk
+    target_price: float  # reward_risk * initial risk
     atr: float
     rsi: float
     time: str  # ISO timestamp of the signal bar ("" if unavailable)
     index: int  # positional bar index within the analysed DataFrame
+    quality_score: float = 0.0  # 0-100 heuristic signal-quality score
 
     def to_dict(self) -> dict:
         return asdict(self)
+
 
 
 def ema_series(closes: pd.Series, span: int) -> pd.Series:
@@ -103,17 +115,73 @@ def _bar_time(df: pd.DataFrame, i: int) -> str:
         return ""
 
 
+def _signal_quality(
+    direction: str,
+    close: float,
+    ema200: float,
+    ema50: float,
+    rsi: float,
+    rsi_prev: float,
+    atr: float,
+    open_price: float,
+) -> float:
+    """Heuristic 0-100 score for a candidate signal.
+
+    Higher score when:
+    - price is well displaced from EMA200 (strong trend),
+    - EMA50 aligns with the trend,
+    - RSI shows decisive momentum (large cross),
+    - the signal candle has directional color.
+    """
+    if atr <= 0 or pd.isna(atr):
+        return 0.0
+
+    # Trend displacement from EMA200, normalised by ATR (capped).
+    displacement = abs(close - ema200) / atr
+    trend_score = min(displacement, 10.0) / 10.0 * 40.0
+
+    # EMA50 alignment: full points if aligned, partial if close is on the
+    # correct side, zero if wrong side.
+    if direction == LONG:
+        ema50_aligned = close > ema50
+    else:
+        ema50_aligned = close < ema50
+    ema50_score = 20.0 if ema50_aligned else 0.0
+
+    # RSI momentum: size of the cross through the threshold.
+    rsi_momentum = abs(rsi - rsi_prev)
+    rsi_score = min(rsi_momentum, 20.0) / 20.0 * 25.0
+
+    # Candle color confirmation (price direction matches trade direction).
+    if direction == LONG:
+        color_ok = close > open_price
+    else:
+        color_ok = close < open_price
+    color_score = 15.0 if color_ok else 0.0
+
+    return min(trend_score + ema50_score + rsi_score + color_score, 100.0)
+
+
 def detect_signals(
     df: pd.DataFrame,
     *,
     use_ema50: bool = False,
     require_candle_color: bool = False,
     atr_mult: float = 1.0,
+    rsi_zone: str = "extreme",
+    reward_risk: float = REWARD_RISK,
+    min_quality_score: float = 0.0,
 ) -> list[StrategySignal]:
     """Scan ``df`` for entry signals.
 
-    Long:  close > EMA200 and RSI crosses up through 30.
-    Short: close < EMA200 and RSI crosses down through 70.
+    Long:  close > EMA200 and RSI crosses up through the configured zone.
+    Short: close < EMA200 and RSI crosses down through the configured zone.
+
+    ``rsi_zone``:
+      - "extreme" (default, backward-compatible): 30/70 thresholds.
+      - "pullback": 40/60 thresholds, generating more signals in strong
+        trends where RSI rarely reaches the classical extremes.
+
     Optional filters: candle color (bullish/bearish close) and EMA50
     alignment. The first ``WARMUP_BARS`` bars never produce signals.
     """
@@ -123,6 +191,9 @@ def detect_signals(
     data = enrich(df)
     signals: list[StrategySignal] = []
 
+    oversold, overbought = RSI_ZONES.get(rsi_zone, RSI_ZONES["extreme"])
+    min_quality_score = max(0.0, min(min_quality_score, 100.0))
+
     for i in range(WARMUP_BARS, len(data)):
         row = data.iloc[i]
         rsi_now = row["rsi"]
@@ -131,8 +202,8 @@ def detect_signals(
             continue
 
         close = float(row["close"])
-        crossed_up = rsi_prev <= OVERSOLD < rsi_now
-        crossed_down = rsi_prev >= OVERBOUGHT > rsi_now
+        crossed_up = rsi_prev <= oversold < rsi_now
+        crossed_down = rsi_prev >= overbought > rsi_now
         if not (crossed_up or crossed_down):
             continue
 
@@ -146,16 +217,21 @@ def detect_signals(
             risk = close - stop
             if risk <= 0:
                 continue
+            quality = _signal_quality(
+                LONG, close, float(row["ema200"]), float(row["ema50"]),
+                float(rsi_now), float(rsi_prev), atr, float(row["open"]),
+            )
             signals.append(
                 StrategySignal(
                     direction=LONG,
                     entry_price=close,
                     stop_loss=stop,
-                    target_price=close + REWARD_RISK * risk,
+                    target_price=close + reward_risk * risk,
                     atr=atr,
                     rsi=float(rsi_now),
                     time=_bar_time(data, i),
                     index=i,
+                    quality_score=quality,
                 )
             )
         elif crossed_down and close < row["ema200"]:
@@ -168,19 +244,24 @@ def detect_signals(
             risk = stop - close
             if risk <= 0:
                 continue
+            quality = _signal_quality(
+                SHORT, close, float(row["ema200"]), float(row["ema50"]),
+                float(rsi_now), float(rsi_prev), atr, float(row["open"]),
+            )
             signals.append(
                 StrategySignal(
                     direction=SHORT,
                     entry_price=close,
                     stop_loss=stop,
-                    target_price=close - REWARD_RISK * risk,
+                    target_price=close - reward_risk * risk,
                     atr=atr,
                     rsi=float(rsi_now),
                     time=_bar_time(data, i),
                     index=i,
+                    quality_score=quality,
                 )
             )
-    return signals
+    return [s for s in signals if s.quality_score >= min_quality_score]
 
 
 def current_state(df: pd.DataFrame) -> Optional[dict]:

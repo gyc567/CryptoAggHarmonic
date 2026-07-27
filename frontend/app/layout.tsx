@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { AppShell } from "@/components/providers/app-shell";
+import { ChunkErrorBoundary } from "@/components/error-boundary/chunk-error-boundary";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -30,7 +31,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AppShell>{children}</AppShell>
+        <ChunkErrorBoundary>
+          <AppShell>{children}</AppShell>
+        </ChunkErrorBoundary>
       </body>
     </html>
   );

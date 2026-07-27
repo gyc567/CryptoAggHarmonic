@@ -5,25 +5,18 @@ methods are best-effort: failures are logged but do not block the agent runtime,
 because Phase 1 uses localStorage as the primary client-side store.
 
 When Supabase is not configured (e.g. local dev without env vars), the store
-falls back to an in-memory dictionary so the Vibe UI can still be exercised.
+falls back to bounded in-memory caches so the Vibe UI can still be exercised
+without unbounded growth.
 """
 import logging
 import uuid
 from typing import Optional
 from datetime import datetime, timezone
 
+from app.infra.memory_cache import MemoryCache
 from app.infra.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
-
-# In-memory fallback for local development when Supabase is unavailable.
-_memory_sessions: dict[str, dict] = {}
-_memory_messages: dict[str, list[dict]] = {}
-_memory_runs: dict[str, dict] = {}
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 class VibeSessionStore:
@@ -35,6 +28,11 @@ class VibeSessionStore:
         except Exception as e:
             logger.warning("Supabase unavailable for VibeSessionStore: %s", e)
             self.client = None
+
+        # Bounded in-memory fallback: 256 entries each, 1 hour TTL.
+        self._memory_sessions = MemoryCache[dict](max_size=256, ttl_seconds=3600)
+        self._memory_messages = MemoryCache[list[dict]](max_size=256, ttl_seconds=3600)
+        self._memory_runs = MemoryCache[dict](max_size=256, ttl_seconds=3600)
 
     def _use_memory(self) -> bool:
         return self.client is None
@@ -63,7 +61,7 @@ class VibeSessionStore:
         }
 
         if self._use_memory():
-            _memory_sessions[session_id] = payload
+            self._memory_sessions.set(session_id, payload)
             return payload
 
         try:
@@ -71,13 +69,13 @@ class VibeSessionStore:
             return result.data[0] if result.data else payload
         except Exception as e:
             logger.exception("Failed to create vibe session")
-            _memory_sessions[session_id] = payload
+            self._memory_sessions.set(session_id, payload)
             return payload
 
     def get_session(self, session_id: str, user_id: str) -> Optional[dict]:
         """Fetch a session if it belongs to the user."""
         if self._use_memory():
-            session = _memory_sessions.get(session_id)
+            session = self._memory_sessions.get(session_id)
             return session if session and session.get("user_id") == user_id else None
 
         try:
@@ -92,7 +90,7 @@ class VibeSessionStore:
             return result.data
         except Exception as e:
             logger.warning("Failed to get vibe session %s: %s", session_id, e)
-            session = _memory_sessions.get(session_id)
+            session = self._memory_sessions.get(session_id)
             return session if session and session.get("user_id") == user_id else None
 
     def list_sessions(
@@ -105,7 +103,7 @@ class VibeSessionStore:
         """List sessions for a user, newest first."""
         if self._use_memory():
             sessions = [
-                s for s in _memory_sessions.values()
+                s for s in self._memory_sessions.values()
                 if s.get("user_id") == user_id and s.get("status") == status
             ]
             sessions.sort(key=lambda s: s.get("updated_at") or s.get("created_at"), reverse=True)
@@ -125,7 +123,7 @@ class VibeSessionStore:
         except Exception as e:
             logger.warning("Failed to list vibe sessions: %s", e)
             sessions = [
-                s for s in _memory_sessions.values()
+                s for s in self._memory_sessions.values()
                 if s.get("user_id") == user_id and s.get("status") == status
             ]
             sessions.sort(key=lambda s: s.get("updated_at") or s.get("created_at"), reverse=True)
@@ -134,10 +132,11 @@ class VibeSessionStore:
     def update_session_title(self, session_id: str, title: str) -> bool:
         """Update session title (usually auto-generated)."""
         if self._use_memory():
-            session = _memory_sessions.get(session_id)
+            session = self._memory_sessions.get(session_id)
             if session:
                 session["title"] = title
                 session["updated_at"] = _now_iso()
+                self._memory_sessions.set(session_id, session)
             return True
 
         try:
@@ -147,19 +146,21 @@ class VibeSessionStore:
             return True
         except Exception as e:
             logger.warning("Failed to update session title %s: %s", session_id, e)
-            session = _memory_sessions.get(session_id)
+            session = self._memory_sessions.get(session_id)
             if session:
                 session["title"] = title
                 session["updated_at"] = _now_iso()
+                self._memory_sessions.set(session_id, session)
             return True
 
     def archive_session(self, session_id: str, user_id: str) -> bool:
         """Soft-delete a session by setting status to deleted."""
         if self._use_memory():
-            session = _memory_sessions.get(session_id)
+            session = self._memory_sessions.get(session_id)
             if session and session.get("user_id") == user_id:
                 session["status"] = "deleted"
                 session["updated_at"] = _now_iso()
+                self._memory_sessions.set(session_id, session)
             return True
 
         try:
@@ -169,10 +170,11 @@ class VibeSessionStore:
             return True
         except Exception as e:
             logger.warning("Failed to archive vibe session %s: %s", session_id, e)
-            session = _memory_sessions.get(session_id)
+            session = self._memory_sessions.get(session_id)
             if session and session.get("user_id") == user_id:
                 session["status"] = "deleted"
                 session["updated_at"] = _now_iso()
+                self._memory_sessions.set(session_id, session)
             return True
 
     # ---- Messages ----
@@ -183,7 +185,9 @@ class VibeSessionStore:
         enriched = {**message, "id": msg_id}
 
         if self._use_memory():
-            _memory_messages.setdefault(enriched["session_id"], []).append(enriched)
+            messages = self._memory_messages.get(enriched["session_id"]) or []
+            messages.append(enriched)
+            self._memory_messages.set(enriched["session_id"], messages)
             self._touch_session(enriched["session_id"])
             return enriched
 
@@ -193,7 +197,9 @@ class VibeSessionStore:
             return result.data[0] if result.data else None
         except Exception as e:
             logger.warning("Failed to create vibe message: %s", e)
-            _memory_messages.setdefault(enriched["session_id"], []).append(enriched)
+            messages = self._memory_messages.get(enriched["session_id"]) or []
+            messages.append(enriched)
+            self._memory_messages.set(enriched["session_id"], messages)
             self._touch_session(enriched["session_id"])
             return enriched
 
@@ -206,7 +212,9 @@ class VibeSessionStore:
 
         if self._use_memory():
             for msg in enriched:
-                _memory_messages.setdefault(msg["session_id"], []).append(msg)
+                session_messages = self._memory_messages.get(msg["session_id"]) or []
+                session_messages.append(msg)
+                self._memory_messages.set(msg["session_id"], session_messages)
             if enriched:
                 self._touch_session(enriched[0]["session_id"])
             return enriched
@@ -219,7 +227,9 @@ class VibeSessionStore:
         except Exception as e:
             logger.warning("Failed to bulk create vibe messages: %s", e)
             for msg in enriched:
-                _memory_messages.setdefault(msg["session_id"], []).append(msg)
+                session_messages = self._memory_messages.get(msg["session_id"]) or []
+                session_messages.append(msg)
+                self._memory_messages.set(msg["session_id"], session_messages)
             if enriched:
                 self._touch_session(enriched[0]["session_id"])
             return enriched
@@ -232,7 +242,7 @@ class VibeSessionStore:
     ) -> list[dict]:
         """List messages for a session, oldest first."""
         if self._use_memory():
-            messages = _memory_messages.get(session_id, [])
+            messages = self._memory_messages.get(session_id) or []
             return messages[offset:offset + limit]
 
         try:
@@ -247,7 +257,7 @@ class VibeSessionStore:
             return result.data or []
         except Exception as e:
             logger.warning("Failed to list vibe messages: %s", e)
-            messages = _memory_messages.get(session_id, [])
+            messages = self._memory_messages.get(session_id) or []
             return messages[offset:offset + limit]
 
     # ---- Runs ----
@@ -258,7 +268,7 @@ class VibeSessionStore:
         enriched = {**run, "id": run_id}
 
         if self._use_memory():
-            _memory_runs[run_id] = enriched
+            self._memory_runs.set(run_id, enriched)
             return enriched
 
         try:
@@ -266,13 +276,13 @@ class VibeSessionStore:
             return result.data[0] if result.data else None
         except Exception as e:
             logger.warning("Failed to create vibe run: %s", e)
-            _memory_runs[run_id] = enriched
+            self._memory_runs.set(run_id, enriched)
             return enriched
 
     def get_run(self, run_id: str, user_id: str) -> Optional[dict]:
         """Fetch a run if it belongs to the user."""
         if self._use_memory():
-            run = _memory_runs.get(run_id)
+            run = self._memory_runs.get(run_id)
             return run if run and run.get("user_id") == user_id else None
 
         try:
@@ -287,15 +297,16 @@ class VibeSessionStore:
             return result.data
         except Exception as e:
             logger.warning("Failed to get vibe run %s: %s", run_id, e)
-            run = _memory_runs.get(run_id)
+            run = self._memory_runs.get(run_id)
             return run if run and run.get("user_id") == user_id else None
 
     def update_run(self, run_id: str, updates: dict) -> bool:
         """Update a run record."""
         if self._use_memory():
-            run = _memory_runs.get(run_id)
+            run = self._memory_runs.get(run_id)
             if run:
                 run.update(updates)
+                self._memory_runs.set(run_id, run)
             return True
 
         try:
@@ -305,9 +316,10 @@ class VibeSessionStore:
             return True
         except Exception as e:
             logger.warning("Failed to update vibe run %s: %s", run_id, e)
-            run = _memory_runs.get(run_id)
+            run = self._memory_runs.get(run_id)
             if run:
                 run.update(updates)
+                self._memory_runs.set(run_id, run)
             return True
 
     def cancel_run(self, run_id: str, cancelled_by: str) -> bool:
@@ -325,8 +337,13 @@ class VibeSessionStore:
 
     def _touch_session(self, session_id: str) -> None:
         """Bump session updated_at and message_count in memory fallback."""
-        session = _memory_sessions.get(session_id)
+        session = self._memory_sessions.get(session_id)
         if session:
             session["updated_at"] = _now_iso()
-            session["message_count"] = len(_memory_messages.get(session_id, []))
+            session["message_count"] = len(self._memory_messages.get(session_id) or [])
             session["last_message_at"] = _now_iso()
+            self._memory_sessions.set(session_id, session)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()

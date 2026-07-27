@@ -53,6 +53,9 @@ def scan(req: RsiTrendScanRequest) -> dict:
         use_ema50=req.use_ema50,
         require_candle_color=req.require_candle_color,
         atr_mult=req.atr_mult,
+        rsi_zone=req.rsi_zone,
+        reward_risk=req.reward_risk,
+        min_quality_score=req.min_quality_score,
     )
     recent = [s.to_dict() for s in signals[-RECENT_SIGNALS_LIMIT:]][::-1]
     latest = recent[0] if recent else None
@@ -64,6 +67,9 @@ def scan(req: RsiTrendScanRequest) -> dict:
             "use_ema50": req.use_ema50,
             "require_candle_color": req.require_candle_color,
             "atr_mult": req.atr_mult,
+            "rsi_zone": req.rsi_zone,
+            "reward_risk": req.reward_risk,
+            "min_quality_score": req.min_quality_score,
         },
         "bars": len(df),
         "state": state,
@@ -98,8 +104,11 @@ def backtest(req: RsiTrendBacktestRequest) -> dict:
         use_ema50=req.use_ema50,
         require_candle_color=req.require_candle_color,
         atr_mult=req.atr_mult,
+        rsi_zone=req.rsi_zone,
+        reward_risk=req.reward_risk,
+        min_quality_score=req.min_quality_score,
     )
-    result = run_backtest(df, signals, partial_mode=req.partial_mode)
+    result = run_backtest(df, signals, partial_mode=req.partial_mode, trailing_stop=req.trailing_stop)
     return {
         "market": req.market,
         "symbol": req.symbol.upper(),
@@ -109,7 +118,11 @@ def backtest(req: RsiTrendBacktestRequest) -> dict:
             "use_ema50": req.use_ema50,
             "require_candle_color": req.require_candle_color,
             "atr_mult": req.atr_mult,
+            "rsi_zone": req.rsi_zone,
+            "reward_risk": req.reward_risk,
+            "min_quality_score": req.min_quality_score,
             "partial_mode": req.partial_mode,
+            "trailing_stop": req.trailing_stop,
         },
         "bars": len(df),
         **result.to_dict(),

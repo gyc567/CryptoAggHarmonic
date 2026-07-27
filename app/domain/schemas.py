@@ -141,6 +141,7 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "0.2.0"
     timestamp: Optional[str] = None
+    checks: Optional[dict] = None
 
 
 class MarketsResponse(BaseModel):

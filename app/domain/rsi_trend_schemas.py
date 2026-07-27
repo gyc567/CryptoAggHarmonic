@@ -18,6 +18,9 @@ class RsiTrendScanRequest(BaseModel):
     use_ema50: bool = False
     require_candle_color: bool = False
     atr_mult: float = Field(default=1.0, ge=0.5, le=3.0)
+    rsi_zone: Literal["extreme", "pullback"] = "extreme"
+    reward_risk: float = Field(default=2.0, ge=1.0, le=5.0)
+    min_quality_score: float = Field(default=0.0, ge=0.0, le=100.0)
 
     @model_validator(mode="after")
     def _check_market_interval(self):
@@ -38,3 +41,4 @@ class RsiTrendBacktestRequest(RsiTrendScanRequest):
 
     lookback_days: int = Field(default=180, ge=60, le=365)
     partial_mode: bool = False
+    trailing_stop: bool = False

@@ -134,24 +134,29 @@ export function usePosition({ userId, initialPlannedTrade = 0.5 }: UsePositionOp
     return simulateWhatIf(config, balance, actualTrade);
   }, [config, balance, actualTrade]);
 
+  // Recompute balance and persist whenever config changes. Keeping side effects
+  // out of the state updater makes the hook concurrent-safe and easier to test.
+  useEffect(() => {
+    if (!config) return;
+    const nextBalance = createDefaultBalance(config);
+    setBalance(nextBalance);
+    if (!userId) return;
+
+    setSaving(true);
+    Promise.all([
+      positionDb.saveConfig(userId, config),
+      positionDb.saveBalance(userId, nextBalance),
+    ]).finally(() => setSaving(false));
+  }, [config, userId]);
+
   const updateConfig = useCallback(
     async (updater: (prev: PositionConfig) => PositionConfig) => {
       setConfig((prev) => {
         if (!prev) return prev;
-        const next = updater(prev);
-        const nextBalance = createDefaultBalance(next);
-        setBalance(nextBalance);
-        if (userId) {
-          setSaving(true);
-          Promise.all([
-            positionDb.saveConfig(userId, next),
-            positionDb.saveBalance(userId, nextBalance),
-          ]).finally(() => setSaving(false));
-        }
-        return next;
+        return updater(prev);
       });
     },
-    [userId]
+    []
   );
 
   const updateBalance = useCallback(

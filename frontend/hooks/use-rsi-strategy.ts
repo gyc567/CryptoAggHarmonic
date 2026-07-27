@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   backtestRsiTrend,
   scanRsiTrend,
@@ -23,8 +23,16 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestError, setBacktestError] = useState<string | null>(null);
 
+  const scanAbortRef = useRef<AbortController | null>(null);
+  const backtestAbortRef = useRef<AbortController | null>(null);
+
   const runScan = useCallback(
     async (params: RsiTrendRequestParams) => {
+      // Cancel any pending scan before starting a new one.
+      scanAbortRef.current?.abort();
+      const controller = new AbortController();
+      scanAbortRef.current = controller;
+
       setScanLoading(true);
       setScanError(null);
       try {
@@ -33,7 +41,8 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
           setScanError("未登录或会话已过期");
           return;
         }
-        const res = await scanRsiTrend(token, params);
+        const res = await scanRsiTrend(token, params, controller.signal);
+        if (controller.signal.aborted) return;
         if (res.success) {
           setScanResult(res.data);
         } else {
@@ -41,7 +50,9 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
           setScanResult(null);
         }
       } finally {
-        setScanLoading(false);
+        if (!controller.signal.aborted) {
+          setScanLoading(false);
+        }
       }
     },
     [getToken]
@@ -49,6 +60,10 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
 
   const runBacktest = useCallback(
     async (params: RsiTrendBacktestParams) => {
+      backtestAbortRef.current?.abort();
+      const controller = new AbortController();
+      backtestAbortRef.current = controller;
+
       setBacktestLoading(true);
       setBacktestError(null);
       try {
@@ -57,7 +72,8 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
           setBacktestError("未登录或会话已过期");
           return;
         }
-        const res = await backtestRsiTrend(token, params);
+        const res = await backtestRsiTrend(token, params, controller.signal);
+        if (controller.signal.aborted) return;
         if (res.success) {
           setBacktestResult(res.data);
         } else {
@@ -65,11 +81,21 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
           setBacktestResult(null);
         }
       } finally {
-        setBacktestLoading(false);
+        if (!controller.signal.aborted) {
+          setBacktestLoading(false);
+        }
       }
     },
     [getToken]
   );
+
+  // Abort pending requests when the component/hook unmounts.
+  useEffect(() => {
+    return () => {
+      scanAbortRef.current?.abort();
+      backtestAbortRef.current?.abort();
+    };
+  }, []);
 
   return {
     scanResult,

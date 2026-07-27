@@ -12,10 +12,13 @@ import type {
   MarketsResponse,
 } from "@/types";
 
+const DEFAULT_MARKET =
+  (process.env.NEXT_PUBLIC_DEFAULT_MARKET as AnalyzeRequest["market"]) || "binance";
+
 const DEFAULT_FORM: AnalyzeRequest = {
-  market: "binance",
+  market: DEFAULT_MARKET,
   symbol: "",
-  interval: "1h",
+  interval: DEFAULT_MARKET === "yahoo" ? "1d" : "1h",
   analysis_type: "auto",
   limit_to: 10,
   percent_complete: 0.8,

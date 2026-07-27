@@ -26,6 +26,7 @@ from app.infra.supabase_client import (
     release_ledger_quota,
     log_audit_event,
 )
+from app.infra.health_check import run_health_checks
 from app.api.errors import AppError
 
 # Set up logging
@@ -33,6 +34,13 @@ logging.basicConfig(level=logging.INFO)
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Production safety: refuse to start with auth bypass or debug enabled.
+if os.getenv("ENVIRONMENT", "development").lower() == "production":
+    if os.getenv("DISABLE_AUTH") == "1":
+        raise RuntimeError("DISABLE_AUTH=1 is not allowed in production")
+    if app.debug or os.getenv("FLASK_DEBUG") == "1":
+        raise RuntimeError("FLASK_DEBUG is not allowed in production")
 
 # Register middleware
 register_error_handlers(app)
@@ -85,11 +93,17 @@ orchestrator = AnalysisOrchestrator(prompt_context=prompt_context)
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with dependency status."""
     import time
-    return jsonify(
-        HealthResponse(timestamp=str(int(time.time()))).model_dump()
-    ), 200
+    result = run_health_checks()
+    response = HealthResponse(
+        status=result["status"],
+        timestamp=str(int(time.time())),
+        version="0.2.0",
+    ).model_dump()
+    response["checks"] = result["checks"]
+    status_code = 503 if result["status"] == "error" else 200
+    return jsonify(response), status_code
 
 
 @app.route('/api/markets', methods=['GET'])
@@ -187,16 +201,24 @@ def analyze(user):
             ).model_dump()
         ), 429
 
-    # Create analysis record
-    create_analysis_record(user_id, {
-        "input_mode": "form",
-        "market": req.market.value,
-        "symbol": req.symbol,
-        "interval": req.interval.value,
-        "analysis_type": req.analysis_type.value,
-        "parameters": req.model_dump(),
-        "status": "created",
-    })
+    # Create analysis record using the same ID returned to the caller.
+    # In local dev mode without Supabase configured this may fail; we log a
+    # warning but do not block the analysis.
+    record_id = create_analysis_record(
+        user_id,
+        {
+            "input_mode": "form",
+            "market": req.market.value,
+            "symbol": req.symbol,
+            "interval": req.interval.value,
+            "analysis_type": req.analysis_type.value,
+            "parameters": req.model_dump(),
+            "status": "created",
+        },
+        analysis_id=analysis_id,
+    )
+    if is_local_dev_mode() and not record_id:
+        logging.warning("Local dev: analysis record creation skipped/failed")
 
     # Run analysis
     try:
@@ -208,6 +230,25 @@ def analyze(user):
                 ledger_id,
                 input_tokens=result.timing.get("input_tokens") if hasattr(result, "timing") else None,
                 output_tokens=result.timing.get("output_tokens") if hasattr(result, "timing") else None,
+            )
+
+        # Persist completion status and a concise result summary.
+        result_summary = None
+        signal = result.technical_result.signal if result.technical_result else None
+        if signal:
+            result_summary = {
+                "direction": signal.direction,
+                "pattern": signal.pattern_name,
+                "grade": signal.grade,
+                "formed": signal.formed,
+            }
+        if record_id:
+            update_analysis_record(
+                record_id,
+                {
+                    "status": "completed",
+                    "result_summary": result_summary,
+                },
             )
 
         # Log audit
@@ -224,14 +265,18 @@ def analyze(user):
         ), 200
 
     except AppError as e:
-        # Release quota on failure
+        # Release quota on failure and mark record failed.
         if ledger_id:
             release_ledger_quota(ledger_id)
+        if record_id:
+            update_analysis_record(record_id, {"status": "failed", "error_message": str(e)})
         raise
     except Exception as e:
         # Release quota on unexpected failure
         if ledger_id:
             release_ledger_quota(ledger_id)
+        if record_id:
+            update_analysis_record(record_id, {"status": "failed", "error_message": "Internal error"})
         logging.exception("Analysis failed")
         raise AppError(
             ErrorCode.INTERNAL_ERROR,

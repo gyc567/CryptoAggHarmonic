@@ -147,6 +147,44 @@ def test_atr_mult_widens_stop():
     assert s15.stop_loss < s1.stop_loss
 
 
+def test_pullback_zone_generates_more_signals():
+    # A shallow pullback that reaches RSI 35-40 but not 30 should only fire
+    # in pullback mode.
+    closes = [100.0 + i * 2 for i in range(200)]  # 100 -> 498
+    closes += [490.0, 475.0, 460.0, 470.0]  # ~8% pullback, RSI dips below 40
+    df = make_df(closes)
+    extreme = detect_signals(df, rsi_zone="extreme")
+    pullback = detect_signals(df, rsi_zone="pullback")
+    assert len(extreme) == 0
+    assert len(pullback) == 1
+    assert pullback[0].direction == LONG
+
+
+def test_reward_risk_changes_target():
+    df = uptrend_then_dip()
+    s1 = detect_signals(df, reward_risk=1.5)[0]
+    s2 = detect_signals(df, reward_risk=3.0)[0]
+    risk = s1.entry_price - s1.stop_loss
+    assert s1.target_price == pytest.approx(s1.entry_price + 1.5 * risk)
+    assert s2.target_price == pytest.approx(s2.entry_price + 3.0 * risk)
+
+
+def test_signal_quality_score_present():
+    df = uptrend_then_dip()
+    sig = detect_signals(df)[0]
+    assert 0.0 <= sig.quality_score <= 100.0
+
+
+def test_min_quality_score_filters_weak_signals():
+    # The uptrend_then_dip signal has a high quality score (strong trend,
+    # EMA50 aligned, bullish candle).  Setting a very high threshold removes it.
+    df = uptrend_then_dip()
+    all_signals = detect_signals(df)
+    assert len(all_signals) == 1
+    assert len(detect_signals(df, min_quality_score=95)) == 0
+    assert len(detect_signals(df, min_quality_score=all_signals[0].quality_score)) == 1
+
+
 # ------------------------------------------------------------------ backtest
 
 
@@ -233,6 +271,23 @@ def test_backtest_partial_mode_target_reduce_then_breakeven():
     assert [p.reason for p in trade.partials] == [EXIT_PARTIAL_TARGET, EXIT_RSI_EXTREME]
     # 50% * 2R + 25% * 2.5R + 25% * 0R (breakeven)
     assert trade.r_multiple == pytest.approx(0.5 * 2.0 + 0.25 * 2.5)
+
+
+def test_backtest_trailing_stop_captures_more_trend():
+    # Long: target 104 hit at bar 12 (50% reduced), then bar 13 close 107
+    # trails stop to 106 (close - ATR=1).  Bar 14 gaps down but low 100 hits
+    # the trail stop 106 -> exit 106, better than breakeven 100.
+    # We prefix enough flat bars so ATR(14) is meaningful and equal to 1.0.
+    prefix = [100.0] * 20
+    closes = prefix + [100.0, 101.0, 105.0, 107.0, 102.0]
+    df = make_df(closes)
+    signal_index = len(prefix)
+    df.loc[signal_index + 2, "low"] = 106.5
+    df.loc[signal_index + 3, "low"] = 100.0
+    signal = make_signal(index=signal_index)
+    result_breakeven = run_backtest(df, [signal], partial_mode=True, trailing_stop=False)
+    result_trail = run_backtest(df, [signal], partial_mode=True, trailing_stop=True)
+    assert result_trail.trades[0].r_multiple > result_breakeven.trades[0].r_multiple
 
 
 def test_backtest_metrics_aggregation():

@@ -82,15 +82,39 @@ See the video tutorial for more. https://www.youtube.com/watch?v=GZ-O5SlJjVc
 
 项目已新增基于 Next.js 14 + TypeScript + Tailwind CSS 的 SaaS 前端，参考 `docs/frontend-design-2026-07-14.md` 实现。
 
+### 本地开发启动
+
+1. 启动 TradingView 数据桥（主要实时数据源）：
+
+```bash
+cd tradingview-bridge
+npm install
+npm start
+# 默认端口 5002；健康检查 http://127.0.0.1:5002/health
+```
+
+2. 启动后端（macOS 的 Control Center 会占用 5000，因此本地使用 5001 并开启开发鉴权 bypass）：
+
+```bash
+source .venv/bin/activate
+DISABLE_AUTH=1 PORT=5001 gunicorn --config gunicorn.conf.py app.main:app
+```
+
+3. 启动前端（另开终端）：
+
 ```bash
 cd frontend
 cp .env.example .env.local
 # 配置 NEXT_PUBLIC_SUPABASE_URL 与 NEXT_PUBLIC_SUPABASE_ANON_KEY
 npm install
-npm run dev
+BACKEND_API_BASE=http://127.0.0.1:5001 npm run dev
 ```
 
-本地开发时，Next.js 会将 `/api/*` 请求代理到后端的 Flask 服务（默认 `http://127.0.0.1:5000`）。
+本地开发时，Next.js 会将 `/api/*` 请求代理到后端的 Flask 服务（默认 `http://127.0.0.1:5001`，可通过 `BACKEND_API_BASE` 覆盖）。
+
+> `DISABLE_AUTH=1` 仅用于本地开发，生产环境必须关闭（`DISABLE_AUTH=0`）。
+>
+> TradingView 桥默认启用。若桥接服务不可用，后端会自动降级到 Binance/Yahoo。可通过 `USE_TRADINGVIEW=false` 关闭 TradingView 优先策略。
 
 主要页面：
 - `/login` — 邮箱魔法链接登录

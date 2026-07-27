@@ -6,10 +6,11 @@ when Redis is unavailable (local dev / tests).
 import json
 import logging
 import os
-import threading
 import uuid
 from typing import Optional, Any
 from datetime import datetime, timezone
+
+from app.infra.memory_cache import MemoryCache
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,8 @@ class VibeEventStore:
         self.redis_url = redis_url or os.getenv("REDIS_URL", "")
         self.ttl_seconds = ttl_seconds
         self._redis: Optional[Any] = None
-        self._memory: dict[str, list[dict]] = {}
-        self._lock = threading.Lock()
+        # Bounded in-memory fallback for events.
+        self._memory = MemoryCache[list[dict]](max_size=256, ttl_seconds=ttl_seconds)
         self._connect()
 
     def _connect(self) -> None:
@@ -66,8 +67,9 @@ class VibeEventStore:
             except Exception as e:
                 logger.warning("Redis publish failed, falling back to memory: %s", e)
 
-        with self._lock:
-            self._memory.setdefault(run_id, []).append(event)
+        events = self._memory.get(run_id) or []
+        events.append(event)
+        self._memory.set(run_id, events)
         return event_id
 
     def get_events(
@@ -115,8 +117,7 @@ class VibeEventStore:
                 return events
             except Exception as e:
                 logger.warning("Redis fetch failed, falling back to memory: %s", e)
-        with self._lock:
-            return list(self._memory.get(run_id, []))
+        return list(self._memory.get(run_id) or [])
 
     def _fetch_range(self, run_id: str, offset: int, limit: int) -> list[dict]:
         """Fetch a slice of events by index; used by SSE to avoid O(n^2)."""
@@ -133,9 +134,8 @@ class VibeEventStore:
                 return events
             except Exception as e:
                 logger.warning("Redis range fetch failed, falling back to memory: %s", e)
-        with self._lock:
-            events = self._memory.get(run_id, [])
-            return list(events[offset : offset + limit])
+        events = self._memory.get(run_id) or []
+        return list(events[offset : offset + limit])
 
     def clear(self, run_id: str) -> None:
         """Clear events for a run."""
@@ -144,8 +144,7 @@ class VibeEventStore:
                 self._redis.delete(self._key(run_id))
             except Exception as e:
                 logger.warning("Redis clear failed: %s", e)
-        with self._lock:
-            self._memory.pop(run_id, None)
+        self._memory.delete(run_id)
 
     @staticmethod
     def _generate_event_id() -> str:

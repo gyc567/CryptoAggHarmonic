@@ -119,6 +119,7 @@ def _simulate_one(
     signal: StrategySignal,
     *,
     partial_mode: bool,
+    trailing_stop: bool,
     bar_time,
 ) -> StrategyTrade:
     """Simulate a single trade from its signal bar to its exit."""
@@ -133,6 +134,7 @@ def _simulate_one(
     stop = initial_stop
     t1_done = False
     rsi_done = False
+    trailing_active = False
     partials: list[PartialExit] = []
 
     exit_price = entry
@@ -159,7 +161,7 @@ def _simulate_one(
                 exit_index, exit_time = i, time
                 break
 
-            # 2) First target 1:2.
+            # 2) First target hit.
             if target_hit and not t1_done:
                 if partial_mode:
                     half = remaining * 0.5
@@ -170,7 +172,8 @@ def _simulate_one(
                     )
                     remaining -= half
                     t1_done = True
-                    stop = entry  # move to breakeven, let the rest run
+                    stop = entry  # default: move to breakeven
+                    trailing_active = trailing_stop
                 else:
                     exit_price, exit_reason = target, EXIT_TARGET
                     realized_r += remaining * _r_multiple(
@@ -192,6 +195,21 @@ def _simulate_one(
                     )
                     remaining -= half
                     rsi_done = True
+
+            # 3b) Trail stop by 1 ATR behind the favourable close once in profit.
+            # This is only active after the first partial target is hit and when
+            # ``trailing_stop`` is enabled.  It keeps the stop outside normal
+            # noise while letting winners run.
+            if trailing_active and not pd.isna(row["atr"]):
+                atr = float(row["atr"])
+                if long:
+                    trail_candidate = close - atr
+                    if trail_candidate > stop:
+                        stop = trail_candidate
+                else:
+                    trail_candidate = close + atr
+                    if trail_candidate < stop:
+                        stop = trail_candidate
 
             # 4) Trend environment flipped across EMA200 -> exit at close.
             if not pd.isna(ema200):
@@ -244,6 +262,7 @@ def run_backtest(
     signals: list[StrategySignal],
     *,
     partial_mode: bool = False,
+    trailing_stop: bool = False,
 ) -> BacktestResult:
     """Simulate all signals over ``df`` and aggregate performance metrics.
 
@@ -257,7 +276,9 @@ def run_backtest(
     for signal in signals:
         if signal.index <= open_until:
             continue
-        trade = _simulate_one(data, signal, partial_mode=partial_mode, bar_time=_bar_time)
+        trade = _simulate_one(
+            data, signal, partial_mode=partial_mode, trailing_stop=trailing_stop, bar_time=_bar_time
+        )
         trades.append(trade)
         open_until = signal.index + trade.bars_held
 

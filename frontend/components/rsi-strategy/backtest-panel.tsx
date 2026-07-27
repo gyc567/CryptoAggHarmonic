@@ -48,8 +48,12 @@ export function BacktestPanel({ result, loading, error, onBacktest, className }:
     use_ema50: false,
     require_candle_color: false,
     atr_mult: 1.0,
+    rsi_zone: "pullback",
+    reward_risk: 2.0,
+    min_quality_score: 30,
     lookback_days: 180,
-    partial_mode: false,
+    partial_mode: true,
+    trailing_stop: true,
   });
 
   const update = <K extends keyof RsiTrendBacktestParams>(key: K, value: RsiTrendBacktestParams[K]) =>
@@ -97,7 +101,18 @@ export function BacktestPanel({ result, loading, error, onBacktest, className }:
             disabled={loading}
             className="h-4 w-4 accent-primary"
           />
-          部分止盈模式（1:2 先减 50%，剩余移动止损让利润奔跑）
+          部分止盈模式（1:R 先减 50%，剩余移动止损让利润奔跑）
+        </label>
+
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <input
+            type="checkbox"
+            checked={params.trailing_stop}
+            onChange={(e) => update("trailing_stop", e.target.checked)}
+            disabled={loading}
+            className="h-4 w-4 accent-primary"
+          />
+          ATR 移动止损（部分止盈后，剩余仓位按 1×ATR  trailing）
         </label>
       </div>
 

@@ -1,0 +1,15 @@
+{
+  "name": "tradingview-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@mathieuc/tradingview": "github:Mathieu2301/TradingView-API",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}

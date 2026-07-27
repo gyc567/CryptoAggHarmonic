@@ -134,45 +134,32 @@ class TestRequireAuthBypass:
                 assert resp.status_code == 200
                 assert resp.get_json() == {"user_id": LOCAL_DEV_USER["id"]}
 
-    def test_dev_auto_bypass_when_debug_and_no_supabase_url(self, app, client):
+    def test_no_auto_dev_bypass_when_debug_and_no_supabase_url(self, app, client):
+        """Auto bypass based on FLASK_DEBUG + missing SUPABASE_URL is removed."""
+        @app.route("/test-auth")
+        @require_auth
+        def handler(user=None):
+            return {"ok": True}
+
+        app.debug = True
+        env_patch = {"SUPABASE_URL": "", "DISABLE_AUTH": ""}
+        with patch.dict(os.environ, env_patch, clear=False):
+            with app.test_client() as c:
+                resp = c.get("/test-auth")
+                assert resp.status_code == 401
+
+    def test_explicit_disable_auth_bypass(self, app, client):
         @app.route("/test-auth")
         @require_auth
         def handler(user=None):
             return {"user_id": user["id"]}
 
-        app.debug = True
-        env_patch = {"SUPABASE_URL": ""}
+        env_patch = {"DISABLE_AUTH": "1"}
         with patch.dict(os.environ, env_patch, clear=False):
             with app.test_client() as c:
                 resp = c.get("/test-auth")
                 assert resp.status_code == 200
                 assert resp.get_json() == {"user_id": LOCAL_DEV_USER["id"]}
-
-    def test_no_dev_bypass_when_not_debug(self, app, client):
-        @app.route("/test-auth")
-        @require_auth
-        def handler(user=None):
-            return {"ok": True}
-
-        app.debug = False
-        env_patch = {"SUPABASE_URL": ""}
-        with patch.dict(os.environ, env_patch, clear=False):
-            with app.test_client() as c:
-                resp = c.get("/test-auth")
-                assert resp.status_code == 401
-
-    def test_no_dev_bypass_when_supabase_url_set(self, app, client):
-        @app.route("/test-auth")
-        @require_auth
-        def handler(user=None):
-            return {"ok": True}
-
-        app.debug = True
-        env_patch = {"SUPABASE_URL": "https://example.supabase.co"}
-        with patch.dict(os.environ, env_patch, clear=False):
-            with app.test_client() as c:
-                resp = c.get("/test-auth")
-                assert resp.status_code == 401
 
 
 class TestCheckQuota:

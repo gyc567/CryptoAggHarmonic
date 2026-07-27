@@ -6,10 +6,25 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - REDIS_URL=redis://redis:6379/0
+      - TRADINGVIEW_BRIDGE_URL=http://tradingview-bridge:5002
+      - USE_TRADINGVIEW=true
     volumes:
       - .:/app
     depends_on:
       - redis
+      - tradingview-bridge
+
+  tradingview-bridge:
+    build:
+      context: ./tradingview-bridge
+    ports:
+      - "5002:5002"
+    environment:
+      - PORT=5002
+      - TRADINGVIEW_DEBUG=${TRADINGVIEW_DEBUG:-0}
+    volumes:
+      - ./tradingview-bridge:/app
+
   redis:
     image: redis:7-alpine
     ports:

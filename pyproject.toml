@@ -12,10 +12,12 @@ dependencies = [
     "pyharmonics>=1.4.3",
     "openai>=1.60.2",
     "python-dotenv>=1.0.1",
-    "gunicorn>=20.1.0",
+    "gunicorn>=23.0.0",
     "pydantic>=2.0.0",
+    "supabase>=2.15.0",
     "redis>=5.0.0",
     "rq>=1.16.0",
+    "socksio>=1.0.0",
     # Constrain pyharmonics transitive dependencies to avoid a websockets
     # conflict: yfinance>=0.2.59 / >=1.0 need websockets>=11/>=13, while
     # alpaca-trade-api needs websockets<11. pyharmonics 1.4.3 also needs

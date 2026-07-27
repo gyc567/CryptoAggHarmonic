@@ -22,6 +22,7 @@ export default defineConfig({
         "components/dashboard/signal-card.tsx",
         "components/dashboard/analyze-form.tsx",
         "components/dashboard/result-panel.tsx",
+        "components/error-boundary/chunk-error-boundary.tsx",
       ],
       exclude: ["node_modules", ".next", "**/*.d.ts"],
       thresholds: {

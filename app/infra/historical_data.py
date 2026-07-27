@@ -13,6 +13,7 @@ import pandas as pd
 from app.domain.enums import Interval, Market
 from app.infra.marketdata import DirectBinanceCandleData
 from app.infra.pyharmonics_adapter import fetch_market_data
+from app.infra import tradingview_adapter as tv
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,45 @@ def _to_ms(dt: datetime) -> int:
 
 
 
+def _fetch_tradingview_range(
+    symbol: str,
+    interval: str,
+    start: datetime,
+    end: datetime,
+    market: str,
+) -> pd.DataFrame:
+    """Fetch a date range from TradingView via the bridge.
+
+    TradingView's bridge fetches ``limit`` candles ending at ``to``.  We ask
+    for enough candles to cover the requested window and then trim.
+    """
+    if not tv.is_tradingview_enabled() or not tv.is_bridge_healthy():
+        raise RuntimeError("TradingView bridge unavailable")
+
+    ms_per_candle = _INTERVAL_MS.get(interval)
+    if ms_per_candle is None:
+        raise ValueError(f"Unsupported interval for backtest: {interval}")
+
+    end_ms = _to_ms(end)
+    start_ms = _to_ms(start)
+    estimated = max((end_ms - start_ms) // ms_per_candle, 1) + 1
+    limit = min(estimated + 10, 5000)
+
+    df = tv.fetch_candles(
+        symbol=symbol,
+        interval=interval,
+        limit=limit,
+        market=market,
+        to=end_ms // 1000,
+    )
+
+    # Trim to requested window.
+    df = df[df["open_time"] >= start_ms]
+    if df.empty:
+        raise RuntimeError(f"TradingView returned no data in range for {symbol}")
+    return df
+
+
 def fetch_historical_data(
     market: str,
     symbol: str,
@@ -42,6 +82,9 @@ def fetch_historical_data(
     end: Optional[datetime] = None,
 ) -> pd.DataFrame:
     """Fetch historical OHLCV data for a given lookback window.
+
+    TradingView is tried first when enabled/healthy; on failure we fall back
+    to Binance/Yahoo.
 
     Args:
         market: "binance" or "yahoo".
@@ -60,6 +103,25 @@ def fetch_historical_data(
     if end is None:
         end = datetime.now(timezone.utc)
     start = end - timedelta(days=lookback_days)
+
+    # Try TradingView first.
+    if tv.is_tradingview_enabled() and tv.is_bridge_healthy():
+        try:
+            df = _fetch_tradingview_range(symbol, interval, start, end, market)
+            logger.info(
+                "Fetched historical %s %s from TradingView (%d rows)",
+                market,
+                symbol,
+                len(df),
+            )
+            return df
+        except Exception as e:
+            logger.warning(
+                "TradingView historical fetch failed for %s/%s, falling back: %s",
+                market,
+                symbol,
+                e,
+            )
 
     if market == Market.BINANCE.value:
         return _fetch_binance_range(symbol, interval, start, end)

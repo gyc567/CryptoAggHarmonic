@@ -48,21 +48,11 @@ LOCAL_DEV_USER: Dict[str, Any] = {
 def is_local_dev_mode() -> bool:
     """Return True when local development bypass is active.
 
-    Two modes are supported:
-      1. Explicit: DISABLE_AUTH=1 (intended for local dev/tests).
-      2. Auto dev bypass: Flask debug mode AND no SUPABASE_URL configured.
-         This prevents a misleading 401 for developers who have not set up
-         Supabase yet. It must never trigger in production.
+    Only explicit DISABLE_AUTH=1 is allowed. The previous auto bypass based on
+    FLASK_DEBUG + missing SUPABASE_URL has been removed because it is too easy
+    to enable accidentally in production.
     """
-    if os.getenv("DISABLE_AUTH") == "1":
-        return True
-    if current_app.debug and not os.getenv("SUPABASE_URL"):
-        logger.warning(
-            "Dev auth bypass active: FLASK_DEBUG=1 and SUPABASE_URL is not set. "
-            "Protected endpoints will accept any token."
-        )
-        return True
-    return False
+    return os.getenv("DISABLE_AUTH") == "1"
 
 
 def require_auth(f: Callable) -> Callable:
@@ -73,7 +63,6 @@ def require_auth(f: Callable) -> Callable:
 
     Local development bypass:
       Set DISABLE_AUTH=1 in the environment to skip token verification.
-      In Flask debug mode, auth is also bypassed when SUPABASE_URL is unset.
       This is ONLY for local dev/testing and must never be enabled in production.
     """
     @wraps(f)

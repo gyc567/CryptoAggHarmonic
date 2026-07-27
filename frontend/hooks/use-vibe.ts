@@ -13,39 +13,55 @@ import {
 } from "@/lib/vibe/event-reducer";
 import type { VibeMessage, VibeSession } from "@/types/vibe";
 
-const SESSIONS_KEY = "pyharmonics:vibe:sessions";
-const MESSAGES_KEY = (sessionId: string) =>
-  `pyharmonics:vibe:messages:${sessionId}`;
+// localStorage keys are namespaced by userId so that switching accounts in the
+// same browser does not leak cached sessions/messages across users.
+const SESSIONS_KEY = (userId: string) => `pyharmonics:vibe:sessions:${userId}`;
+const MESSAGES_KEY = (userId: string, sessionId: string) =>
+  `pyharmonics:vibe:messages:${userId}:${sessionId}`;
 
-function readSessions(): VibeSession[] {
-  if (typeof window === "undefined") return [];
+function readSessions(userId: string): VibeSession[] {
+  if (typeof window === "undefined" || !userId) return [];
   try {
-    return JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]");
+    return JSON.parse(localStorage.getItem(SESSIONS_KEY(userId)) || "[]");
   } catch {
     return [];
   }
 }
 
-function writeSessions(sessions: VibeSession[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+function writeSessions(userId: string, sessions: VibeSession[]) {
+  if (typeof window === "undefined" || !userId) return;
+  localStorage.setItem(SESSIONS_KEY(userId), JSON.stringify(sessions));
 }
 
-function readMessages(sessionId: string): VibeMessage[] {
-  if (typeof window === "undefined") return [];
+function readMessages(userId: string, sessionId: string): VibeMessage[] {
+  if (typeof window === "undefined" || !userId) return [];
   try {
-    return JSON.parse(localStorage.getItem(MESSAGES_KEY(sessionId)) || "[]");
+    return JSON.parse(
+      localStorage.getItem(MESSAGES_KEY(userId, sessionId)) || "[]"
+    );
   } catch {
     return [];
   }
 }
 
-function writeMessages(sessionId: string, messages: VibeMessage[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(MESSAGES_KEY(sessionId), JSON.stringify(messages));
+function writeMessages(
+  userId: string,
+  sessionId: string,
+  messages: VibeMessage[]
+) {
+  if (typeof window === "undefined" || !userId) return;
+  localStorage.setItem(
+    MESSAGES_KEY(userId, sessionId),
+    JSON.stringify(messages)
+  );
 }
 
-export function useVibe(getToken: () => Promise<string | null>) {
+interface UseVibeOptions {
+  getToken: () => Promise<string | null>;
+  userId?: string;
+}
+
+export function useVibe({ getToken, userId }: UseVibeOptions) {
   const [state, dispatch] = useReducer(vibeChatReducer, initialState);
   const [sessions, setSessions] = useState<VibeSession[]>([]);
   const sessionsRef = useRef<VibeSession[]>([]);
@@ -83,26 +99,30 @@ export function useVibe(getToken: () => Promise<string | null>) {
     };
   }, [getToken]);
 
-  // Initialize sessions from localStorage.
+  // Initialize sessions from localStorage for the current user.
   useEffect(() => {
-    const stored = readSessions();
+    if (!userId) {
+      setInitialized(true);
+      return;
+    }
+    const stored = readSessions(userId);
     setSessions(stored);
     if (stored.length > 0) {
       const latest = stored[0];
       setCurrentSessionId(latest.id);
       dispatch({ type: "RESET" });
-      const msgs = readMessages(latest.id);
+      const msgs = readMessages(userId, latest.id);
       msgs.forEach((msg) => dispatch({ type: "ADD_MESSAGE", message: msg }));
     }
     setInitialized(true);
-  }, []);
+  }, [userId]);
 
   // Persist messages whenever they change.
   useEffect(() => {
-    if (currentSessionId && state.messages.length > 0) {
-      writeMessages(currentSessionId, state.messages);
+    if (userId && currentSessionId && state.messages.length > 0) {
+      writeMessages(userId, currentSessionId, state.messages);
     }
-  }, [state.messages, currentSessionId]);
+  }, [userId, state.messages, currentSessionId]);
 
   const createSession = useCallback(
     async (title?: string) => {
@@ -118,22 +138,26 @@ export function useVibe(getToken: () => Promise<string | null>) {
         const session = res.data;
         const next = [session, ...sessionsRef.current];
         setSessions(next);
-        writeSessions(next);
+        if (userId) writeSessions(userId, next);
         setCurrentSessionId(session.id);
         dispatch({ type: "RESET" });
         return session;
       }
       return undefined;
     },
-    [getToken]
+    [getToken, userId]
   );
 
-  const loadSession = useCallback((sessionId: string) => {
-    setCurrentSessionId(sessionId);
-    dispatch({ type: "RESET" });
-    const msgs = readMessages(sessionId);
-    msgs.forEach((msg) => dispatch({ type: "ADD_MESSAGE", message: msg }));
-  }, []);
+  const loadSession = useCallback(
+    (sessionId: string) => {
+      setCurrentSessionId(sessionId);
+      dispatch({ type: "RESET" });
+      if (!userId) return;
+      const msgs = readMessages(userId, sessionId);
+      msgs.forEach((msg) => dispatch({ type: "ADD_MESSAGE", message: msg }));
+    },
+    [userId]
+  );
 
   const startPolling = useCallback((token: string, runId: string) => {
     if (pollRef.current) {

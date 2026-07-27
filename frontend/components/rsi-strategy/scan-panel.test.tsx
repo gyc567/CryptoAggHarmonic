@@ -8,7 +8,7 @@ const SCAN_RESULT: RsiTrendScanResponse = {
   market: "binance",
   symbol: "BTCUSDT",
   interval: "4h",
-  filters: { use_ema50: false, require_candle_color: false, atr_mult: 1.0 },
+  filters: { use_ema50: false, require_candle_color: false, atr_mult: 1.0, rsi_zone: "pullback", reward_risk: 2.0, min_quality_score: 30 },
   bars: 500,
   state: {
     time: "2026-07-24T12:00:00",
@@ -30,6 +30,7 @@ const SCAN_RESULT: RsiTrendScanResponse = {
     rsi: 32.1,
     time: "2026-07-24T12:00:00",
     index: 499,
+    quality_score: 72,
   },
   recent_signals: [
     {
@@ -41,6 +42,7 @@ const SCAN_RESULT: RsiTrendScanResponse = {
       rsi: 32.1,
       time: "2026-07-24T12:00:00",
       index: 499,
+      quality_score: 72,
     },
   ],
 };
@@ -70,6 +72,9 @@ describe("ScanPanel", () => {
       use_ema50: false,
       require_candle_color: false,
       atr_mult: 1.0,
+      rsi_zone: "pullback",
+      reward_risk: 2.0,
+      min_quality_score: 30,
     });
   });
 

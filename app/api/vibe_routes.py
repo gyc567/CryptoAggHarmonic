@@ -263,14 +263,23 @@ def get_run_trace(user, run_id):
 
 # ---- Tools ----
 
+# Tools that are safe to invoke directly through the /tools/<name> endpoint.
+# Write/side-effect tools must be invoked by the orchestrator so that system
+# prompts, tool-chain ordering and safety constraints are enforced.
+_DIRECT_TOOL_ALLOWLIST = {"explain_market", "position_check"}
+
 
 @vibe_bp.route("/tools/<tool_name>", methods=["POST"])
 @require_auth
 def invoke_tool(user, tool_name):
-    """Invoke a single tool directly (debug / fixed actions).
+    """Invoke a single read-only tool directly.
 
     Mirrors send_message quota handling: reserve 1 unit, consume on success,
     release on failure. Subject to the user's daily analysis quota.
+
+    Only tools in _DIRECT_TOOL_ALLOWLIST may be invoked here. Side-effect
+    tools (e.g. save_to_journal, analyze_harmonic) must go through the
+    orchestrator so that system prompts and safety constraints apply.
     """
     user_id = user["id"]
     data = request.get_json(force=True, silent=True) or {}
@@ -278,6 +287,14 @@ def invoke_tool(user, tool_name):
         req = ToolRequest(**data)
     except Exception as e:
         return _error("INVALID_PARAMS", f"参数错误: {e}")
+
+    if tool_name not in _DIRECT_TOOL_ALLOWLIST:
+        return _error(
+            "FORBIDDEN",
+            f"工具 {tool_name} 不允许直接调用，请通过对话流程使用。",
+            status=403,
+            retryable=False,
+        )
 
     invoke_id = str(uuid.uuid4())
     ledger_id = None

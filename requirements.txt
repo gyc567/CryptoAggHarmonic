@@ -1,11 +1,10 @@
+# Production dependencies
 Flask==2.3.2
 pyharmonics==1.4.3
 openai==1.60.2
 python-dotenv==1.0.1
 gunicorn==23.0.0  # 23.x 起不再依赖 pkg_resources（python:3.12+ 镜像无 setuptools，20.1 会启动失败）
 pydantic==2.13.4
-pytest==9.1.1
-pytest-cov==7.1.0
 supabase==2.15.0
 redis==5.0.8
 rq==1.16.2
@@ -22,6 +21,12 @@ socksio==1.0.0  # Required when httpx uses a SOCKS proxy (all_proxy)
 # Pin these so both packages can coexist. Note: supabase may upgrade
 # websockets at install time; local dev has been observed to work, but
 # this is a known tension that should be revisited for production.
+# TODO: evaluate upgrading alpaca-trade-api / replacing yfinance to lift
+#       websockets to >=11 and align with supabase realtime requirements.
 alpaca-trade-api==3.2.0
 yfinance==0.2.57
 websockets==10.4
+
+# Development / test dependencies (install with: pip install -r requirements-dev.txt)
+# pytest==9.1.1
+# pytest-cov==7.1.0

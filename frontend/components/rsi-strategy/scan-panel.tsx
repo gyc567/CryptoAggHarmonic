@@ -46,6 +46,9 @@ export function ScanPanel({ result, loading, error, onScan, className }: ScanPan
     use_ema50: false,
     require_candle_color: false,
     atr_mult: 1.0,
+    rsi_zone: "pullback",
+    reward_risk: 2.0,
+    min_quality_score: 30,
   });
 
   const update = <K extends keyof RsiTrendRequestParams>(key: K, value: RsiTrendRequestParams[K]) =>
@@ -58,7 +61,7 @@ export function ScanPanel({ result, loading, error, onScan, className }: ScanPan
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-foreground">信号扫描</h2>
         <p className="text-sm text-muted-foreground">
-          检查当前趋势环境与 RSI 动量，寻找「离开极端区域」的顺势入场信号
+          检查当前趋势环境与 RSI 动量，寻找「离开极端/回调区域」的顺势入场信号
         </p>
       </div>
 
@@ -112,11 +115,12 @@ export function ScanPanel({ result, loading, error, onScan, className }: ScanPan
                   {fmtTime(result.latest_signal.time)}
                 </span>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
                 <StatCard label="入场价（信号K线收盘）" value={fmt(result.latest_signal.entry_price)} compact />
                 <StatCard label="止损价" value={fmt(result.latest_signal.stop_loss)} compact />
-                <StatCard label="目标价 (1:2)" value={fmt(result.latest_signal.target_price)} compact />
+                <StatCard label={`目标价 (1:${result.filters.reward_risk.toFixed(1)})`} value={fmt(result.latest_signal.target_price)} compact />
                 <StatCard label="信号时 RSI" value={fmt(result.latest_signal.rsi, 1)} compact />
+                <StatCard label="质量分" value={`${Math.round(result.latest_signal.quality_score)}`} compact />
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
                 建议单笔风险控制在总资金的 0.5%–1%，仓位 = 可承受亏损 ÷（入场价 − 止损价）。
@@ -138,7 +142,8 @@ export function ScanPanel({ result, loading, error, onScan, className }: ScanPan
                     <th className="py-2 pr-3 font-medium text-right">入场价</th>
                     <th className="py-2 pr-3 font-medium text-right">止损价</th>
                     <th className="py-2 pr-3 font-medium text-right">目标价</th>
-                    <th className="py-2 font-medium text-right">RSI</th>
+                    <th className="py-2 pr-3 font-medium text-right">RSI</th>
+                    <th className="py-2 font-medium text-right">质量分</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -149,7 +154,8 @@ export function ScanPanel({ result, loading, error, onScan, className }: ScanPan
                       <td className="py-2 pr-3 text-right">{fmt(s.entry_price)}</td>
                       <td className="py-2 pr-3 text-right">{fmt(s.stop_loss)}</td>
                       <td className="py-2 pr-3 text-right">{fmt(s.target_price)}</td>
-                      <td className="py-2 text-right">{fmt(s.rsi, 1)}</td>
+                      <td className="py-2 pr-3 text-right">{fmt(s.rsi, 1)}</td>
+                      <td className="py-2 text-right">{Math.round(s.quality_score)}</td>
                     </tr>
                   ))}
                 </tbody>

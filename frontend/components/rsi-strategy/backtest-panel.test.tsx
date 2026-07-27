@@ -9,7 +9,7 @@ const BACKTEST_RESULT: RsiTrendBacktestResponse = {
   symbol: "BTCUSDT",
   interval: "4h",
   lookback_days: 180,
-  filters: { use_ema50: false, require_candle_color: false, atr_mult: 1.0, partial_mode: false },
+  filters: { use_ema50: false, require_candle_color: false, atr_mult: 1.0, rsi_zone: "pullback", reward_risk: 2.0, min_quality_score: 30, partial_mode: true, trailing_stop: true },
   bars: 1080,
   total_signals: 2,
   trades_count: 2,
@@ -83,8 +83,12 @@ describe("BacktestPanel", () => {
       use_ema50: false,
       require_candle_color: false,
       atr_mult: 1.0,
+      rsi_zone: "pullback",
+      reward_risk: 2.0,
+      min_quality_score: 30,
       lookback_days: 180,
-      partial_mode: false,
+      partial_mode: true,
+      trailing_stop: true,
     });
   });
 

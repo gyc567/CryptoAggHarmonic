@@ -5,6 +5,7 @@ from typing import Any, Optional
 # Import pyharmonics classes at module level for testability
 from pyharmonics.marketdata import YahooCandleData
 from app.infra.marketdata import DirectBinanceCandleData
+from app.infra import tradingview_adapter as tv
 from pyharmonics.technicals import OHLCTechnicals
 from pyharmonics.search import HarmonicSearch, DivergenceSearch
 from pyharmonics.plotter import HarmonicPlotter, PositionPlotter
@@ -17,6 +18,22 @@ from app.domain.schemas import TechnicalResult, ChartMeta
 logger = logging.getLogger(__name__)
 
 
+def _fetch_from_legacy(market: Market, symbol: str, interval: Interval, candles: int) -> Any:
+    """Fallback fetcher using Binance or Yahoo."""
+    if market == Market.BINANCE:
+        cd = DirectBinanceCandleData()
+        cd.get_candles(symbol, interval.value, candles)
+        return cd
+    elif market == Market.YAHOO:
+        cd = YahooCandleData()
+        cd.get_candles(symbol, interval.value, candles)
+        return cd
+    raise AppError(
+        ErrorCode.INVALID_PARAMS,
+        f"Market '{market.value}' is not supported for data fetching.",
+    )
+
+
 def fetch_market_data(
     market: Market,
     symbol: str,
@@ -25,6 +42,10 @@ def fetch_market_data(
 ) -> Any:
     """Fetch candle data from market source.
 
+    TradingView is tried first when enabled and the bridge is healthy; on
+    failure we fall back to the legacy Binance/Yahoo adapters so the app
+    keeps working even if the bridge is down.
+
     Args:
         market: Market source enum.
         symbol: Uppercase symbol.
@@ -32,25 +53,36 @@ def fetch_market_data(
         candles: Number of candles to fetch.
 
     Returns:
-        Candle data object (YahooCandleData or BinanceCandleData).
+        Candle data object.
 
     Raises:
         AppError: If market data is unavailable.
     """
-    try:
-        if market == Market.BINANCE:
-            cd = DirectBinanceCandleData()
-            cd.get_candles(symbol, interval.value, candles)
-            return cd
-        elif market == Market.YAHOO:
-            cd = YahooCandleData()
-            cd.get_candles(symbol, interval.value, candles)
-            return cd
-        else:
-            raise AppError(
-                ErrorCode.INVALID_PARAMS,
-                f"Market '{market.value}' is not supported for data fetching.",
+    if tv.is_tradingview_enabled() and tv.is_bridge_healthy():
+        try:
+            cd = tv.fetch_market_data(
+                market=market.value,
+                symbol=symbol,
+                interval=interval.value,
+                candles=candles,
             )
+            logger.info(
+                "Fetched %s %s from TradingView (%d candles)",
+                market.value,
+                symbol,
+                len(cd.df),
+            )
+            return cd
+        except Exception as e:
+            logger.warning(
+                "TradingView fetch failed for %s/%s, falling back: %s",
+                market.value,
+                symbol,
+                e,
+            )
+
+    try:
+        return _fetch_from_legacy(market, symbol, interval, candles)
     except AppError:
         raise
     except Exception as e:

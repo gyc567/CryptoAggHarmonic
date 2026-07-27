@@ -18,10 +18,11 @@ import json
 import logging
 import os
 import threading
-import time
 from typing import Any, Optional
 
 import pandas as pd
+
+from app.infra.memory_cache import MemoryCache
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,8 @@ class AnalysisCache:
         )
         self.redis_url = redis_url if redis_url is not None else os.getenv("REDIS_URL", "")
         self._redis: Optional[Any] = None
-        self._memory: dict[str, tuple[float, str]] = {}
-        self._lock = threading.Lock()
+        # Bounded in-memory fallback: 256 entries, same TTL as Redis.
+        self._memory = MemoryCache[str](max_size=256, ttl_seconds=self.ttl_seconds)
         if self.enabled:
             self._connect()
 
@@ -146,26 +147,13 @@ class AnalysisCache:
     def _get_raw(self, key: str) -> Optional[str]:
         if self._redis is not None:
             return self._redis.get(key)
-        with self._lock:
-            item = self._memory.get(key)
-            if item is None:
-                return None
-            expires_at, payload = item
-            if time.time() > expires_at:
-                del self._memory[key]
-                return None
-            return payload
+        return self._memory.get(key)
 
     def _set_raw(self, key: str, payload: str) -> None:
         if self._redis is not None:
             self._redis.setex(key, self.ttl_seconds, payload)
             return
-        with self._lock:
-            # 内存缓存是单进程兜底，粗暴上限防止无限增长
-            if len(self._memory) >= 256:
-                oldest = min(self._memory, key=lambda k: self._memory[k][0])
-                del self._memory[oldest]
-            self._memory[key] = (time.time() + self.ttl_seconds, payload)
+        self._memory.set(key, payload)
 
 
 _default_cache: Optional[AnalysisCache] = None

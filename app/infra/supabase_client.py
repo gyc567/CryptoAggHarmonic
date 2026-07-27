@@ -17,8 +17,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Lazy-loaded clients
-_supabase_client: Optional[Any] = None
+# Lazy-loaded clients keyed by role to avoid anon/service_role cross-over.
+_supabase_clients: Dict[str, Any] = {}
 _db_pool: Optional[Any] = None
 
 
@@ -86,15 +86,18 @@ def get_supabase_client(use_service_role: bool = False) -> Any:
     Returns:
         Supabase client instance.
     """
-    global _supabase_client
-    if _supabase_client is None:
+    global _supabase_clients
+    role = "service_role" if use_service_role else "anon"
+    client = _supabase_clients.get(role)
+    if client is None:
         if _create_supabase_client is None:
             raise RuntimeError("supabase package not installed")
         url = get_supabase_url()
         key = get_supabase_service_key() if use_service_role else get_supabase_anon_key()
-        _supabase_client = _create_supabase_client(url, key)
-        logger.info("Supabase client initialized (service_role=%s)", use_service_role)
-    return _supabase_client
+        client = _create_supabase_client(url, key)
+        _supabase_clients[role] = client
+        logger.info("Supabase client initialized (role=%s)", role)
+    return client
 
 
 def get_db_connection_string() -> str:
@@ -195,20 +198,14 @@ def verify_user_token(token: str) -> Optional[Dict[str, Any]]:
         User dict with id, email, role, status, daily_quota or None if invalid.
     """
     try:
-        # Use anon client to verify token
-        url = get_supabase_url()
-        anon_key = get_supabase_anon_key()
-        if _create_supabase_client is not None:
-            client = _create_supabase_client(url, anon_key)
-        else:
-            from supabase import create_client
-            client = create_client(url, anon_key)
+        # Reuse the anon client to avoid repeated initialization overhead.
+        client = get_supabase_client(use_service_role=False)
 
         user = client.auth.get_user(token)
         if not user or not user.user:
             return None
 
-        # Fetch profile via REST API (RLS will enforce user isolation)
+        # Fetch profile via service-role client (server-side only).
         service_client = get_supabase_client(use_service_role=True)
         profile_result = service_client.table("profiles").select("*").eq("id", user.user.id).single().execute()
 
@@ -233,7 +230,7 @@ def verify_user_token(token: str) -> Optional[Dict[str, Any]]:
             "daily_quota": daily_quota,
         }
     except Exception as e:
-        logger.exception("Token verification failed")
+        logger.warning("Token verification failed: %s", e)
         return None
 
 
@@ -327,27 +324,34 @@ def list_user_analyses(user_id: str, limit: int = 20, offset: int = 0,
         return []
 
 
-def create_analysis_record(user_id: str, data: Dict[str, Any]) -> Optional[str]:
+def create_analysis_record(
+    user_id: str,
+    data: Dict[str, Any],
+    analysis_id: Optional[str] = None,
+) -> Optional[str]:
     """Create analysis record.
 
     Args:
         user_id: User UUID.
         data: Analysis data dict.
+        analysis_id: Optional analysis UUID. If provided it is used as the
+            record primary key, allowing callers to correlate the response ID
+            with the persisted row.
 
     Returns:
         Analysis ID or None.
     """
     try:
         import uuid
-        analysis_id = str(uuid.uuid4())
+        record_id = analysis_id if analysis_id else str(uuid.uuid4())
         record = {
-            "id": analysis_id,
+            "id": record_id,
             "user_id": user_id,
             **data,
         }
         client = get_supabase_client(use_service_role=True)
         client.table("analyses").insert(record).execute()
-        return analysis_id
+        return record_id
     except Exception as e:
         logger.exception("Analysis creation failed")
         return None

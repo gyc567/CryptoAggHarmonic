@@ -35,6 +35,10 @@ class ToolOutput:
     def invalid_input(cls, message: str) -> "ToolOutput":
         return cls(status="invalid_input", error=message)
 
+    @classmethod
+    def timeout(cls, message: str = "工具执行超时") -> "ToolOutput":
+        return cls(status="timeout", error=message, data={"code": "TIMEOUT"})
+
 
 class Tool(ABC):
     """Abstract base class for all vibe tools."""

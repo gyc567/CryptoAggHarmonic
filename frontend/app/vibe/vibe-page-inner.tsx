@@ -10,7 +10,10 @@ export function VibePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading, getToken } = useAuth();
-  const { messages, loading, error, sendMessage, stopRun } = useVibe(getToken);
+  const { messages, loading, error, sendMessage, stopRun } = useVibe({
+    getToken,
+    userId: user?.id,
+  });
   const autoSent = useRef(false);
 
   useEffect(() => {

@@ -90,13 +90,13 @@ class TestEnvironmentFunctions:
 
 
 class TestVerifyUserToken:
-    @patch("app.infra.supabase_client.get_supabase_url")
-    @patch("app.infra.supabase_client.get_supabase_anon_key")
-    @patch("app.infra.supabase_client.get_supabase_client")
-    def test_valid_token(self, mock_get_client, mock_anon_key, mock_url):
-        mock_url.return_value = "https://test.supabase.co"
-        mock_anon_key.return_value = "test-anon"
+    def _client_factory(self, anon_client, service_client):
+        def factory(use_service_role=False):
+            return service_client if use_service_role else anon_client
+        return factory
 
+    @patch("app.infra.supabase_client.get_supabase_client")
+    def test_valid_token(self, mock_get_client):
         mock_user = MagicMock()
         mock_user.user.id = "user-123"
         mock_user.user.email = "test@example.com"
@@ -114,16 +114,8 @@ class TestVerifyUserToken:
         mock_profile_result.data = mock_profile_data
         mock_service_client.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = mock_profile_result
 
-        # get_supabase_client(use_service_role=True) should return mock_service_client
-        mock_get_client.return_value = mock_service_client
-
-        def create_client_side_effect(url, key):
-            if key == "test-anon":
-                return mock_anon_client
-            return mock_service_client
-
-        with patch("app.infra.supabase_client._create_supabase_client", side_effect=create_client_side_effect):
-            result = verify_user_token("valid-token")
+        mock_get_client.side_effect = self._client_factory(mock_anon_client, mock_service_client)
+        result = verify_user_token("valid-token")
 
         assert result is not None
         assert result["id"] == "user-123"
@@ -131,17 +123,13 @@ class TestVerifyUserToken:
         assert result["role"] == "user"
         assert result["daily_quota"] == 5
 
-    @patch("app.infra.supabase_client.get_supabase_url")
-    @patch("app.infra.supabase_client.get_supabase_anon_key")
-    def test_invalid_token(self, mock_anon_key, mock_url):
-        mock_url.return_value = "https://test.supabase.co"
-        mock_anon_key.return_value = "test-anon"
-
+    @patch("app.infra.supabase_client.get_supabase_client")
+    def test_invalid_token(self, mock_get_client):
         mock_anon_client = MagicMock()
         mock_anon_client.auth.get_user.side_effect = Exception("Invalid token")
 
-        with patch("app.infra.supabase_client._create_supabase_client", return_value=mock_anon_client):
-            result = verify_user_token("invalid-token")
+        mock_get_client.side_effect = self._client_factory(mock_anon_client, MagicMock())
+        result = verify_user_token("invalid-token")
 
         assert result is None
 
