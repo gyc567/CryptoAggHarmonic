@@ -4,6 +4,8 @@ from openai import OpenAI
 import json
 import logging
 import os
+import threading
+from contextlib import contextmanager
 from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO)
@@ -11,7 +13,8 @@ logging.basicConfig(level=logging.INFO)
 load_dotenv()
 openai_api_model = os.getenv("OPENAI_API_MODEL")  # Ensure the OpenAI API model is set
 openai_api_base_url = os.getenv("OPENAI_API_BASE_URL")  # Ensure the OpenAI API base URL is set
-logging.info(f"OpenAI - API model: {openai_api_model}, base URL: {openai_api_base_url}")
+openai_request_timeout = int(os.getenv("OPENAI_REQUEST_TIMEOUT", "60"))  # Default 60s timeout
+logging.info(f"OpenAI - API model: {openai_api_model}, base URL: {openai_api_base_url}, timeout: {openai_request_timeout}s")
 
 # Map the function names to the actual functions
 FUNCTION_ROUTER = {
@@ -21,17 +24,22 @@ FUNCTION_ROUTER = {
     "options_volume": whats_options_volume
 }
 
-# Lazy client initialization to avoid import-time errors when key is missing
-_client = None
-
 def _get_client():
+    """Thread-safe lazy client initialization."""
     global _client
     if _client is None:
-        _client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY") or "dummy-key-for-testing",
-            base_url=openai_api_base_url
-        )
+        with _client_lock:
+            if _client is None:  # Double-check after acquiring lock
+                _client = OpenAI(
+                    api_key=os.getenv("OPENAI_API_KEY") or "dummy-key-for-testing",
+                    base_url=openai_api_base_url,
+                    timeout=openai_request_timeout,
+                )
     return _client
+
+
+_client = None
+_client_lock = threading.Lock()
 
 
 def parse_args(string):

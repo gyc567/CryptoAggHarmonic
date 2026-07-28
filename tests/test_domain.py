@@ -327,12 +327,14 @@ class TestValidateInterval:
         assert validate_interval("15m") == Interval.M15
         assert validate_interval("4h") == Interval.H4
         assert validate_interval("1w") == Interval.W1
+        assert validate_interval("1m") == Interval.M1
+        assert validate_interval("5m") == Interval.M5
 
     def test_invalid_interval(self):
         with pytest.raises(AppError) as exc_info:
-            validate_interval("5m")
+            validate_interval("3m")
         assert exc_info.value.code == AppErrorCode.INVALID_PARAMS
-        assert "5m" in exc_info.value.message
+        assert "3m" in exc_info.value.message
 
     def test_empty_interval(self):
         with pytest.raises(AppError) as exc_info:

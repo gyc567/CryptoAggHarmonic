@@ -4,6 +4,41 @@ from typing import Optional
 from app.domain.enums import ErrorCode
 
 
+class SupabaseError(Exception):
+    """Database/Supabase operation error with transient/non-transient classification."""
+
+    def __init__(
+        self,
+        message: str,
+        transient: bool = False,
+        original_error: Optional[Exception] = None,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.transient = (
+            transient  # True for network/timeout errors, False for validation/data errors
+        )
+        self.original_error = original_error
+
+    def __repr__(self) -> str:
+        return f"SupabaseError({self.message!r}, transient={self.transient})"
+
+
+def _is_transient_error(error: Exception) -> bool:
+    """Determine if an error is likely transient (network/timeout) or permanent."""
+    error_str = str(error).lower()
+    transient_keywords = [
+        "timeout",
+        "connection",
+        "network",
+        "temporarily unavailable",
+        "503",
+        "502",
+        "504",
+    ]
+    return any(kw in error_str for kw in transient_keywords)
+
+
 class AppError(Exception):
     """Application-level error with structured code and message."""
 

@@ -4,12 +4,15 @@ from enum import Enum
 
 class Market(str, Enum):
     """Supported market data sources."""
-    BINANCE = "binance"
+    BINANCE = "binance"    # 现货
+    FUTURES = "futures"    # USDT-M 永续合约
     YAHOO = "yahoo"
 
 
 class Interval(str, Enum):
     """Supported candle intervals."""
+    M1 = "1m"
+    M5 = "5m"
     M15 = "15m"
     H1 = "1h"
     H4 = "4h"

@@ -6,7 +6,7 @@ from app.domain.enums import Market, Interval, AnalysisType, Status, ErrorCode
 
 class AnalyzeRequest(BaseModel):
     """Structured analysis request."""
-    market: Market
+    market: Market = Market.FUTURES  # 默认永续合约
     symbol: str = Field(..., min_length=1, max_length=20)
     interval: Interval
     analysis_type: AnalysisType = AnalysisType.FORMING
@@ -114,6 +114,7 @@ class AnalysisData(BaseModel):
     interpretation: Interpretation = Field(default_factory=Interpretation)
     chart: ChartMeta = Field(default_factory=ChartMeta)
     timing: TimingInfo = Field(default_factory=TimingInfo)
+    binance_ws_url: Optional[str] = None  # 客户端直连 Binance WS（仅 FUTURES）
 
 
 class SuccessResponse(BaseModel):
