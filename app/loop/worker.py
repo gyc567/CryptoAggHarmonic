@@ -86,7 +86,6 @@ def run_candidate(
     lines = [f"{k}: {_yaml_scalar(v)}" for k, v in payload.items()]
     tuning_path.write_text("\n".join(lines) + "\n")
 
-    metrics_path = run_dir / "metrics.json"
     log_path = run_dir / "backtest.log"
 
     cmd = [
@@ -121,6 +120,12 @@ def run_candidate(
             elapsed_seconds=time.time() - started,
             error=f"subprocess timed out after {timeout_seconds}s: {exc}",
         )
+
+    # Resolve the metrics file AFTER the subprocess ran — the v3 harness
+    # writes ``summary.json``; some earlier harnesses wrote ``metrics.json``.
+    metrics_path = run_dir / "summary.json"
+    if not metrics_path.exists():
+        metrics_path = run_dir / "metrics.json"
 
     if proc.returncode != 0 or not metrics_path.exists():
         return CandidateResult(
