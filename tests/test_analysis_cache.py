@@ -30,6 +30,9 @@ def _make_candle_data(closes=(100.0, 101.0, 102.0), n=None):
             "volume": [1.0] * len(close_series),
         }
     )
+    # close_time is required by the v2 staleness filter. Use a stable epoch
+    # series aligned with the dts column (1d granularity).
+    df["close_time"] = (df["dts"].astype("int64") // 10**9).astype("int64")
     return SimpleNamespace(df=df, symbol="BTCUSDT", interval="1d")
 
 

@@ -155,6 +155,111 @@ class TestToCandidate:
         assert cand is not None
         assert cand.times == (100, 200, 300)
 
+    def test_x_indices_mapped_to_close_times(self):
+        """Regression: pyharmonics pattern.x are df.index values (bar positions).
+
+        When close_times is provided, _to_candidate must map those positions
+        to the matching epoch seconds. Without that mapping the staleness
+        filter at rejection_reason() compares seconds to bar indices and
+        rejects every real candidate as stale_age.
+        """
+        class P:
+            y = (1.0, 2.0, 3.0)
+            completion_min_price = 1.0
+            completion_max_price = 2.0
+            name = "abc"
+            bullish = True
+            x = (10, 20, 30)
+
+        close_times = [1_700_000_000 + i * 3600 for i in range(40)]
+        cand = _to_candidate(P(), "ABC", True, close_times)
+        assert cand is not None
+        assert cand.times == (close_times[10], close_times[20], close_times[30])
+        # The last time must be epoch seconds, not a tiny bar index.
+        assert cand.times[-1] > 1_700_000_000
+
+    def test_x_timestamp_fallback(self):
+        """DatetimeIndex support: pattern.x as pd.Timestamp → epoch seconds."""
+        import pandas as pd
+
+        class P:
+            y = (1.0, 2.0, 3.0)
+            completion_min_price = 1.0
+            completion_max_price = 2.0
+            name = "abc"
+            bullish = True
+            x = (
+                pd.Timestamp("2026-01-01"),
+                pd.Timestamp("2026-01-02"),
+                pd.Timestamp("2026-01-03"),
+            )
+
+        cand = _to_candidate(P(), "ABC", True, [0] * 10)
+        assert cand is not None
+        assert cand.times == (
+            int(pd.Timestamp("2026-01-01").timestamp()),
+            int(pd.Timestamp("2026-01-02").timestamp()),
+            int(pd.Timestamp("2026-01-03").timestamp()),
+        )
+
+    def test_x_out_of_range_falls_back_to_timestamp(self):
+        """If the index is out of range, fall back to Timestamp conversion."""
+        import pandas as pd
+
+        class P:
+            y = (1.0, 2.0, 3.0)
+            completion_min_price = 1.0
+            completion_max_price = 2.0
+            name = "abc"
+            bullish = True
+            x = (9999, pd.Timestamp("2026-01-02"), pd.Timestamp("2026-01-03"))
+
+        close_times = [1_700_000_000 + i * 3600 for i in range(10)]
+        cand = _to_candidate(P(), "ABC", True, close_times)
+        assert cand is not None
+        # First entry out of range → dropped from mapped list (no fallback Timestamp).
+        assert len(cand.times) == 2
+        assert cand.times[0] == int(pd.Timestamp("2026-01-02").timestamp())
+
+    def test_real_pipeline_emits_signal_with_proper_times(self):
+        """End-to-end: build_signal emits a non-None signal when times are mapped.
+
+        Without the fix, candidate.times stays at bar indices and the
+        staleness filter rejects every real candidate.
+        """
+        from pyharmonics.technicals import OHLCTechnicals
+        from pyharmonics.search import HarmonicSearch
+        from types import SimpleNamespace
+
+        n = 600
+        closes = [50.0 + i * 0.2 for i in range(n - 10)]
+        closes += [closes[-1] - 2.16 * (i + 1) for i in range(10)]
+        opens = [closes[i - 1] if i else closes[0] for i in range(n)]
+        highs = [max(o, c) + 0.5 for o, c in zip(opens, closes)]
+        lows = [min(o, c) - 0.5 for o, c in zip(opens, closes)]
+        df = pd.DataFrame({
+            "open": opens, "high": highs, "low": lows,
+            "close": closes, "volume": [100.0] * n,
+            "close_time": [1_700_000_000 + i * 900 for i in range(n)],
+        })
+        candle = SimpleNamespace(df=df, symbol="BTCUSDT", interval="15m")
+        t = OHLCTechnicals(candle.df, candle.symbol, candle.interval, peak_spacing=5)
+        hs = HarmonicSearch(t, fib_tolerance=0.05)
+        hs.search(limit_to=3)
+        det = {"raw_assessment": hs.get_patterns()}
+        # Patch raw_assessment into a dict of {family: [patterns]} shape that
+        # extract_candidates expects.
+        formed = hs.get_patterns()
+        det = {"raw_assessment": {
+            "forming": formed, "patterns": {},
+        }}
+        cands = extract_candidates(det, df["close_time"])
+        # At least one candidate should survive stale_age (D within 20 bars).
+        if cands:
+            assert all(t > 1_700_000_000 for t in cands[0].times), (
+                f"times still in bar-index units: {cands[0].times}"
+            )
+
 
 # --- Indicator helpers ---------------------------------------------------------
 

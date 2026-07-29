@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from typing import Any, Callable, List, NamedTuple, Optional
+from typing import Any, Callable, List, NamedTuple, Optional, Sequence
 
 import pandas as pd
 
@@ -108,12 +108,21 @@ def _pattern_base_score(pattern_name: str) -> int:
     return 0
 
 
-def extract_candidates(detection_result: dict) -> list[Candidate]:
+def extract_candidates(
+    detection_result: dict,
+    close_times: Optional[Sequence] = None,
+) -> list[Candidate]:
     """Extract serializable candidates from a pyharmonics detection result.
 
     Reads the raw assessment dicts (formed + forming patterns) stored by the
     adapter under ``raw_assessment``. Tolerates missing/exotic pattern objects
     by skipping anything without numeric points and PRZ bounds.
+
+    ``close_times``: optional sequence aligned with the candle dataframe rows.
+    When provided, pattern ``x`` indices are mapped to the matching close_time
+    so the staleness filter (``rejection_reason``) compares like-for-like units.
+    Falls back to ``int(t)`` when not provided (used by unit tests that pass
+    hand-built candidates with synthetic times).
     """
     assessment = detection_result.get("raw_assessment") or {}
     candidates: list[Candidate] = []
@@ -121,13 +130,18 @@ def extract_candidates(detection_result: dict) -> list[Candidate]:
         group = assessment.get(key) or {}
         for family, patterns in group.items():
             for pattern in patterns or []:
-                candidate = _to_candidate(pattern, family, formed)
+                candidate = _to_candidate(pattern, family, formed, close_times)
                 if candidate is not None:
                     candidates.append(candidate)
     return candidates
 
 
-def _to_candidate(pattern: Any, family: str, formed: bool) -> Optional[Candidate]:
+def _to_candidate(
+    pattern: Any,
+    family: str,
+    formed: bool,
+    close_times: Optional[Sequence] = None,
+) -> Optional[Candidate]:
     try:
         points = tuple(float(p) for p in pattern.y)
         c_min = float(pattern.completion_min_price)
@@ -138,10 +152,7 @@ def _to_candidate(pattern: Any, family: str, formed: bool) -> Optional[Candidate
         return None
     if len(points) < 3 or c_min <= 0 or c_max <= 0:
         return None
-    try:
-        times = tuple(int(t) for t in (getattr(pattern, "x", None) or ()))
-    except (TypeError, ValueError):
-        times = ()
+    times, indices = _extract_times(pattern, close_times)
     return Candidate(
         family=family,
         name=name,
@@ -151,7 +162,77 @@ def _to_candidate(pattern: Any, family: str, formed: bool) -> Optional[Candidate
         completion_min=c_min,
         completion_max=c_max,
         times=times,
+        indices=indices,
     )
+
+
+def _extract_times(
+    pattern: Any, close_times: Optional[Sequence]
+) -> tuple[tuple, tuple]:
+    """Map pattern.x to (epoch_seconds, bar_indices) tuples.
+
+    ``pattern.x`` is ``df.index[x]`` where ``x`` is the peak-index list returned
+    by pyharmonics (see ``pyharmonics.technicals.OHLCTechnicals.get_index_x``).
+    When the source df carries a ``RangeIndex`` the values are integer bar
+    positions; with a ``DatetimeIndex`` they are ``pd.Timestamp`` instances.
+    The downstream staleness filter compares ``candidate.times[-1]`` against
+    the df ``close_time`` column (epoch seconds), while the discipline filter
+    needs ``candidate.indices[-2]`` as a bar position. We return both.
+
+    Returns ``(times, indices)`` where ``times`` is a tuple of epoch seconds
+    aligned with the candle close_time column (when provided), and ``indices``
+    is a tuple of integer bar positions suitable for ``df.iloc[idx]`` slicing.
+    """
+    raw_x = getattr(pattern, "x", None) or ()
+    try:
+        raw_list = list(raw_x)
+    except TypeError:
+        return (), ()
+    if not raw_list:
+        return (), ()
+
+    # Always collect integer bar indices, even when close_times is None.
+    indices_list: List[int] = []
+    for t in raw_list:
+        try:
+            indices_list.append(int(t))
+        except (TypeError, ValueError):
+            continue
+    indices_tuple = tuple(indices_list)
+
+    if close_times is None:
+        # Legacy: times are an int cast of pattern.x — same value as indices
+        # when the df has a RangeIndex, or nanosecond epoch when DatetimeIndex.
+        try:
+            return tuple(int(t) for t in raw_list), indices_tuple
+        except (TypeError, ValueError):
+            return (), indices_tuple
+
+    mapped: List[int] = []
+    for t in raw_list:
+        # Prefer the integer-position path: pattern.x holds df.index[x]
+        # which is the integer position when the df has a RangeIndex.
+        pos: Optional[int] = None
+        try:
+            pos = int(t)
+        except (TypeError, ValueError):
+            pos = None
+        if pos is not None and 0 <= pos < len(close_times):
+            try:
+                mapped.append(int(close_times[pos]))
+                continue
+            except (TypeError, ValueError):
+                pass
+        # Fallback: only when t is timestamp-like, not a bare integer.
+        if pos is not None:
+            continue
+        try:
+            ts = pd.Timestamp(t)
+            if pd.notna(ts):
+                mapped.append(int(ts.timestamp()))
+        except (TypeError, ValueError):
+            continue
+    return tuple(mapped), indices_tuple
 
 
 def compute_atr(df: pd.DataFrame, window: int = ATR_WINDOW) -> float:

@@ -127,7 +127,13 @@ def evaluate(
     """
     n = len(df)
     if c_idx is None:
-        if candidate.times and len(candidate.times) >= 2:
+        # Prefer the new ``indices`` field (bar positions in the source df).
+        # Fall back to ``times[-2]`` for legacy candidates that pre-date the
+        # indices split. ``times[-2]`` may still be epoch seconds for newer
+        # candidates so this fallback is no longer reliable.
+        if getattr(candidate, "indices", None) and len(candidate.indices) >= 2:
+            c_idx = int(candidate.indices[-2])
+        elif candidate.times and len(candidate.times) >= 2:
             c_idx = int(candidate.times[-2])
         else:
             c_idx = 0

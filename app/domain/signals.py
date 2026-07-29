@@ -61,7 +61,8 @@ class Candidate:
     points: tuple          # price points (X,A,B,C,D) / (A,B,C,D) / (A,B,C)
     completion_min: float  # PRZ lower bound
     completion_max: float  # PRZ upper bound
-    times: tuple = ()      # candle close_times of the points (D is last)
+    times: tuple = ()      # candle close_times (epoch seconds) of the points (D is last)
+    indices: tuple = ()    # bar positions of the points in the source df (D is last)
 
     @property
     def direction(self) -> str:

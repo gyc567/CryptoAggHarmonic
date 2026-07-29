@@ -142,7 +142,10 @@ class AnalysisOrchestrator:
         logged and results in no signal attached.
         """
         try:
-            candidates = extract_candidates(detection_result)
+            candidates = extract_candidates(
+                detection_result,
+                candle_data.df["close_time"],
+            )
             if not candidates:
                 return None
 
@@ -160,7 +163,9 @@ class AnalysisOrchestrator:
                         percent_complete=percent_complete,
                         analysis_type="forming",
                     )
-                    sub_candidates = extract_candidates(det)
+                    sub_candidates = extract_candidates(
+                        det, slice_df["close_time"],
+                    )
                     return sub_candidates[0].name if sub_candidates else None
                 except Exception:
                     return None
@@ -198,7 +203,9 @@ class AnalysisOrchestrator:
            row closest to the PRZ and narrowest comes first.
         """
         try:
-            candidates = extract_candidates(detection_result)
+            candidates = extract_candidates(
+                detection_result, candle_data.df["close_time"],
+            )
             df = candle_data.df
             current_price = float(df["close"].iloc[-1])
             out: List[CandidateWithMetrics] = []
