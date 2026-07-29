@@ -1,0 +1,16 @@
+# Commits that should be ignored by git blame.
+# Apply locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (No leading space; comment lines start with #.)
+
+# 2026-07-29 bulk black reformat across app/, tests/, and frontend/.
+# 136 files touched, ~6k lines moved. Use this to recover original authorship.
+6f1b9afc3fd0738378dc5b1f9e87b8dfcc47557d
+
+# 2026-07-29 add ruff + black --check CI gate + pin dev tooling versions.
+# Reformats a handful of files at the formatting surface.
+9330e272696330c376acd8e267ebe38b1940f249
+
+# 2026-07-29 repair Annotated[Optional[X], ...] syntax black mangled.
+# Tiny scope, but the rewrites diverge enough from original to warrant it.
+960877d95f63a0904bdfb0cffe7beb182aa62e4d
