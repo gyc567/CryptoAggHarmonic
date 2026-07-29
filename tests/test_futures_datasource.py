@@ -1,6 +1,8 @@
 """Phase 1: 独立验证 Binance Futures REST 接口连通性."""
-import pytest
+
 import time
+
+import pytest
 
 
 class TestFuturesDataSource:
@@ -25,8 +27,7 @@ class TestFuturesDataSource:
         # K线应按时间升序
         open_times = df["open_time"].tolist()
         for i in range(1, len(open_times)):
-            assert open_times[i] > open_times[i - 1], \
-                f"Candle {i} time should be > candle {i-1} time"
+            assert open_times[i] > open_times[i - 1], f"Candle {i} time should be > candle {i-1} time"
 
     def test_get_candles_latest_close_time(self):
         """最新K线收盘时间合理（接近当前时间）"""
@@ -38,8 +39,7 @@ class TestFuturesDataSource:
         assert close_time is not None, "Should return close time"
         now_ms = int(time.time() * 1000)
         # 1m K线关闭时间应在当前时间前后 2min 内
-        assert abs(now_ms - close_time) < 120_000, \
-            f"Close time {close_time} differs too much from now {now_ms}"
+        assert abs(now_ms - close_time) < 120_000, f"Close time {close_time} differs too much from now {now_ms}"
 
     def test_websocket_url_format(self):
         """WebSocket URL 格式正确"""
@@ -71,7 +71,7 @@ class TestFuturesDataSource:
         from app.infra.futures_data_source import FuturesDataSource
 
         source = FuturesDataSource("INVALIDPAIR", "1m")
-        with pytest.raises(Exception):  # requests.HTTPError
+        with pytest.raises((RuntimeError, ValueError)):
             source.get_candles(limit=1)
 
     @pytest.mark.parametrize("interval", ["1m", "5m", "15m", "1h", "4h", "1d"])
@@ -86,10 +86,8 @@ class TestFuturesDataSource:
         # 验证时间间隔合理
         if len(df) >= 2:
             diff = df["open_time"].iloc[1] - df["open_time"].iloc[0]
-            expected = {"1m": 60_000, "5m": 300_000, "15m": 900_000,
-                        "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000}
-            assert diff == expected[interval], \
-                f"Interval {interval}: expected gap {expected[interval]}, got {diff}"
+            expected = {"1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000}
+            assert diff == expected[interval], f"Interval {interval}: expected gap {expected[interval]}, got {diff}"
 
     def test_interval_case_insensitive(self):
         """interval 大小写不敏感"""
@@ -138,5 +136,4 @@ class TestFuturesDataSource:
 
         source = FuturesDataSource("BTCUSDT", "1m")
         data = source.get_candles(limit=5)
-        assert data.df.index.name == "dts" or "dts" in data.df.columns, \
-            "DataFrame should have dts index or column"
+        assert data.df.index.name == "dts" or "dts" in data.df.columns, "DataFrame should have dts index or column"

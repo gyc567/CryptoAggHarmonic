@@ -16,11 +16,13 @@ unit-tested in isolation:
     * :func:`rank_signals`    - pick the strongest signal from a list
     * :func:`apply_stability` - A/B-only multi-window re-detection guard
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Sequence
 from dataclasses import replace
-from typing import Any, Callable, List, NamedTuple, Optional, Sequence
+from typing import Any, NamedTuple, Optional
 
 import pandas as pd
 from icontract import require
@@ -115,8 +117,8 @@ def extract_candidates(
     Falls back to ``int(t)`` when not provided (used by unit tests that pass
     hand-built candidates with synthetic times).
     """
-    @require(lambda detection_result: isinstance(detection_result, dict),
-             "detection_result must be a dict")
+
+    @require(lambda detection_result: isinstance(detection_result, dict), "detection_result must be a dict")
     def _check_inputs(**_kwargs) -> None:
         return None
 
@@ -139,7 +141,7 @@ def _to_candidate(
     family: str,
     formed: bool,
     close_times: Optional[Sequence] = None,
-) -> Optional[Candidate]:
+) -> Candidate | None:
     try:
         points = tuple(float(p) for p in pattern.y)
         c_min = float(pattern.completion_min_price)
@@ -164,9 +166,7 @@ def _to_candidate(
     )
 
 
-def _extract_times(
-    pattern: Any, close_times: Optional[Sequence]
-) -> tuple[tuple, tuple]:
+def _extract_times(pattern: Any, close_times: Optional[Sequence]) -> tuple[tuple, tuple]:
     """Map pattern.x to (epoch_seconds, bar_indices) tuples.
 
     ``pattern.x`` is ``df.index[x]`` where ``x`` is the peak-index list returned
@@ -190,7 +190,7 @@ def _extract_times(
         return (), ()
 
     # Always collect integer bar indices, even when close_times is None.
-    indices_list: List[int] = []
+    indices_list: list[int] = []
     for t in raw_list:
         try:
             indices_list.append(int(t))
@@ -206,7 +206,7 @@ def _extract_times(
         except (TypeError, ValueError):
             return (), indices_tuple
 
-    mapped: List[int] = []
+    mapped: list[int] = []
     for t in raw_list:
         # Prefer the integer-position path: pattern.x holds df.index[x]
         # which is the integer position when the df has a RangeIndex.
@@ -239,10 +239,10 @@ def compute_atr(df: pd.DataFrame, window: int = ATR_WINDOW) -> float:
     A long lookback desensitizes the value to a recent crash/candle burst,
     which would otherwise inflate every ATR-derived buffer.
     """
+
     @require(lambda df: len(df) >= 2, "df must have at least 2 bars")
     @require(lambda window: window >= 1, "window must be >= 1")
-    @require(lambda df: {"high", "low", "close"}.issubset(df.columns),
-             "df must contain high/low/close columns")
+    @require(lambda df: {"high", "low", "close"}.issubset(df.columns), "df must contain high/low/close columns")
     def _check_inputs(**_kwargs) -> None:
         return None
 
@@ -263,6 +263,7 @@ def compute_atr(df: pd.DataFrame, window: int = ATR_WINDOW) -> float:
 
 def compute_rsi(closes: pd.Series, window: int = RSI_WINDOW) -> float:
     """Wilder RSI of the latest close."""
+
     @require(lambda window: window >= 1, "window must be >= 1")
     @require(lambda closes: len(closes) >= 0, "closes must be a pd.Series")
     def _check(**_kwargs) -> None:
@@ -283,8 +284,8 @@ def compute_rsi(closes: pd.Series, window: int = RSI_WINDOW) -> float:
 
 def htf_trend(df: pd.DataFrame, interval: str) -> str:
     """Trend on the resampled higher timeframe via EMA21 vs EMA55."""
-    @require(lambda interval: isinstance(interval, str) and len(interval) > 0,
-             "interval must be a non-empty string")
+
+    @require(lambda interval: isinstance(interval, str) and len(interval) > 0, "interval must be a non-empty string")
     def _check(**_kwargs) -> None:
         return None
 
@@ -307,7 +308,6 @@ def htf_trend(df: pd.DataFrame, interval: str) -> str:
 
 def _is_reversal_candle(row: pd.Series, bullish: bool) -> bool:
     """Hammer/engulfing-style rejection candle at the PRZ."""
-    body = abs(row["close"] - row["open"])
     rng = row["high"] - row["low"]
     if rng <= 0:
         return False
@@ -329,22 +329,17 @@ def confluence_score(
 ) -> tuple:
     """Weighted confluence: price action 25, HTF 25, RSI 15, structure 15,
     MACD 10, funding 10 (neutral without futures data)."""
+
     @require(lambda atr: atr >= 0, "atr must be non-negative")
-    @require(lambda rsi: 0.0 <= rsi <= 100.0,
-             "rsi must be in [0, 100]")
-    @require(lambda trend: trend in ("bullish", "bearish", "unknown"),
-             "trend must be one of bullish/bearish/unknown")
-    @require(lambda pa_scale: 0.0 <= pa_scale <= 2.0,
-             "pa_scale must be in [0, 2]")
-    @require(lambda df: "close" in df.columns and "volume" in df.columns,
-             "df must contain close and volume columns")
-    @require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0,
-             "candidate PRZ bounds must be positive")
+    @require(lambda rsi: 0.0 <= rsi <= 100.0, "rsi must be in [0, 100]")
+    @require(lambda trend: trend in ("bullish", "bearish", "unknown"), "trend must be one of bullish/bearish/unknown")
+    @require(lambda pa_scale: 0.0 <= pa_scale <= 2.0, "pa_scale must be in [0, 2]")
+    @require(lambda df: "close" in df.columns and "volume" in df.columns, "df must contain close and volume columns")
+    @require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0, "candidate PRZ bounds must be positive")
     def _check(**_kwargs) -> None:
         return None
 
-    _check(df=df, candidate=candidate, atr=atr, rsi=rsi, trend=trend,
-           pa_scale=pa_scale)
+    _check(df=df, candidate=candidate, atr=atr, rsi=rsi, trend=trend, pa_scale=pa_scale)
 
     factors: dict[str, float] = {}
     last = df.iloc[-1]
@@ -434,7 +429,7 @@ def _prepare_score_context(
     df: pd.DataFrame,
     interval: str,
     divergences: Optional[dict],
-) -> Optional[_ScoreContext]:
+) -> _ScoreContext | None:
     """Compute shared data-level metrics. Returns None if a hard gate fires.
 
     Volume authenticity is computed here but the GATE is per-candidate
@@ -480,7 +475,7 @@ def score_candidate(
     ctx: _ScoreContext,
     candidate: Candidate,
     stop_level: str = "standard",
-) -> Optional[Signal]:
+) -> Signal | None:
     """Score a single surviving candidate.
 
     Runs every per-candidate gate in order: volume authenticity (formed vs
@@ -494,10 +489,9 @@ def score_candidate(
     the pattern family, and the grade gate additionally receives
     ``width_pct`` so a wide PRZ can never reach A even with a perfect score.
     """
-    @require(lambda stop_level: stop_level in ("standard", "tight", "wide"),
-             "stop_level must be one of standard/tight/wide")
-    @require(lambda ctx: ctx.atr > 0,
-             "ctx.atr must be positive (set by _prepare_score_context)")
+
+    @require(lambda stop_level: stop_level in ("standard", "tight", "wide"), "stop_level must be one of standard/tight/wide")
+    @require(lambda ctx: ctx.atr > 0, "ctx.atr must be positive (set by _prepare_score_context)")
     def _check(**_kwargs) -> None:
         return None
 
@@ -514,7 +508,8 @@ def score_candidate(
     if ctx.volume_authenticity < threshold:
         logger.debug(
             "Volume authenticity %d < %d for %s pattern, vetoing",
-            ctx.volume_authenticity, threshold,
+            ctx.volume_authenticity,
+            threshold,
             "formed" if candidate.formed else "forming",
         )
         return None
@@ -523,7 +518,10 @@ def score_candidate(
 
     # Quant-trap veto (false breakouts, stop hunts, PRZ failure...).
     trap_score, trap_veto, _reasons = quant_trap_risk(
-        df, candidate.prz_low, candidate.prz_high, candidate.bullish,
+        df,
+        candidate.prz_low,
+        candidate.prz_high,
+        candidate.bullish,
     )
     if trap_veto:
         return None
@@ -533,21 +531,24 @@ def score_candidate(
         return None
 
     swept = is_swept(
-        float(last["low"]), float(last["high"]), ctx.price,
-        candidate.prz_low, candidate.prz_high,
+        float(last["low"]),
+        float(last["high"]),
+        ctx.price,
+        candidate.prz_low,
+        candidate.prz_high,
     )
     status = prz_state(ctx.price, candidate.prz_low, candidate.prz_high, swept)
     if status in ("in_prz", "swept") and _is_reversal_candle(last, candidate.bullish):
         status = "confirmed"
 
-    entry = ctx.price if status != "approaching" else (
-        candidate.prz_high if candidate.bullish else candidate.prz_low
-    )
+    entry = ctx.price if status != "approaching" else (candidate.prz_high if candidate.bullish else candidate.prz_low)
     targets = compute_targets(candidate, entry)
 
     # Direction geometry invariant (defense in depth).
     if not direction_invariant_ok(
-        candidate.direction, entry, stop,
+        candidate.direction,
+        entry,
+        stop,
         [t.price for t in targets],
     ):
         return None
@@ -556,8 +557,13 @@ def score_candidate(
     rr2 = net_rr(entry, stop, targets[1].price)
 
     score, factors = confluence_score(
-        df, candidate, atr, ctx.rsi, ctx.trend,
-        ctx.divergences, ctx.pa_scale,
+        df,
+        candidate,
+        atr,
+        ctx.rsi,
+        ctx.trend,
+        ctx.divergences,
+        ctx.pa_scale,
     )
     # Q4 pattern-reliability bump (Gartley +5, Crab -3, ...).
     score += _pattern_base_score(candidate.name)
@@ -565,22 +571,20 @@ def score_candidate(
     # Q6 PRZ width gate input. Computed here so grade() can apply its 4% cap
     # without each caller having to remember to thread the value through.
     prz_mid = (candidate.prz_low + candidate.prz_high) / 2
-    width_pct = (
-        (candidate.prz_high - candidate.prz_low) / prz_mid
-        if prz_mid > 0 else 0.0
-    )
+    width_pct = (candidate.prz_high - candidate.prz_low) / prz_mid if prz_mid > 0 else 0.0
 
     bullish_trend = ctx.trend == "bullish"
     bearish_trend = ctx.trend == "bearish"
-    htf_aligned = (candidate.bullish and bullish_trend) or (
-        not candidate.bullish and bearish_trend
-    )
-    htf_counter = (candidate.bullish and bearish_trend) or (
-        not candidate.bullish and bullish_trend
-    )
+    htf_aligned = (candidate.bullish and bullish_trend) or (not candidate.bullish and bearish_trend)
+    htf_counter = (candidate.bullish and bearish_trend) or (not candidate.bullish and bullish_trend)
     g = grade(
-        score, rr1, rr2, htf_aligned, htf_counter,
-        a_min=ctx.a_min, width_pct=width_pct,
+        score,
+        rr1,
+        rr2,
+        htf_aligned,
+        htf_counter,
+        a_min=ctx.a_min,
+        width_pct=width_pct,
     )
     if g is None:
         return None
@@ -616,7 +620,7 @@ def score_candidate(
     return replace(signal, reasoning=reasoning_from_signal(signal))
 
 
-def rank_signals(signals: List[Signal]) -> Optional[Signal]:
+def rank_signals(signals: list[Signal]) -> Signal | None:
     """Return the strongest signal by ``(grade, score, formed)``.
 
     Ties on grade break by raw confluence score; final tie-break is the
@@ -636,19 +640,15 @@ def rank_signals(signals: List[Signal]) -> Optional[Signal]:
 def apply_stability(
     df: pd.DataFrame,
     best: Optional[Signal],
-    stability_detector: Optional[Callable[[pd.DataFrame], Optional[str]]],
-) -> Optional[Signal]:
+    stability_detector: Callable[[pd.DataFrame], str | None] | None,
+) -> Signal | None:
     """Re-detect the pattern on two shifted sub-windows; veto if it disappears.
 
     This is the only stage that costs an extra pattern-detection pass;
     we only run it for A/B-grade signals (the only grades worth the
     latency). Detector failures are treated as unverifiable -> pass.
     """
-    if (
-        best is None
-        or best.grade not in ("A", "B")
-        or stability_detector is None
-    ):
+    if best is None or best.grade not in ("A", "B") or stability_detector is None:
         return best
 
     try:
@@ -676,9 +676,9 @@ def build_signal(
     interval: str,
     candidates: list[Candidate],
     divergences: Optional[dict] = None,
-    stability_detector: Optional[Callable[[pd.DataFrame], Optional[str]]] = None,
+    stability_detector: Callable[[pd.DataFrame], str | None] | None = None,
     stop_level: str = "standard",
-) -> Optional[Signal]:
+) -> Signal | None:
     """Build the best executable signal from candidates, or None.
 
     Public façade kept for backwards compatibility. Implementation now
@@ -689,10 +689,9 @@ def build_signal(
     a dataframe slice and returning the best pattern name (or None). Used for
     the multi-window stability check on A/B-grade signals.
     """
-    @require(lambda interval: isinstance(interval, str) and len(interval) > 0,
-             "interval must be a non-empty string")
-    @require(lambda stop_level: stop_level in ("standard", "tight", "wide"),
-             "stop_level must be one of standard/tight/wide")
+
+    @require(lambda interval: isinstance(interval, str) and len(interval) > 0, "interval must be a non-empty string")
+    @require(lambda stop_level: stop_level in ("standard", "tight", "wide"), "stop_level must be one of standard/tight/wide")
     def _check_inputs(**_kwargs) -> None:
         return None
 
@@ -708,12 +707,16 @@ def build_signal(
     # --- Candidate freshness filter ---------------------------------------
     close_times = df["close_time"] if "close_time" in df.columns else None
     valid, rejected = filter_candidates(
-        candidates, ctx.price, ctx.atr, close_times,
+        candidates,
+        ctx.price,
+        ctx.atr,
+        close_times,
     )
     if rejected:
         logger.debug(
             "Filtered %d stale/invalid candidates: %s",
-            len(rejected), [r.reason for r in rejected],
+            len(rejected),
+            [r.reason for r in rejected],
         )
 
     # --- Score surviving candidates ----------------------------------------

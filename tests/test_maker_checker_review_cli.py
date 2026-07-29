@@ -1,4 +1,5 @@
 """Tests for the :mod:`app.loop.maker_checker.review` CLI."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,13 +23,16 @@ class TestMainList:
         from app.loop.maker_checker.review import append_decision
 
         for i in range(3):
-            append_decision(tmp_path, HumanReviewDecision(
-                candidate_id=f"c{i}",
-                decision="accept",
-                reviewer="alice",
-                timestamp=f"2026-07-29T00:00:0{i}Z",
-                notes=f"note-{i}" if i == 0 else "",
-            ))
+            append_decision(
+                tmp_path,
+                HumanReviewDecision(
+                    candidate_id=f"c{i}",
+                    decision="accept",
+                    reviewer="alice",
+                    timestamp=f"2026-07-29T00:00:0{i}Z",
+                    notes=f"note-{i}" if i == 0 else "",
+                ),
+            )
         code = main(["--state-root", str(tmp_path), "list"])
         assert code == 0
         out = capsys.readouterr().out
@@ -41,12 +45,15 @@ class TestMainList:
         from app.loop.maker_checker.review import append_decision
 
         for i in range(5):
-            append_decision(tmp_path, HumanReviewDecision(
-                candidate_id=f"c{i}",
-                decision="accept",
-                reviewer="alice",
-                timestamp="t",
-            ))
+            append_decision(
+                tmp_path,
+                HumanReviewDecision(
+                    candidate_id=f"c{i}",
+                    decision="accept",
+                    reviewer="alice",
+                    timestamp="t",
+                ),
+            )
         main(["--state-root", str(tmp_path), "list", "--limit", "2"])
         out = capsys.readouterr().out
         # Only the last two: c3, c4.
@@ -56,14 +63,21 @@ class TestMainList:
 
 class TestMainRecord:
     def test_records_decision(self, tmp_path: Path, capsys) -> None:
-        code = main([
-            "--state-root", str(tmp_path),
-            "--reviewer", "bob",
-            "record",
-            "--candidate-id", "xyz",
-            "--decision", "reject",
-            "--notes", "looks bad",
-        ])
+        code = main(
+            [
+                "--state-root",
+                str(tmp_path),
+                "--reviewer",
+                "bob",
+                "record",
+                "--candidate-id",
+                "xyz",
+                "--decision",
+                "reject",
+                "--notes",
+                "looks bad",
+            ]
+        )
         assert code == 0
         out = capsys.readouterr().out
         assert "recorded" in out

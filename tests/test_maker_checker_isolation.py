@@ -2,6 +2,7 @@
 
 Covers: stripping rules per mode, salt hashing, leakage measurement.
 """
+
 from __future__ import annotations
 
 import pytest

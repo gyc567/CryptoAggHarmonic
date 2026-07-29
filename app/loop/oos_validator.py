@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
 """OOS (out-of-sample) validator.
 
 For a candidate to be admitted to the Pareto front we require that its
@@ -16,10 +21,6 @@ This is intentionally a separate module from :mod:`app.loop.checker`
 (which reviews an *individual* candidate). The OOS check operates on
 the *distribution* of metrics across quarters.
 """
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -70,13 +71,8 @@ def oos_validate(
     whose OOS collapses to zero or below gets 0.
     """
     reasons: list[str] = []
-    in_sample_sharpes = [
-        m.get("sharpe") or 0.0 for m in in_sample_metrics
-    ]
-    in_sample_mean = (
-        sum(in_sample_sharpes) / len(in_sample_sharpes)
-        if in_sample_sharpes else 0.0
-    )
+    in_sample_sharpes = [m.get("sharpe") or 0.0 for m in in_sample_metrics]
+    in_sample_mean = sum(in_sample_sharpes) / len(in_sample_sharpes) if in_sample_sharpes else 0.0
     oos_sharpe = oos_metrics.get("sharpe")
     oos_tc = oos_metrics.get("trades_count", 0)
 
@@ -84,18 +80,14 @@ def oos_validate(
 
     if oos_tc < min_oos_trade_count:
         passed = False
-        reasons.append(
-            f"oos trade count {oos_tc} < floor {min_oos_trade_count}"
-        )
+        reasons.append(f"oos trade count {oos_tc} < floor {min_oos_trade_count}")
 
     if oos_sharpe is None:
         passed = False
         reasons.append("oos sharpe is None")
     elif oos_sharpe < sharpe_floor:
         passed = False
-        reasons.append(
-            f"oos sharpe {oos_sharpe:+.3f} < floor {sharpe_floor:+.3f}"
-        )
+        reasons.append(f"oos sharpe {oos_sharpe:+.3f} < floor {sharpe_floor:+.3f}")
     elif oos_sharpe < in_sample_mean * (1 - sharpe_drop_tolerance):
         passed = False
         reasons.append(

@@ -5,10 +5,10 @@ tool calls, and timing. Phase 1 stores traces on the local filesystem.
 Production can override the directory to a mounted volume or object storage
 via ``VIBE_TRACE_DIR``.
 """
+
 import json
 import logging
 import os
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -47,8 +47,8 @@ class VibeTraceStore:
             try:
                 if not any(user_dir.iterdir()):
                     user_dir.rmdir()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("rmdir cleanup failed (perm/race): %s", e)
         if removed:
             logger.info(
                 "Cleaned up %d trace files older than %d days",
@@ -61,7 +61,7 @@ class VibeTraceStore:
         run_id: str,
         user_id: str,
         trace: dict,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Save a trace file. Returns the file path or None if disabled."""
         if not self.enabled:
             return None
@@ -86,7 +86,7 @@ class VibeTraceStore:
             logger.warning("Failed to save trace for run %s: %s", run_id, e)
             return None
 
-    def get_trace(self, run_id: str, user_id: str) -> Optional[dict]:
+    def get_trace(self, run_id: str, user_id: str) -> dict | None:
         """Retrieve a trace file if it exists and belongs to the user."""
         path = self.base_dir / user_id / f"{run_id}.json"
         if not path.exists():

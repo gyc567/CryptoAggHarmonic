@@ -1,3 +1,22 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+from icontract import ensure, require
+
+from app.config.tuning import TUNING
+
+# --- Backwards-compat aliases (read from TUNING singleton) -----------------
+#
+# The values formerly defined as module-level constants now live in
+# :class:`app.config.tuning.TuningConstants` (see ``app/config/tuning.py``).
+# The aliases below preserve the original import paths so existing tests
+# (``from app.domain.signals import ATR_STOP_BUFFER``) continue to work.
+# Loop-tuning mutates TUNING via :func:`dataclasses.replace`; these aliases
+# point at the snapshot taken at import time, which matches the historical
+# behaviour of "import this constant at startup and freeze it".
+
 """Pure harmonic trading-signal math.
 
 This module is the domain core of the signal engine: every function is pure
@@ -22,24 +41,6 @@ Three-layer defense notes:
 - Layer 1 (mypy/pyright) — every public function has full type annotations;
   CI runs both checkers on this module.
 """
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import Optional
-
-from icontract import ensure, require
-
-from app.config.tuning import TUNING
-
-# --- Backwards-compat aliases (read from TUNING singleton) -----------------
-#
-# The values formerly defined as module-level constants now live in
-# :class:`app.config.tuning.TuningConstants` (see ``app/config/tuning.py``).
-# The aliases below preserve the original import paths so existing tests
-# (``from app.domain.signals import ATR_STOP_BUFFER``) continue to work.
-# Loop-tuning mutates TUNING via :func:`dataclasses.replace`; these aliases
-# point at the snapshot taken at import time, which matches the historical
-# behaviour of "import this constant at startup and freeze it".
 
 FIB_TP1 = TUNING.fib_tp1
 FIB_TP2 = TUNING.fib_tp2
@@ -68,15 +69,15 @@ SHORT = "short"
 class Candidate:
     """A serializable harmonic pattern candidate extracted from pyharmonics."""
 
-    family: str            # XABCD | ABCD | ABC
-    name: str              # gartley, bat, butterfly, ...
+    family: str  # XABCD | ABCD | ABC
+    name: str  # gartley, bat, butterfly, ...
     bullish: bool
     formed: bool
-    points: tuple          # price points (X,A,B,C,D) / (A,B,C,D) / (A,B,C)
+    points: tuple  # price points (X,A,B,C,D) / (A,B,C,D) / (A,B,C)
     completion_min: float  # PRZ lower bound
     completion_max: float  # PRZ upper bound
-    times: tuple = ()      # candle close_times (epoch seconds) of the points (D is last)
-    indices: tuple = ()    # bar positions of the points in the source df (D is last)
+    times: tuple = ()  # candle close_times (epoch seconds) of the points (D is last)
+    indices: tuple = ()  # bar positions of the points in the source df (D is last)
 
     @property
     def direction(self) -> str:
@@ -113,19 +114,19 @@ class SignalTarget:
 class Signal:
     """A fully specified, executable trade signal."""
 
-    status: str            # approaching | in_prz | confirmed | swept
-    grade: str             # A | B | C
-    direction: str         # long | short
+    status: str  # approaching | in_prz | confirmed | swept
+    grade: str  # A | B | C
+    direction: str  # long | short
     pattern_name: str
     family: str
     formed: bool
-    entry_zone: tuple      # (low, high)
+    entry_zone: tuple  # (low, high)
     entry_reference: float
     stop_loss: float
-    stop_basis: str        # human-readable stop placement reason
-    stop_level: str        # conservative | standard | aggressive
+    stop_basis: str  # human-readable stop placement reason
+    stop_level: str  # conservative | standard | aggressive
     invalidation_point: float  # structural point where pattern is invalidated
-    targets: tuple         # tuple[SignalTarget, ...]
+    targets: tuple  # tuple[SignalTarget, ...]
     net_rr_tp1: float
     net_rr_tp2: float
     confluence_score: int
@@ -138,12 +139,12 @@ class Signal:
     stability_score: Optional[int] = None
     trap_score: Optional[int] = None
     # --- v2 additions (Q7 保留 grade=C 为参考区; Q3/Q4/Q5 联动字段) ---
-    tradable: bool = True           # False => grade="C", 仅展示不入场
+    tradable: bool = True  # False => grade="C", 仅展示不入场
     macro_advice: Optional[str] = None  # 宏观层建议文案(顺势/逆势/极端位)
     bars_since_c: Optional[int] = None  # 形成中形态:C 点到当前 bar 数
-    stale: bool = False             # True => bars_since_c > TTL, 降级不剔除
-    breached_stop: bool = False     # True => C 点后路径触达 PRZ(形态已走完)
-    past_tp2: bool = False          # True => 现价已穿越 TP2(行情结束)
+    stale: bool = False  # True => bars_since_c > TTL, 降级不剔除
+    breached_stop: bool = False  # True => C 点后路径触达 PRZ(形态已走完)
+    past_tp2: bool = False  # True => 现价已穿越 TP2(行情结束)
     width_pct: Optional[float] = None  # PRZ 宽度 / 价格, 用于 grade() 阈值
 
     def to_dict(self) -> dict:
@@ -216,20 +217,16 @@ def is_swept(low: float, high: float, close: float, prz_low: float, prz_high: fl
 # --- Stop loss ----------------------------------------------------------------
 
 
-@require(lambda candidate, atr, level="standard": atr > 0,
-         "ATR must be positive; compute_stop is undefined for zero volatility")
-@require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0,
-         "PRZ bounds must be positive; degenerate candidates are filtered upstream")
-@require(lambda candidate: all(p > 0 for p in candidate.points),
-         "Pattern pivot prices must all be positive")
-@ensure(lambda result: result[0] > 0,
-        "Returned stop price must be positive")
-@ensure(lambda result: result[2] > 0,
-        "Returned invalidation point must be positive")
-@ensure(lambda result: len(result[1]) > 0,
-        "stop_basis must be a non-empty human-readable string")
-def compute_stop(candidate: Candidate, atr: float,
-                 level: str = "standard") -> tuple[float, str, float]:
+@require(lambda candidate, atr, level="standard": atr > 0, "ATR must be positive; compute_stop is undefined for zero volatility")
+@require(
+    lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0,
+    "PRZ bounds must be positive; degenerate candidates are filtered upstream",
+)
+@require(lambda candidate: all(p > 0 for p in candidate.points), "Pattern pivot prices must all be positive")
+@ensure(lambda result: result[0] > 0, "Returned stop price must be positive")
+@ensure(lambda result: result[2] > 0, "Returned invalidation point must be positive")
+@ensure(lambda result: len(result[1]) > 0, "stop_basis must be a non-empty human-readable string")
+def compute_stop(candidate: Candidate, atr: float, level: str = "standard") -> tuple[float, str, float]:
     """Stop at the structural invalidation point plus an ATR buffer.
 
     Args:
@@ -306,21 +303,24 @@ def compute_targets(candidate: Candidate, entry: float) -> tuple:
 # --- Net risk/reward ----------------------------------------------------------
 
 
-@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: entry > 0,
-         "Entry price must be positive for risk/reward math")
-@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: stop > 0,
-         "Stop price must be positive")
-@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: target > 0,
-         "Target price must be positive")
-@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: fee_rate >= 0,
-         "fee_rate must be non-negative")
-@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: slippage_rate >= 0,
-         "slippage_rate must be non-negative")
-@ensure(lambda entry, stop, target, result, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE:
-        result is None or result > 0,
-        "net_rr returns None for degenerate geometry, otherwise a positive ratio")
-def net_rr(entry: float, stop: float, target: float, fee_rate: float = FEE_RATE,
-           slippage_rate: float = SLIPPAGE_RATE) -> Optional[float]:
+@require(
+    lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: entry > 0,
+    "Entry price must be positive for risk/reward math",
+)
+@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: stop > 0, "Stop price must be positive")
+@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: target > 0, "Target price must be positive")
+@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: fee_rate >= 0, "fee_rate must be non-negative")
+@require(
+    lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: slippage_rate >= 0,
+    "slippage_rate must be non-negative",
+)
+@ensure(
+    lambda entry, stop, target, result, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: result is None or result > 0,
+    "net_rr returns None for degenerate geometry, otherwise a positive ratio",
+)
+def net_rr(
+    entry: float, stop: float, target: float, fee_rate: float = FEE_RATE, slippage_rate: float = SLIPPAGE_RATE
+) -> float | None:
     """Risk/reward of one target, net of round-trip fees and slippage.
 
     Costs are approximated as (fee + slippage) on both entry and exit notional.
@@ -340,20 +340,27 @@ def net_rr(entry: float, stop: float, target: float, fee_rate: float = FEE_RATE,
 # --- Grading ------------------------------------------------------------------
 
 
-@require(lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None:
-         0 <= score <= 100,
-         "score must be a 0-100 confluence value")
-@require(lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None:
-         0 < a_min <= 100,
-         "a_min must be in (0, 100]")
-@require(lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None:
-         not (htf_aligned and htf_counter),
-         "Aligned and counter cannot both be True")
-@ensure(lambda result: result is None or result in ("A", "B", "C(参考)"),
-        "grade() returns None or one of A / B / C(参考)")
-def grade(score: int, rr_tp1: Optional[float], rr_tp2: Optional[float],
-          htf_aligned: bool, htf_counter: bool, a_min: int = 75,
-          width_pct: Optional[float] = None) -> Optional[str]:
+@require(
+    lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None: 0 <= score <= 100,
+    "score must be a 0-100 confluence value",
+)
+@require(
+    lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None: 0 < a_min <= 100, "a_min must be in (0, 100]"
+)
+@require(
+    lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None: not (htf_aligned and htf_counter),
+    "Aligned and counter cannot both be True",
+)
+@ensure(lambda result: result is None or result in ("A", "B", "C(参考)"), "grade() returns None or one of A / B / C(参考)")
+def grade(
+    score: int,
+    rr_tp1: Optional[float],
+    rr_tp2: Optional[float],
+    htf_aligned: bool,
+    htf_counter: bool,
+    a_min: int = 75,
+    width_pct: Optional[float] = None,
+) -> str | None:
     """Heuristic A/B/C grade (to be replaced by calibrated quantiles in P3).
 
     Hard gates: TP1 net R >= 1.0 and TP2 net R >= 1.5, otherwise the signal is
@@ -385,7 +392,7 @@ def grade(score: int, rr_tp1: Optional[float], rr_tp2: Optional[float],
     return None
 
 
-def resolve_analysis_type(signal: Optional[Signal]) -> Optional[str]:
+def resolve_analysis_type(signal: Optional[Signal]) -> str | None:
     """Resolve the analysis type actually used, from the engine's output.
 
     Signal-centric rule (single source of truth): when a signal exists, the
@@ -408,10 +415,7 @@ def reasoning_from_signal(signal: Signal) -> str:
         f"止损：{signal.stop_loss:.2f}（{signal.stop_basis}，失效点 {signal.invalidation_point:.2f}）",
     ]
     if signal.targets:
-        tps = " / ".join(
-            f"{t.label} {t.price:.2f}（{t.fib_basis}，平 {t.close_pct}%）"
-            for t in signal.targets
-        )
+        tps = " / ".join(f"{t.label} {t.price:.2f}（{t.fib_basis}，平 {t.close_pct}%）" for t in signal.targets)
         lines.append(f"止盈：{tps}")
     lines.append(f"净盈亏比：TP1 {signal.net_rr_tp1}R / TP2 {signal.net_rr_tp2}R")
     lines.append(f"高周期趋势：{signal.htf_trend}")

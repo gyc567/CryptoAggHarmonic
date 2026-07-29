@@ -5,13 +5,13 @@ openai_handler, supabase uploads) and feed hand-crafted detection results
 through ``AnalysisOrchestrator._build_forming_view`` and the full
 ``analyze()`` path.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pandas as pd
-import pytest
 
 from app.domain.enums import AnalysisType, Interval, Market, Status
 from app.domain.schemas import AnalyzeRequest, ChartMeta
@@ -23,14 +23,16 @@ def _make_df(n: int = 600) -> pd.DataFrame:
     closes = [100.0 + i * 0.2 for i in range(n)]
     rows = []
     for i, c in enumerate(closes):
-        rows.append({
-            "open": c,
-            "high": c + 0.5,
-            "low": c - 0.5,
-            "close": c,
-            "volume": 100.0,
-            "close_time": 1_700_000_000 + i * 900,
-        })
+        rows.append(
+            {
+                "open": c,
+                "high": c + 0.5,
+                "low": c - 0.5,
+                "close": c,
+                "volume": 100.0,
+                "close_time": 1_700_000_000 + i * 900,
+            }
+        )
     df = pd.DataFrame(rows)
     df["dts"] = pd.to_datetime(df["close_time"], unit="s", utc=True)
     return df
@@ -63,8 +65,7 @@ class _Pattern:
     ``.completion_min_price``, ``.completion_max_price``, ``.bullish``.
     """
 
-    def __init__(self, name, y, completion_min, completion_max, bullish=True,
-                 x=None):
+    def __init__(self, name, y, completion_min, completion_max, bullish=True, x=None):
         self.name = name
         self.y = y
         self.completion_min_price = completion_min
@@ -73,8 +74,7 @@ class _Pattern:
         self.x = x if x is not None else [0, 10, 20, 580, 599]
 
 
-def _detection_result(forming_patterns=None, formed_patterns=None,
-                      position=None) -> dict:
+def _detection_result(forming_patterns=None, formed_patterns=None, position=None) -> dict:
     """Build a detection_result dict shaped as ``extract_candidates`` expects."""
     return {
         "divergences": {},
@@ -95,15 +95,18 @@ _FAR_PRZ = (225.0, 230.0)
 class TestBuildFormingView:
     def test_returns_only_forming_candidates(self):
         formed = _Pattern(
-            "crab-1.618-0", [95.0, 110.0, 100.0, 107.0, 103.0],
-            *_FAR_PRZ, bullish=True,
+            "crab-1.618-0",
+            [95.0, 110.0, 100.0, 107.0, 103.0],
+            *_FAR_PRZ,
+            bullish=True,
         )
         forming = _Pattern(
-            "gartley-382-0", [95.0, 110.0, 100.0, 107.0, 103.0],
-            *_FAR_PRZ, bullish=True,
+            "gartley-382-0",
+            [95.0, 110.0, 100.0, 107.0, 103.0],
+            *_FAR_PRZ,
+            bullish=True,
         )
-        det = _detection_result(forming_patterns=[forming],
-                                formed_patterns=[formed])
+        det = _detection_result(forming_patterns=[forming], formed_patterns=[formed])
         orch = AnalysisOrchestrator(cache=AnalysisCache(redis_url=""))
         out = orch._build_forming_view(_candle_data(), det)
         assert len(out) == 1
@@ -113,8 +116,11 @@ class TestBuildFormingView:
     def test_past_tp2_candidate_dropped(self):
         # Bullish gartley A=110, D=102 → TP2=106.94. Last close=220 → past.
         forming = _Pattern(
-            "gartley-382-0", [95.0, 110.0, 100.0, 107.0, 102.0],
-            102.0, 104.0, bullish=True,
+            "gartley-382-0",
+            [95.0, 110.0, 100.0, 107.0, 102.0],
+            102.0,
+            104.0,
+            bullish=True,
         )
         det = _detection_result(forming_patterns=[forming])
         orch = AnalysisOrchestrator(cache=AnalysisCache(redis_url=""))
@@ -124,12 +130,18 @@ class TestBuildFormingView:
     def test_sort_tradable_first_then_closest(self):
         # Two forming candidates both tradable, sort by dist_pct: closer first.
         near = _Pattern(
-            "bat-382-0", [95.0, 110.0, 100.0, 107.0, 103.0],
-            221.0, 222.0, bullish=True,
+            "bat-382-0",
+            [95.0, 110.0, 100.0, 107.0, 103.0],
+            221.0,
+            222.0,
+            bullish=True,
         )
         far = _Pattern(
-            "crab-1.618-0", [95.0, 110.0, 100.0, 107.0, 103.0],
-            400.0, 410.0, bullish=True,
+            "crab-1.618-0",
+            [95.0, 110.0, 100.0, 107.0, 103.0],
+            400.0,
+            410.0,
+            bullish=True,
         )
         det = _detection_result(forming_patterns=[far, near])
         orch = AnalysisOrchestrator(cache=AnalysisCache(redis_url=""))
@@ -140,8 +152,10 @@ class TestBuildFormingView:
 
     def test_macro_overlay_attached(self):
         forming = _Pattern(
-            "gartley-382-0", [95.0, 110.0, 100.0, 107.0, 103.0],
-            *_FAR_PRZ, bullish=True,
+            "gartley-382-0",
+            [95.0, 110.0, 100.0, 107.0, 103.0],
+            *_FAR_PRZ,
+            bullish=True,
         )
         det = _detection_result(forming_patterns=[forming])
         orch = AnalysisOrchestrator(cache=AnalysisCache(redis_url=""))
@@ -162,16 +176,23 @@ class TestBuildFormingView:
 class TestFormingCandidatesInResponse:
     @patch("app.services.analysis.upload_chart", return_value=None)
     @patch("app.services.analysis.save_chart_locally", return_value="/tmp/x.png")
-    @patch("app.services.analysis.render_chart",
-           return_value=(b"png-bytes", ChartMeta(format="png", width=600, height=300)))
+    @patch("app.services.analysis.render_chart", return_value=(b"png-bytes", ChartMeta(format="png", width=600, height=300)))
     @patch("app.services.analysis.fetch_market_data", return_value=_candle_data())
     @patch("app.services.analysis.detect_patterns")
     def test_forming_candidates_populated(
-        self, mock_detect, _fetch, _render, _local, _upload,
+        self,
+        mock_detect,
+        _fetch,
+        _render,
+        _local,
+        _upload,
     ):
         forming = _Pattern(
-            "gartley-382-0", [95.0, 110.0, 100.0, 107.0, 103.0],
-            221.0, 222.0, bullish=True,
+            "gartley-382-0",
+            [95.0, 110.0, 100.0, 107.0, 103.0],
+            221.0,
+            222.0,
+            bullish=True,
         )
         mock_detect.return_value = _detection_result(
             forming_patterns=[forming],

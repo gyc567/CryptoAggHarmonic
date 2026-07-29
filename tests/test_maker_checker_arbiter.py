@@ -3,27 +3,25 @@
 Covers: ArbiterConfig validation, all 6 branches of the decision tree,
 weighted merge arithmetic, 5-D Pareto back-compat.
 """
+
 from __future__ import annotations
 
 import pytest
 
 from app.loop.checker import CheckerVerdict
 from app.loop.maker_checker.arbiter import (
-    Arbiter,
     ArbiterConfig,
     is_5d_backcompat,
     pareto_score,
     resolve,
 )
 from app.loop.maker_checker.schemas import (
-    MergeResult,
     Proposal,
     Verdict,
     make_merge_result,
     make_proposal,
     make_verdict,
 )
-
 
 # ---- Helpers --------------------------------------------------------------
 
@@ -171,10 +169,15 @@ class TestFiveDBackCompat:
             trigger_reasons=[],
             checker_confidence=0.85,
         )
-        score = pareto_score(m, base_metrics={
-            "sharpe": 1.2, "calmar": 1.5, "profit_factor": 1.4,
-            "worst_regime_sharpe": 0.3,
-        })
+        score = pareto_score(
+            m,
+            base_metrics={
+                "sharpe": 1.2,
+                "calmar": 1.5,
+                "profit_factor": 1.4,
+                "worst_regime_sharpe": 0.3,
+            },
+        )
         assert score["checker_confidence"] == 0.85
         assert score["sharpe"] == 1.2
 

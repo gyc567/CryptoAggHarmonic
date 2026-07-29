@@ -1,6 +1,7 @@
 """Chart compression and size control."""
+
 import logging
-from typing import Optional
+
 from app.domain.schemas import ChartMeta
 
 logger = logging.getLogger(__name__)
@@ -42,8 +43,9 @@ def compress_chart(
     # This function primarily validates and returns metadata.
     # If PIL is available, we could resize; for now, just validate.
     try:
-        from PIL import Image
         import io
+
+        from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes))
         orig_width, orig_height = img.size

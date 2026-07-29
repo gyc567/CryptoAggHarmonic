@@ -7,6 +7,7 @@ The bridge URL is configurable via ``TRADINGVIEW_BRIDGE_URL`` (default:
 ``http://127.0.0.1:5002``).  Set ``USE_TRADINGVIEW=false`` to disable the
 adapter and fall back to Binance/Yahoo.
 """
+
 from __future__ import annotations
 
 import logging

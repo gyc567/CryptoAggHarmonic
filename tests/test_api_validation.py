@@ -8,6 +8,7 @@ These tests pin the helper's behavior so a future refactor that silently
 broadens error handling (e.g. catching all exceptions and returning 500)
 will fail this test suite, not production users.
 """
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,6 @@ from flask import Flask
 from pydantic import BaseModel, Field
 
 from app.api.validation import parse_request
-
 
 # ---------------------------------------------------------------------------
 # Flask app fixture — jsonify() requires an application context.
@@ -72,6 +72,7 @@ class TestSuccess:
         """Documented intentional non-contract: missing body → all defaults.
         Only valid for models where every required field has a default.
         """
+
         class _AllOptional(BaseModel):
             name: str = "anon"
             count: int = 0

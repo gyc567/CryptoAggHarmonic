@@ -3,13 +3,15 @@
 Methodology: EMA200 defines the trend direction; RSI(14) leaving an
 extreme zone defines entry timing. See ``app.domain.rsi_trend``.
 """
+
 import logging
 import uuid
 
 from flask import Blueprint, request
 
 from app.api.auth import is_local_dev_mode, require_auth
-from app.api.responses import success as _success, error as _error
+from app.api.responses import error as _error
+from app.api.responses import success as _success
 from app.api.validation import parse_request
 from app.domain.rsi_trend_schemas import RsiTrendBacktestRequest, RsiTrendScanRequest
 from app.infra.supabase_client import (
@@ -56,8 +58,7 @@ def scan(user):
         raise
     if ledger_id:
         consume_ledger_quota(ledger_id)
-    log_audit_event(user["id"], "rsi_trend_scan", "strategy", ref_id,
-                    {"symbol": req.symbol, "interval": req.interval})
+    log_audit_event(user["id"], "rsi_trend_scan", "strategy", ref_id, {"symbol": req.symbol, "interval": req.interval})
     return _success(data)
 
 
@@ -82,7 +83,11 @@ def backtest(user):
         raise
     if ledger_id:
         consume_ledger_quota(ledger_id)
-    log_audit_event(user["id"], "rsi_trend_backtest", "strategy", ref_id,
-                    {"symbol": req.symbol, "interval": req.interval,
-                     "lookback_days": req.lookback_days})
+    log_audit_event(
+        user["id"],
+        "rsi_trend_backtest",
+        "strategy",
+        ref_id,
+        {"symbol": req.symbol, "interval": req.interval, "lookback_days": req.lookback_days},
+    )
     return _success(data)

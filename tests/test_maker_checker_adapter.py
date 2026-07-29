@@ -1,13 +1,11 @@
 """Tests for :mod:`app.loop.maker_checker.adapter`."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from app.loop.checker import CheckerVerdict
 from app.loop.maker_checker.adapter import evaluate_candidate
 from app.loop.maker_checker.llm_backend import MockLLMBackend
 from app.loop.maker_checker.runner import make_runner
-from app.loop.maker_checker.schemas import MergeResult
 from app.loop.worker import CandidateResult
 
 

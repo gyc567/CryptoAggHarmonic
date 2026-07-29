@@ -1,42 +1,43 @@
 """Analysis orchestrator: coordinates validation, detection, interpretation, charting."""
+
 import logging
 import time
 import uuid
 from types import SimpleNamespace
-from typing import Optional, List
-from app.domain.enums import Market, Interval, AnalysisType, Status, ErrorCode
-from app.domain.forming_schemas import CandidateWithMetrics, CandidateMetrics, MacroOverlay
+from typing import Optional
+
+from app.api.errors import AppError
+from app.domain.enums import AnalysisType, ErrorCode, Status
+from app.domain.forming_schemas import CandidateWithMetrics
 from app.domain.schemas import (
-    AnalyzeRequest,
     AnalysisData,
-    TechnicalResult,
-    Interpretation,
+    AnalyzeRequest,
     ChartMeta,
+    Interpretation,
     TimingInfo,
 )
+from app.domain.signals import resolve_analysis_type
 from app.domain.validators import (
-    validate_symbol,
-    validate_interval,
-    validate_market,
     validate_analysis_type,
     validate_bounds,
+    validate_interval,
+    validate_market,
+    validate_symbol,
 )
-from app.api.errors import AppError
+from app.infra.analysis_cache import AnalysisCache, get_analysis_cache
 from app.infra.pyharmonics_adapter import (
-    fetch_market_data,
     detect_patterns,
+    fetch_market_data,
     render_chart,
     technical_result_to_schema,
 )
-from app.domain.signals import resolve_analysis_type
-from app.services.signal_engine import build_signal, extract_candidates
-from app.services.discipline_filters import evaluate as discipline_evaluate
-from app.services.macro_bias import compute as macro_compute
-from app.infra.analysis_cache import AnalysisCache, get_analysis_cache
-from app.infra.supabase_client import upload_chart, get_chart_url
+from app.infra.supabase_client import get_chart_url, upload_chart
+from app.openai_handler import query_openai
 from app.services.chart import validate_chart_size
 from app.services.chart_store import save_chart_locally
-from app.openai_handler import query_openai
+from app.services.discipline_filters import evaluate as discipline_evaluate
+from app.services.macro_bias import compute as macro_compute
+from app.services.signal_engine import build_signal, extract_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +66,10 @@ def _generate_interpretation(technical_json: str, prompt_context: str) -> Interp
             "模型解读生成失败，技术结果仍可查看。",
             retryable=True,
             original_error=e,
-        )
+        ) from e
 
 
-def _extract_sentiment(text: Optional[str]) -> Optional[str]:
+def _extract_sentiment(text: Optional[str]) -> str | None:
     """Extract sentiment keyword from model response.
 
     Args:
@@ -102,8 +103,7 @@ class AnalysisOrchestrator:
         self.prompt_context = prompt_context or {}
         self.cache = cache or get_analysis_cache()
 
-    def _restore_cached(self, cached: dict, analysis_id: str,
-                        user_id: Optional[str], start_time: float) -> AnalysisData:
+    def _restore_cached(self, cached: dict, analysis_id: str, user_id: Optional[str], start_time: float) -> AnalysisData:
         """Rebuild an AnalysisData from a cache entry.
 
         缓存命中后：分配新 analysis_id、用缓存的图表 URL/path 直接复用
@@ -134,8 +134,7 @@ class AnalysisOrchestrator:
         return data
 
     @staticmethod
-    def _build_trade_signal(candle_data, interval, detection_result: dict,
-                            limit_to: int = 10, percent_complete: float = 0.8):
+    def _build_trade_signal(candle_data, interval, detection_result: dict, limit_to: int = 10, percent_complete: float = 0.8):
         """Build a trade signal from the detection result (best-effort).
 
         Signal generation never blocks the analysis pipeline: any failure is
@@ -164,7 +163,8 @@ class AnalysisOrchestrator:
                         analysis_type="forming",
                     )
                     sub_candidates = extract_candidates(
-                        det, slice_df["close_time"],
+                        det,
+                        slice_df["close_time"],
                     )
                     return sub_candidates[0].name if sub_candidates else None
                 except Exception:
@@ -187,7 +187,7 @@ class AnalysisOrchestrator:
         detection_result: dict,
         daily_close: Optional[object] = None,
         max_ttl: int = 40,
-    ) -> List[CandidateWithMetrics]:
+    ) -> list[CandidateWithMetrics]:
         """Build the ranked list of forming-pattern views (v2).
 
         For every forming candidate from the upstream detector:
@@ -204,43 +204,51 @@ class AnalysisOrchestrator:
         """
         try:
             candidates = extract_candidates(
-                detection_result, candle_data.df["close_time"],
+                detection_result,
+                candle_data.df["close_time"],
             )
             df = candle_data.df
             current_price = float(df["close"].iloc[-1])
-            out: List[CandidateWithMetrics] = []
+            out: list[CandidateWithMetrics] = []
             for cand in candidates:
                 # Forming view only — skip formed patterns (their best is
                 # already surfaced via _build_trade_signal).
                 if cand.formed:
                     continue
                 verdict = discipline_evaluate(
-                    df, cand, current_price, max_ttl=max_ttl,
+                    df,
+                    cand,
+                    current_price,
+                    max_ttl=max_ttl,
                 )
                 if not verdict.passed:
                     continue
                 overlay = macro_compute(
-                    daily_close, 1 if cand.bullish else -1,
+                    daily_close,
+                    1 if cand.bullish else -1,
                 )
-                out.append(CandidateWithMetrics(
-                    candidate=cand,
-                    metrics=verdict.metrics,
-                    macro=overlay,
-                ))
+                out.append(
+                    CandidateWithMetrics(
+                        candidate=cand,
+                        metrics=verdict.metrics,
+                        macro=overlay,
+                    )
+                )
             # Sort: tradable first, then closest PRZ, then narrowest.
-            out.sort(key=lambda v: (
-                0 if v.tradable else 1,
-                v.metrics.dist_pct,
-                v.width_pct,
-            ))
+            out.sort(
+                key=lambda v: (
+                    0 if v.tradable else 1,
+                    v.metrics.dist_pct,
+                    v.width_pct,
+                )
+            )
             return out
         except Exception:
             logger.exception("Forming view build failed, returning empty list")
             return []
 
     @staticmethod
-    def _distribute_chart(chart, analysis_id: str, image_bytes: bytes,
-                          user_id: Optional[str]):
+    def _distribute_chart(chart, analysis_id: str, image_bytes: bytes, user_id: Optional[str]):
         """Attach a viewable URL to the chart: Supabase first, local fallback.
 
         Distribution is best-effort: on any storage failure the chart falls
@@ -264,9 +272,13 @@ class AnalysisOrchestrator:
             chart.url = f"/api/charts/{analysis_id}.png"
         return chart
 
-    def analyze(self, request: AnalyzeRequest, user_id: Optional[str] = None,
-                analysis_id: Optional[str] = None,
-                daily_close: Optional[object] = None) -> AnalysisData:
+    def analyze(
+        self,
+        request: AnalyzeRequest,
+        user_id: Optional[str] = None,
+        analysis_id: Optional[str] = None,
+        daily_close: Optional[object] = None,
+    ) -> AnalysisData:
         """Run full analysis pipeline.
 
         Pipeline:
@@ -375,7 +387,9 @@ class AnalysisOrchestrator:
         # otherwise). Independent of analysis_type so callers can render
         # either view from one response.
         forming_view = self._build_forming_view(
-            candle_data, detection_result, daily_close=daily_close,
+            candle_data,
+            detection_result,
+            daily_close=daily_close,
         )
         # If the user explicitly asked for forming, mirror the top surviving
         # entry into ``technical_result.signal`` so legacy single-best
@@ -410,7 +424,8 @@ class AnalysisOrchestrator:
                         "size_mult": top.macro.size_mult,
                         "advice": top.macro.advice,
                     }
-                    if top.macro else None
+                    if top.macro
+                    else None
                 ),
             }
         technical = technical_result_to_schema(

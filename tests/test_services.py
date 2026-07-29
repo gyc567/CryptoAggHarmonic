@@ -1,12 +1,14 @@
 """Tests for service layer: chart compression, analysis orchestrator."""
-import pytest
+
 from unittest.mock import MagicMock, patch
 
-from app.services.chart import compress_chart, estimate_size, validate_chart_size, DEFAULT_DPI
-from app.services.analysis import AnalysisOrchestrator, _extract_sentiment
-from app.domain.enums import Market, Interval, AnalysisType, Status, ErrorCode
-from app.domain.schemas import AnalyzeRequest
+import pytest
+
 from app.api.errors import AppError
+from app.domain.enums import AnalysisType, ErrorCode, Interval, Market, Status
+from app.domain.schemas import AnalyzeRequest
+from app.services.analysis import AnalysisOrchestrator, _extract_sentiment
+from app.services.chart import compress_chart, estimate_size, validate_chart_size
 
 
 class TestChartCompression:
@@ -15,7 +17,8 @@ class TestChartCompression:
         raw_bytes = b"fake_png_data"
         # Mock PIL import failure by patching the module-level import
         import app.services.chart as chart_module
-        original_image = getattr(chart_module, 'Image', None)
+
+        original_image = getattr(chart_module, "Image", None)
         try:
             chart_module.Image = None  # Simulate PIL not available
             compressed, meta = compress_chart(raw_bytes)
@@ -30,8 +33,9 @@ class TestChartCompression:
     def test_compress_chart_with_pil(self):
         """When PIL is available, should resize if too large."""
         try:
-            from PIL import Image
             import io
+
+            from PIL import Image
         except ImportError:
             pytest.skip("PIL not available")
 
@@ -48,8 +52,9 @@ class TestChartCompression:
     def test_compress_chart_within_bounds(self):
         """Image within bounds should not be resized."""
         try:
-            from PIL import Image
             import io
+
+            from PIL import Image
         except ImportError:
             pytest.skip("PIL not available")
 
@@ -127,6 +132,7 @@ class TestAnalysisOrchestrator:
         # Manually test validator path
         with pytest.raises(AppError):
             from app.domain.validators import validate_interval
+
             validate_interval("invalid")
 
     @patch("app.services.analysis.fetch_market_data")
@@ -141,9 +147,7 @@ class TestAnalysisOrchestrator:
 
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
-    def test_analyze_no_patterns(
-        self, mock_detect, mock_fetch, orchestrator, valid_request
-    ):
+    def test_analyze_no_patterns(self, mock_detect, mock_fetch, orchestrator, valid_request):
         mock_fetch.return_value = MagicMock()
         mock_detect.return_value = {
             "position": None,
@@ -158,9 +162,7 @@ class TestAnalysisOrchestrator:
 
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
-    def test_analyze_with_patterns(
-        self, mock_detect, mock_fetch, orchestrator, valid_request
-    ):
+    def test_analyze_with_patterns(self, mock_detect, mock_fetch, orchestrator, valid_request):
         mock_fetch.return_value = MagicMock()
         mock_position = MagicMock()
         mock_position.strike = 100.0
@@ -185,9 +187,7 @@ class TestAnalysisOrchestrator:
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
     @patch("app.services.analysis._generate_interpretation")
-    def test_analyze_interpretation_failure_continues(
-        self, mock_interp, mock_detect, mock_fetch, orchestrator, valid_request
-    ):
+    def test_analyze_interpretation_failure_continues(self, mock_interp, mock_detect, mock_fetch, orchestrator, valid_request):
         mock_fetch.return_value = MagicMock()
         mock_position = MagicMock()
         mock_position.strike = 100.0
@@ -208,9 +208,7 @@ class TestAnalysisOrchestrator:
 
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
-    def test_analyze_chart_failure_continues(
-        self, mock_detect, mock_fetch, orchestrator, valid_request
-    ):
+    def test_analyze_chart_failure_continues(self, mock_detect, mock_fetch, orchestrator, valid_request):
         mock_fetch.return_value = MagicMock()
         mock_position = MagicMock()
         mock_position.strike = 100.0
@@ -232,11 +230,10 @@ class TestAnalysisOrchestrator:
 
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
-    def test_analyze_chart_success_and_distributed(
-        self, mock_detect, mock_fetch, orchestrator, valid_request
-    ):
+    def test_analyze_chart_success_and_distributed(self, mock_detect, mock_fetch, orchestrator, valid_request):
         """Single render success -> chart carries the distributed URL."""
         from app.domain.schemas import ChartMeta
+
         mock_fetch.return_value = MagicMock()
         mock_detect.return_value = {
             "position": MagicMock(),
@@ -245,10 +242,10 @@ class TestAnalysisOrchestrator:
             "plot": MagicMock(),
         }
         fake_meta = ChartMeta(format="png", width=600, height=300)
-        with patch("app.services.analysis.render_chart",
-                   return_value=(b"\x89PNG\x00" * 8, fake_meta)), \
-             patch("app.services.analysis.save_chart_locally",
-                   return_value="instance/charts/x.png"):
+        with (
+            patch("app.services.analysis.render_chart", return_value=(b"\x89PNG\x00" * 8, fake_meta)),
+            patch("app.services.analysis.save_chart_locally", return_value="instance/charts/x.png"),
+        ):
             result = orchestrator.analyze(valid_request)
         assert result.status == Status.COMPLETED
         assert result.chart.width == 600
@@ -257,11 +254,10 @@ class TestAnalysisOrchestrator:
 
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
-    def test_analyze_chart_oversize_omitted(
-        self, mock_detect, mock_fetch, orchestrator, valid_request
-    ):
+    def test_analyze_chart_oversize_omitted(self, mock_detect, mock_fetch, orchestrator, valid_request):
         """Chart beyond the size cap is dropped but analysis succeeds."""
         from app.domain.schemas import ChartMeta
+
         mock_fetch.return_value = MagicMock()
         mock_detect.return_value = {
             "position": MagicMock(),
@@ -270,18 +266,17 @@ class TestAnalysisOrchestrator:
             "plot": MagicMock(),
         }
         fake_meta = ChartMeta(format="png", width=600, height=300)
-        with patch("app.services.analysis.render_chart",
-                   return_value=(b"\x89PNG\x00" * 8, fake_meta)), \
-             patch("app.services.analysis.validate_chart_size", return_value=False):
+        with (
+            patch("app.services.analysis.render_chart", return_value=(b"\x89PNG\x00" * 8, fake_meta)),
+            patch("app.services.analysis.validate_chart_size", return_value=False),
+        ):
             result = orchestrator.analyze(valid_request)
         assert result.status == Status.COMPLETED
         assert result.chart.url is None
 
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
-    def test_analyze_yahoo_market(
-        self, mock_detect, mock_fetch, orchestrator
-    ):
+    def test_analyze_yahoo_market(self, mock_detect, mock_fetch, orchestrator):
         req = AnalyzeRequest(
             market=Market.YAHOO,
             symbol="AAPL",
@@ -300,9 +295,7 @@ class TestAnalysisOrchestrator:
 
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
-    def test_analyze_formed_type(
-        self, mock_detect, mock_fetch, orchestrator
-    ):
+    def test_analyze_formed_type(self, mock_detect, mock_fetch, orchestrator):
         req = AnalyzeRequest(
             market=Market.BINANCE,
             symbol="ETHUSDT",

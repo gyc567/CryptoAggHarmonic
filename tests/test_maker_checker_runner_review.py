@@ -1,6 +1,7 @@
 """Tests for :mod:`app.loop.maker_checker.runner` and
 :mod:`app.loop.maker_checker.review`.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,7 +26,6 @@ from app.loop.maker_checker.runner import (
     make_runner,
 )
 from app.loop.worker import CandidateResult
-
 
 # ---- feature_enabled -----------------------------------------------------
 
@@ -86,6 +86,7 @@ class TestEvaluate:
         runner = make_runner(backend=MockLLMBackend(seed=0))
         m = runner.evaluate(_candidate())
         from app.loop.maker_checker.schemas import MergeResult
+
         assert isinstance(m, MergeResult)
 
     def test_rejected_when_low_trade_count(self) -> None:
@@ -93,9 +94,14 @@ class TestEvaluate:
         # M4 marks low-sample-size as suspicious (trades_count=5 < 30),
         # then the LLM mock can return either accept or reject, which
         # routes to suspicious_to_human or rejected respectively.
-        m = runner.evaluate(_candidate(metrics={
-            "sharpe": 1.0, "trades_count": 5,
-        }))
+        m = runner.evaluate(
+            _candidate(
+                metrics={
+                    "sharpe": 1.0,
+                    "trades_count": 5,
+                }
+            )
+        )
         assert m.final_decision in ("rejected", "suspicious_to_human")
 
     def test_promising_path_runs(self) -> None:
@@ -219,12 +225,15 @@ class TestAppendAndLoad:
 
     def test_loads_multiple_decisions(self, tmp_path: Path) -> None:
         for i in range(3):
-            append_decision(tmp_path, HumanReviewDecision(
-                candidate_id=f"c{i}",
-                decision="accept",
-                reviewer="alice",
-                timestamp=f"2026-07-29T00:00:0{i}Z",
-            ))
+            append_decision(
+                tmp_path,
+                HumanReviewDecision(
+                    candidate_id=f"c{i}",
+                    decision="accept",
+                    reviewer="alice",
+                    timestamp=f"2026-07-29T00:00:0{i}Z",
+                ),
+            )
         entries = load_pending(tmp_path)
         assert len(entries) == 3
         assert entries[0]["candidate_id"] == "c0"

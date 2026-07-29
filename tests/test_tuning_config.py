@@ -6,24 +6,22 @@ Covers:
 * Hot-swap via ``apply_tuning`` / ``reset_tuning`` / ``tuning_scope``
 * Cluster mapping completeness
 """
+
 from __future__ import annotations
 
 import dataclasses
 
 import pytest
 
-from app.config import tuning as tuning_mod
 from app.config.tuning import (
     TUNING,
-    TuningConstants,
+    TuningScope,
     apply_tuning,
     clusters,
     from_dict,
-    to_dict,
     reset_tuning,
-    tuning_scope,
+    to_dict,
 )
-
 
 # --- Constraint enforcement --------------------------------------------------
 
@@ -43,7 +41,9 @@ class TestConstraints:
     def test_authenticity_ordering(self):
         with pytest.raises(ValueError, match="authenticity_veto"):
             dataclasses.replace(
-                TUNING, authenticity_veto=50, authenticity_halve=40,
+                TUNING,
+                authenticity_veto=50,
+                authenticity_halve=40,
             )
 
     def test_regime_ordering(self):
@@ -53,9 +53,14 @@ class TestConstraints:
     def test_confluence_weights_must_sum_100(self):
         with pytest.raises(ValueError, match="confluence_weights must sum to 100"):
             dataclasses.replace(
-                TUNING, confluence_weights={
-                    "price_action": 30, "htf_trend": 25, "rsi": 15,
-                    "structure": 15, "macd": 10, "funding": 10,
+                TUNING,
+                confluence_weights={
+                    "price_action": 30,
+                    "htf_trend": 25,
+                    "rsi": 15,
+                    "structure": 15,
+                    "macd": 10,
+                    "funding": 10,
                 },
             )
 
@@ -133,8 +138,9 @@ class TestHotSwap:
         reset_tuning()
 
     def test_apply_tuning_swaps_module_aliases(self):
-        import app.services.signal_engine as se
         import app.services.macro_bias as mb
+        import app.services.signal_engine as se
+
         t = dataclasses.replace(TUNING, a_grade_min=80, mult_extreme_inverse=1.4)
         apply_tuning(t)
         assert se.A_GRADE_MIN == 80
@@ -142,6 +148,7 @@ class TestHotSwap:
 
     def test_reset_tuning_reverts(self):
         import app.services.signal_engine as se
+
         t = dataclasses.replace(TUNING, a_grade_min=80)
         apply_tuning(t)
         assert se.A_GRADE_MIN == 80
@@ -150,8 +157,9 @@ class TestHotSwap:
 
     def test_tuning_scope_context_manager(self):
         import app.services.signal_engine as se
+
         t = dataclasses.replace(TUNING, a_grade_min=80)
-        with tuning_scope(t):
+        with TuningScope(t):
             assert se.A_GRADE_MIN == 80
         # After exit, reverted.
         assert se.A_GRADE_MIN == TUNING.a_grade_min
@@ -159,10 +167,20 @@ class TestHotSwap:
     def test_dict_field_passed_by_value(self):
         """Mutating the alias dict shouldn't bleed into TUNING."""
         import app.services.signal_engine as se
-        apply_tuning(dataclasses.replace(TUNING, pattern_base_score={
-            "gartley": 99, "bat": 0, "butterfly": 0,
-            "crab": 0, "deep crab": 0, "shark": 0,
-        }))
+
+        apply_tuning(
+            dataclasses.replace(
+                TUNING,
+                pattern_base_score={
+                    "gartley": 99,
+                    "bat": 0,
+                    "butterfly": 0,
+                    "crab": 0,
+                    "deep crab": 0,
+                    "shark": 0,
+                },
+            )
+        )
         se.PATTERN_BASE_SCORE["bat"] = 42
         # TUNING must be unchanged.
         assert TUNING.pattern_base_score["bat"] == 2
@@ -176,9 +194,7 @@ class TestClusters:
         listed = {f for fs in clusters().values() for f in fs}
         dataclass_fields = {f.name for f in dataclasses.fields(TUNING)}
         # All cluster-listed fields must exist on the dataclass.
-        assert listed <= dataclass_fields, (
-            f"Unknown cluster fields: {listed - dataclass_fields}"
-        )
+        assert listed <= dataclass_fields, f"Unknown cluster fields: {listed - dataclass_fields}"
 
     def test_clusters_partition_tunable_fields(self):
         """Every tunable field should appear in some cluster (Frozen fields

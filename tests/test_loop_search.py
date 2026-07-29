@@ -5,12 +5,11 @@ harness. The sensitivity scan uses a synthetic fitness function
 (:func:`app.loop.sensitivity.mock_fitness_noisy`) so we can validate the
 σ calibration logic in milliseconds.
 """
+
 from __future__ import annotations
 
 import json
 import random
-from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
@@ -19,10 +18,17 @@ from app.loop.mutation import (
     DEFAULT_CLUSTER_MAP,
     all_clusters,
     cluster_fields,
+    mutate_all_clusters,
     mutate_cluster,
     mutate_field,
-    mutate_all_clusters,
     random_child,
+)
+from app.loop.search import (
+    GenerationConfig,
+    GenerationResult,
+    check_safety,
+    make_child_candidates,
+    run_generation,
 )
 from app.loop.sensitivity import (
     FieldSensitivity,
@@ -32,14 +38,6 @@ from app.loop.sensitivity import (
     save_report,
     sensitivity_scan,
 )
-from app.loop.search import (
-    GenerationConfig,
-    GenerationResult,
-    check_safety,
-    make_child_candidates,
-    run_generation,
-)
-
 
 # --- mutation.py --------------------------------------------------------------
 
@@ -47,23 +45,21 @@ from app.loop.search import (
 class TestMutateField:
     def test_abs_small_within_bounds(self):
         rng = random.Random(0)
-        t = mutate_field("atr_prz_sweep", "abs_small",
-                         {"min": 0.05, "max": 1.0}, TUNING, rng,
-                         sigma_scale=10.0)  # huge σ ⇒ hits bounds
+        t = mutate_field(
+            "atr_prz_sweep", "abs_small", {"min": 0.05, "max": 1.0}, TUNING, rng, sigma_scale=10.0
+        )  # huge σ ⇒ hits bounds
         v = t.atr_prz_sweep
         assert 0.05 <= v <= 1.0
 
     def test_int_window_integer(self):
         rng = random.Random(0)
-        t = mutate_field("atr_window", "int_window",
-                         {"min": 5, "max": 50}, TUNING, rng)
+        t = mutate_field("atr_window", "int_window", {"min": 5, "max": 50}, TUNING, rng)
         assert isinstance(t.atr_window, int)
         assert 5 <= t.atr_window <= 50
 
     def test_dict_per_key_all_keys_perturbed(self):
         rng = random.Random(0)
-        t = mutate_field("confluence_weights", "dict_per_key",
-                         {"per_key": 0.10}, TUNING, rng, sigma_scale=1.0)
+        t = mutate_field("confluence_weights", "dict_per_key", {"per_key": 0.10}, TUNING, rng, sigma_scale=1.0)
         assert set(t.confluence_weights.keys()) == set(TUNING.confluence_weights.keys())
 
     def test_unknown_kind_raises(self):
@@ -74,8 +70,7 @@ class TestMutateField:
     def test_replaces_only_one_field(self):
         rng = random.Random(0)
         before = to_dict(TUNING)
-        t = mutate_field("a_grade_min", "int_threshold",
-                         {"min": 50, "max": 95}, TUNING, rng)
+        t = mutate_field("a_grade_min", "int_threshold", {"min": 50, "max": 95}, TUNING, rng)
         after = to_dict(t)
         diffs = [k for k in before if before[k] != after[k]]
         assert diffs == ["a_grade_min"]
@@ -140,8 +135,11 @@ class TestRandomChild:
 class TestClusterUtils:
     def test_all_clusters_is_five(self):
         assert set(all_clusters()) == {
-            "C1 Geometry", "C2 Discipline", "C3 Confluence",
-            "C4 Macro", "C5 Windows",
+            "C1 Geometry",
+            "C2 Discipline",
+            "C3 Confluence",
+            "C4 Macro",
+            "C5 Windows",
         }
 
     def test_cluster_fields_returns_strings(self):
@@ -168,14 +166,14 @@ class TestSensitivityScan:
         report = sensitivity_scan(fitness_fn=steep, seed=1)
         a_field = next(f for f in report.fields if f.field == "a_grade_min")
         # Pick any field in a different cluster — it has zero gradient here.
-        flat_field = next(f for f in report.fields
-                          if f.cluster == "C5 Windows")
+        flat_field = next(f for f in report.fields if f.cluster == "C5 Windows")
         assert a_field.gradient_abs > flat_field.gradient_abs
         assert a_field.recommended_sigma_scale <= flat_field.recommended_sigma_scale
 
     def test_skips_fields(self):
         report = sensitivity_scan(
-            fitness_fn=mock_fitness_noisy, seed=1,
+            fitness_fn=mock_fitness_noisy,
+            seed=1,
             fields_to_skip=["a_grade_min"],
         )
         assert all(f.field != "a_grade_min" for f in report.fields)
@@ -184,6 +182,7 @@ class TestSensitivityScan:
         # Constant fitness ⇒ infinite gradient ratio ⇒ scale clamped.
         def const(_t):
             return 1.0
+
         report = sensitivity_scan(fitness_fn=const, seed=1)
         for f in report.fields:
             assert 0.25 <= f.recommended_sigma_scale <= 4.0
@@ -201,11 +200,20 @@ class TestSensitivityReportIO:
 
 class TestSensitivityReportScaleFor:
     def test_returns_field_scale_when_known(self):
-        r = SensitivityReport(fields=[
-            FieldSensitivity(field="x", cluster="C", kind="abs_small",
-                             baseline_value=0, plus_delta=0.5, minus_delta=0.5,
-                             gradient_abs=0.5, recommended_sigma_scale=2.0),
-        ])
+        r = SensitivityReport(
+            fields=[
+                FieldSensitivity(
+                    field="x",
+                    cluster="C",
+                    kind="abs_small",
+                    baseline_value=0,
+                    plus_delta=0.5,
+                    minus_delta=0.5,
+                    gradient_abs=0.5,
+                    recommended_sigma_scale=2.0,
+                ),
+            ]
+        )
         assert r.scale_for("x") == 2.0
 
     def test_falls_back_to_default(self):
@@ -219,17 +227,26 @@ class TestSensitivityReportScaleFor:
 class TestCheckSafety:
     def test_all_pass_default(self):
         cfg = GenerationConfig(
-            gen=1, parent_sha="abc", parent=TUNING, cluster="C1 Geometry",
+            gen=1,
+            parent_sha="abc",
+            parent=TUNING,
+            cluster="C1 Geometry",
         )
         checks = check_safety(cfg)
         assert all(c.ok for c in checks)
         assert {c.name for c in checks} >= {
-            "diff_size", "timeout_floor", "weekly_budget", "cluster_exists",
+            "diff_size",
+            "timeout_floor",
+            "weekly_budget",
+            "cluster_exists",
         }
 
     def test_too_many_mutations_fails(self):
         cfg = GenerationConfig(
-            gen=1, parent_sha="abc", parent=TUNING, cluster="C1 Geometry",
+            gen=1,
+            parent_sha="abc",
+            parent=TUNING,
+            cluster="C1 Geometry",
             n_mutations=10,
         )
         checks = check_safety(cfg)
@@ -238,7 +255,10 @@ class TestCheckSafety:
 
     def test_low_timeout_fails(self):
         cfg = GenerationConfig(
-            gen=1, parent_sha="abc", parent=TUNING, cluster="C1 Geometry",
+            gen=1,
+            parent_sha="abc",
+            parent=TUNING,
+            cluster="C1 Geometry",
             timeout_seconds=10,
         )
         checks = check_safety(cfg)
@@ -247,7 +267,10 @@ class TestCheckSafety:
 
     def test_unknown_cluster_fails(self):
         cfg = GenerationConfig(
-            gen=1, parent_sha="abc", parent=TUNING, cluster="C9 Unknown",
+            gen=1,
+            parent_sha="abc",
+            parent=TUNING,
+            cluster="C9 Unknown",
         )
         checks = check_safety(cfg)
         cl_check = next(c for c in checks if c.name == "cluster_exists")
@@ -257,16 +280,24 @@ class TestCheckSafety:
 class TestMakeChildCandidates:
     def test_lambda_candidates(self):
         children = make_child_candidates(
-            TUNING, "C1 Geometry", lambda_=5,
-            sigma_scale=1.0, n_mutations=1, gen=1,
+            TUNING,
+            "C1 Geometry",
+            lambda_=5,
+            sigma_scale=1.0,
+            n_mutations=1,
+            gen=1,
         )
         assert len(children) == 5
         assert all("candidate_id" in c and "tuning" in c for c in children)
 
     def test_candidate_ids_are_unique(self):
         children = make_child_candidates(
-            TUNING, "C3 Confluence", lambda_=10,
-            sigma_scale=1.0, n_mutations=1, gen=2,
+            TUNING,
+            "C3 Confluence",
+            lambda_=10,
+            sigma_scale=1.0,
+            n_mutations=1,
+            gen=2,
         )
         ids = [c["candidate_id"] for c in children]
         assert len(set(ids)) == 10
@@ -274,20 +305,35 @@ class TestMakeChildCandidates:
     def test_with_sensitivity_uses_per_field_scale(self):
         report = sensitivity_scan(fitness_fn=mock_fitness_noisy, seed=1)
         children = make_child_candidates(
-            TUNING, "C3 Confluence", lambda_=4,
-            sigma_scale=1.0, n_mutations=2, gen=1,
-            sensitivity=report, seed=0,
+            TUNING,
+            "C3 Confluence",
+            lambda_=4,
+            sigma_scale=1.0,
+            n_mutations=2,
+            gen=1,
+            sensitivity=report,
+            seed=0,
         )
         assert len(children) == 4
 
     def test_seed_reproducible(self):
         a = make_child_candidates(
-            TUNING, "C2 Discipline", lambda_=3,
-            sigma_scale=1.0, n_mutations=2, gen=1, seed=7,
+            TUNING,
+            "C2 Discipline",
+            lambda_=3,
+            sigma_scale=1.0,
+            n_mutations=2,
+            gen=1,
+            seed=7,
         )
         b = make_child_candidates(
-            TUNING, "C2 Discipline", lambda_=3,
-            sigma_scale=1.0, n_mutations=2, gen=1, seed=7,
+            TUNING,
+            "C2 Discipline",
+            lambda_=3,
+            sigma_scale=1.0,
+            n_mutations=2,
+            gen=1,
+            seed=7,
         )
         assert [c["tuning"] for c in a] == [c["tuning"] for c in b]
 
@@ -295,9 +341,12 @@ class TestMakeChildCandidates:
 class TestRunGeneration:
     def test_skips_on_failed_safety(self, tmp_path):
         cfg = GenerationConfig(
-            gen=1, parent_sha="abc", parent=TUNING,
+            gen=1,
+            parent_sha="abc",
+            parent=TUNING,
             cluster="C9 Unknown",
-            n_mutations=10, timeout_seconds=10,
+            n_mutations=10,
+            timeout_seconds=10,
         )
         res = run_generation(cfg, state_root=tmp_path)
         assert res.skipped is True
@@ -306,8 +355,11 @@ class TestRunGeneration:
 
     def test_writes_candidates_file(self, tmp_path):
         cfg = GenerationConfig(
-            gen=3, parent_sha="abc", parent=TUNING,
-            cluster="C1 Geometry", lambda_=4,
+            gen=3,
+            parent_sha="abc",
+            parent=TUNING,
+            cluster="C1 Geometry",
+            lambda_=4,
         )
         res = run_generation(cfg, state_root=tmp_path, quarter="2024-Q4")
         assert res.skipped is False
@@ -320,15 +372,21 @@ class TestRunGeneration:
     def test_respects_sensitivity_report(self, tmp_path):
         report = sensitivity_scan(fitness_fn=mock_fitness_noisy, seed=1)
         cfg = GenerationConfig(
-            gen=1, parent_sha="abc", parent=TUNING,
-            cluster="C3 Confluence", lambda_=2, n_mutations=1,
+            gen=1,
+            parent_sha="abc",
+            parent=TUNING,
+            cluster="C3 Confluence",
+            lambda_=2,
+            n_mutations=1,
         )
         res = run_generation(cfg, state_root=tmp_path, sensitivity=report)
         assert len(res.candidates) == 2
 
     def test_returns_generation_result_shape(self, tmp_path):
         cfg = GenerationConfig(
-            gen=1, parent_sha="abc", parent=TUNING,
+            gen=1,
+            parent_sha="abc",
+            parent=TUNING,
             cluster="C5 Windows",
         )
         res = run_generation(cfg, state_root=tmp_path)

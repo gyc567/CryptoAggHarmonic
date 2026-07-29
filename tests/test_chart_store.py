@@ -1,8 +1,9 @@
 """100% coverage tests for app.services.chart_store and chart distribution."""
+
 import os
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -17,26 +18,32 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
 
 class TestIsValidChartName:
-    @pytest.mark.parametrize("name", [
-        VALID_ID,
-        "a1b2c3d4",
-        "a" * 64,
-    ])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            VALID_ID,
+            "a1b2c3d4",
+            "a" * 64,
+        ],
+    )
     def test_valid(self, name):
         assert is_valid_chart_name(name) is True
 
-    @pytest.mark.parametrize("name", [
-        "",
-        "short",
-        "a" * 65,
-        "../etc/passwd",
-        "a/b",
-        "..",
-        "a1b2c3d4.png",
-        "A1B2C3D4",          # uppercase not allowed
-        "a1b2c3d4.exe",
-        "a1b2c3$4",
-    ])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "",
+            "short",
+            "a" * 65,
+            "../etc/passwd",
+            "a/b",
+            "..",
+            "a1b2c3d4.png",
+            "A1B2C3D4",  # uppercase not allowed
+            "a1b2c3d4.exe",
+            "a1b2c3$4",
+        ],
+    )
     def test_invalid(self, name):
         assert is_valid_chart_name(name) is False
 
@@ -110,47 +117,58 @@ class TestDistributeChart:
 
     def _chart(self):
         from app.domain.schemas import ChartMeta
+
         return ChartMeta(format="png")
 
     def test_supabase_success(self, tmp_path):
         from app.services.analysis import AnalysisOrchestrator
+
         chart = self._chart()
-        with patch("app.services.analysis.upload_chart", return_value="u/x.png"), \
-             patch("app.services.analysis.get_chart_url", return_value="https://signed"):
+        with (
+            patch("app.services.analysis.upload_chart", return_value="u/x.png"),
+            patch("app.services.analysis.get_chart_url", return_value="https://signed"),
+        ):
             result = AnalysisOrchestrator._distribute_chart(chart, VALID_ID, PNG, "user-1")
         assert result.url == "https://signed"
         assert result.path == "u/x.png"
 
     def test_supabase_none_falls_back_to_local(self, tmp_path):
         from app.services.analysis import AnalysisOrchestrator
+
         chart = self._chart()
-        with patch("app.services.analysis.upload_chart", return_value=None), \
-             patch("app.services.analysis.save_chart_locally",
-                   return_value=str(tmp_path / f"{VALID_ID}.png")):
+        with (
+            patch("app.services.analysis.upload_chart", return_value=None),
+            patch("app.services.analysis.save_chart_locally", return_value=str(tmp_path / f"{VALID_ID}.png")),
+        ):
             result = AnalysisOrchestrator._distribute_chart(chart, VALID_ID, PNG, "user-1")
         assert result.url == f"/api/charts/{VALID_ID}.png"
 
     def test_supabase_exception_falls_back_to_local(self, tmp_path):
         from app.services.analysis import AnalysisOrchestrator
+
         chart = self._chart()
-        with patch("app.services.analysis.upload_chart", side_effect=RuntimeError("boom")), \
-             patch("app.services.analysis.save_chart_locally",
-                   return_value=str(tmp_path / f"{VALID_ID}.png")):
+        with (
+            patch("app.services.analysis.upload_chart", side_effect=RuntimeError("boom")),
+            patch("app.services.analysis.save_chart_locally", return_value=str(tmp_path / f"{VALID_ID}.png")),
+        ):
             result = AnalysisOrchestrator._distribute_chart(chart, VALID_ID, PNG, "user-1")
         assert result.url == f"/api/charts/{VALID_ID}.png"
 
     def test_no_user_goes_straight_to_local(self, tmp_path):
         from app.services.analysis import AnalysisOrchestrator
+
         chart = self._chart()
-        with patch("app.services.analysis.upload_chart") as mock_up, \
-             patch("app.services.analysis.save_chart_locally",
-                   return_value=str(tmp_path / f"{VALID_ID}.png")):
+        with (
+            patch("app.services.analysis.upload_chart") as mock_up,
+            patch("app.services.analysis.save_chart_locally", return_value=str(tmp_path / f"{VALID_ID}.png")),
+        ):
             result = AnalysisOrchestrator._distribute_chart(chart, VALID_ID, PNG, None)
         mock_up.assert_not_called()
         assert result.url == f"/api/charts/{VALID_ID}.png"
 
     def test_local_save_failure_leaves_url_none(self):
         from app.services.analysis import AnalysisOrchestrator
+
         chart = self._chart()
         with patch("app.services.analysis.save_chart_locally", return_value=None):
             result = AnalysisOrchestrator._distribute_chart(chart, VALID_ID, PNG, None)

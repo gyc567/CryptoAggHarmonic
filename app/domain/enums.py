@@ -1,16 +1,19 @@
 """Domain enums for Pyharmonics SaaS API."""
+
 from enum import Enum
 
 
 class Market(str, Enum):
     """Supported market data sources."""
-    BINANCE = "binance"    # 现货
-    FUTURES = "futures"    # USDT-M 永续合约
+
+    BINANCE = "binance"  # 现货
+    FUTURES = "futures"  # USDT-M 永续合约
     YAHOO = "yahoo"
 
 
 class Interval(str, Enum):
     """Supported candle intervals."""
+
     M1 = "1m"
     M5 = "5m"
     M15 = "15m"
@@ -27,6 +30,7 @@ class AnalysisType(str, Enum):
     and lets the signal engine decide what was actually found, reported
     back via ``TechnicalResult.resolved_type``.
     """
+
     AUTO = "auto"
     FORMING = "forming"
     FORMED = "formed"
@@ -35,6 +39,7 @@ class AnalysisType(str, Enum):
 
 class Status(str, Enum):
     """Analysis status values."""
+
     CREATED = "created"
     VALIDATING = "validating"
     FETCHING_MARKET_DATA = "fetching_market_data"
@@ -51,6 +56,7 @@ class Status(str, Enum):
 
 class ErrorCode(str, Enum):
     """Standard error codes for API responses."""
+
     INVALID_PARAMS = "INVALID_PARAMS"
     MARKET_DATA_UNAVAILABLE = "MARKET_DATA_UNAVAILABLE"
     NO_PATTERNS_FOUND = "NO_PATTERNS_FOUND"

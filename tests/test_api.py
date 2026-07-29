@@ -1,10 +1,14 @@
 """Tests for API layer: errors, middleware."""
+
 import pytest
 from flask import Flask
-from unittest.mock import patch
 
 from app.api.errors import AppError, ErrorCode, format_error, map_exception_to_error
-from app.api.middleware import register_error_handlers, log_request_middleware, _status_code_for_error
+from app.api.middleware import (
+    _status_code_for_error,
+    log_request_middleware,
+    register_error_handlers,
+)
 
 
 class TestAppError:
@@ -177,6 +181,7 @@ class TestErrorHandlers:
         def bad_request():
             # Force a 400 by returning None without response
             from flask import abort
+
             abort(400)
 
         resp = client.post("/test-bad-request")
@@ -202,6 +207,7 @@ class TestLogRequestMiddleware:
         @app.route("/test")
         def test_route():
             from flask import request as flask_request
+
             assert hasattr(flask_request, "request_id")
             assert len(flask_request.request_id) > 0
             return "ok"
@@ -213,6 +219,7 @@ class TestLogRequestMiddleware:
         @app.route("/test")
         def test_route():
             from flask import request as flask_request
+
             assert hasattr(flask_request, "start_time")
             assert flask_request.start_time > 0
             return "ok"

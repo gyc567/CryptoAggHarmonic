@@ -1,9 +1,8 @@
 """Tests for vibe-specific infrastructure: cancellation, event store, trace store, prompt parsing."""
+
 import os
 import time
 from unittest.mock import MagicMock
-
-import pytest
 
 from app.infra.vibe_event_store import VibeEventStore
 from app.infra.vibe_trace_store import VibeTraceStore
@@ -38,7 +37,7 @@ class TestVibeEventStore:
     def test_get_events_by_offset(self):
         store = VibeEventStore(redis_url="")  # force in-memory
         run_id = "run-offset"
-        e1 = store.publish(run_id, {"type": "delta", "content": "a"})
+        e1 = store.publish(run_id, {"type": "delta", "content": "a"})  # noqa: F841  — used as offset baseline
         e2 = store.publish(run_id, {"type": "delta", "content": "b"})
         e3 = store.publish(run_id, {"type": "done"})
 
@@ -50,7 +49,7 @@ class TestVibeEventStore:
     def test_get_events_by_after_event_id(self):
         store = VibeEventStore(redis_url="")
         run_id = "run-after"
-        e1 = store.publish(run_id, {"type": "delta", "content": "a"})
+        e1 = store.publish(run_id, {"type": "delta", "content": "a"})  # noqa: F841  — seq baseline
         store.publish(run_id, {"type": "delta", "content": "b"})
         e3 = store.publish(run_id, {"type": "done"})
 
@@ -63,9 +62,9 @@ class TestVibeEventStore:
         store = VibeEventStore(redis_url="")
         run_id = "run-seq"
 
-        e1 = store.publish(run_id, {"type": "delta", "content": "a"})
+        e1 = store.publish(run_id, {"type": "delta", "content": "a"})  # noqa: F841  — seq baseline
         store.publish(run_id, {"type": "delta", "content": "b"})
-        e3 = store.publish(run_id, {"type": "done"})
+        store.publish(run_id, {"type": "done"})
 
         all_events = store.get_events(run_id, offset=0, limit=10)
         seqs = [ev["seq"] for ev in all_events]
@@ -74,9 +73,7 @@ class TestVibeEventStore:
 
         # after_seq=0 returns events 1..2.
         nxt = store.get_events(run_id, after_seq=0, limit=10)
-        assert [ev["event_id"] for ev in nxt] == [
-            ev["event_id"] for ev in all_events if ev["seq"] > 0
-        ]
+        assert [ev["event_id"] for ev in nxt] == [ev["event_id"] for ev in all_events if ev["seq"] > 0]
 
         # after_seq=last returns empty.
         empty = store.get_events(run_id, after_seq=2, limit=10)
@@ -89,7 +86,6 @@ class TestVibeEventStore:
         assert len(after_clear) == 1
         assert after_clear[0]["seq"] == 0
         assert after_clear[0]["event_id"] == e_after_clear
-
 
 
 class TestVibeTraceStore:
@@ -115,10 +111,7 @@ class TestVibeTraceStore:
 class TestPromptProviderParsing:
     def test_multiple_inline_json_objects(self):
         provider = PromptProvider()
-        text = (
-            'Some text {"tool": "t1", "arguments": {"a": 1}} '
-            'more {"tool": "t2", "arguments": {"b": 2}}'
-        )
+        text = 'Some text {"tool": "t1", "arguments": {"a": 1}} ' 'more {"tool": "t2", "arguments": {"b": 2}}'
         content, calls = provider._parse_response(text)
         assert len(calls) == 2
         assert calls[0].name == "t1"
@@ -127,7 +120,7 @@ class TestPromptProviderParsing:
 
     def test_fenced_json_block(self):
         provider = PromptProvider()
-        text = "Analysis:\n```json\n{\"tool\": \"t1\", \"arguments\": {\"a\": 1}}\n```"
+        text = 'Analysis:\n```json\n{"tool": "t1", "arguments": {"a": 1}}\n```'
         content, calls = provider._parse_response(text)
         assert len(calls) == 1
         assert calls[0].name == "t1"

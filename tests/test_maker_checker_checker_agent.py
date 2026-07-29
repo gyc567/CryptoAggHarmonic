@@ -4,20 +4,19 @@ Covers: CheckerConfig validation, isolation enforcement, calibration
 transformation, thresholding, backend-failure fallback, and the
 ``verify`` convenience wrapper.
 """
+
 from __future__ import annotations
 
 import pytest
 
 from app.loop.maker_checker.checker_agent import (
-    CheckerAgent,
     CheckerConfig,
     fit_calibration_from_history,
     verify,
 )
+from app.loop.maker_checker.isolation import MINIMAL, MODERATE, STRICT
 from app.loop.maker_checker.llm_backend import MockLLMBackend
-from app.loop.maker_checker.schemas import CalibrationParams, make_calibration
-from app.loop.maker_checker.isolation import STRICT, MODERATE, MINIMAL
-
+from app.loop.maker_checker.schemas import make_calibration
 
 # ---- CheckerConfig --------------------------------------------------------
 
@@ -74,6 +73,7 @@ class TestVerify:
     def test_returns_verdict(self) -> None:
         v = verify("cand-1", _results())
         from app.loop.maker_checker.schemas import Verdict
+
         assert isinstance(v, Verdict)
 
     def test_strict_isolation_hides_maker_fields(self) -> None:
@@ -106,7 +106,8 @@ class TestVerify:
                 raise RuntimeError("simulated outage")
 
         v = verify(
-            "cand-1", _results(),
+            "cand-1",
+            _results(),
             backend=FailingBackend(),  # type: ignore[arg-type]
         )
         assert v.accept is False
@@ -141,9 +142,7 @@ class TestVerify:
 
 class TestFitCalibrationFromHistory:
     def test_returns_none_when_too_few_samples(self) -> None:
-        result = fit_calibration_from_history(
-            [(0.5, 1), (0.5, 0)] * 3  # 6 pairs
-        )
+        result = fit_calibration_from_history([(0.5, 1), (0.5, 0)] * 3)  # 6 pairs
         assert result is None
 
     def test_returns_calibration_when_enough_samples(self) -> None:

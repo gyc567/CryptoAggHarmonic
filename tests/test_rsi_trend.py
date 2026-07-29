@@ -1,4 +1,5 @@
 """Unit tests for the trend-RSI strategy domain logic."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -32,8 +33,8 @@ def make_df(closes: list[float], opens: list[float] | None = None) -> pd.DataFra
     rows = {
         "open": opens,
         "close": closes,
-        "high": [max(o, c) + 0.5 for o, c in zip(opens, closes)],
-        "low": [min(o, c) - 0.5 for o, c in zip(opens, closes)],
+        "high": [max(o, c) + 0.5 for o, c in zip(opens, closes, strict=False)],
+        "low": [min(o, c) - 0.5 for o, c in zip(opens, closes, strict=False)],
     }
     return pd.DataFrame(rows)
 
@@ -96,9 +97,7 @@ def test_long_signal_fires_above_ema200():
     assert sig.index == len(df) - 1
     assert sig.entry_price == pytest.approx(262.0)
     assert sig.stop_loss < sig.entry_price
-    assert sig.target_price == pytest.approx(
-        sig.entry_price + 2 * (sig.entry_price - sig.stop_loss)
-    )
+    assert sig.target_price == pytest.approx(sig.entry_price + 2 * (sig.entry_price - sig.stop_loss))
 
 
 def test_long_signal_filtered_below_ema200():
@@ -117,9 +116,7 @@ def test_short_signal_fires_below_ema200():
     assert sig.direction == SHORT
     assert sig.entry_price == pytest.approx(138.0)
     assert sig.stop_loss > sig.entry_price
-    assert sig.target_price == pytest.approx(
-        sig.entry_price - 2 * (sig.stop_loss - sig.entry_price)
-    )
+    assert sig.target_price == pytest.approx(sig.entry_price - 2 * (sig.stop_loss - sig.entry_price))
 
 
 def test_no_signals_inside_warmup():
@@ -188,8 +185,9 @@ def test_min_quality_score_filters_weak_signals():
 # ------------------------------------------------------------------ backtest
 
 
-def make_signal(index: int = 0, direction: str = LONG, entry: float = 100.0,
-                stop: float = 98.0, target: float = 104.0) -> StrategySignal:
+def make_signal(
+    index: int = 0, direction: str = LONG, entry: float = 100.0, stop: float = 98.0, target: float = 104.0
+) -> StrategySignal:
     return StrategySignal(
         direction=direction,
         entry_price=entry,

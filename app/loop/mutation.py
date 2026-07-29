@@ -1,3 +1,27 @@
+from __future__ import annotations
+
+import random
+from dataclasses import replace
+from typing import Optional
+
+from app.config.tuning import TUNING, TuningConstants
+
+# --- Cluster definitions -----------------------------------------------------
+
+
+# Cluster map: cluster_name -> list of (field_name, kind, kwargs)
+# kind ∈ {"abs_small", "rel_large", "int_window", "int_threshold",
+#         "dict_per_key", "enum"}.
+#
+# Built from inspection of TuningConstants. To add a new tunable field:
+# 1) add it to TuningConstants
+# 2) put it here in the right cluster
+# 3) (optionally) add a post_init / __post_perturb__ validator
+#
+# Frozen / structural fields (fib_tp1/2/3, extended_patterns, htf_rule,
+# funding_confluence_default, tp_close_pcts) are intentionally excluded
+# from the map — the loop tunes only the soft, continuous knobs whose
+# hard + soft constraints can be auto-repaired in __post_init__.
 """Per-cluster mutation operators for the loop-tuning project.
 
 Implements the loop-tuning plan §3 (5 parameter clusters) + §3.2
@@ -20,32 +44,7 @@ The cluster map is built once via :func:`default_cluster_map` and is the
 single source of truth — adding a new tunable field means adding it to
 the relevant cluster entry here.
 """
-from __future__ import annotations
 
-import math
-import random
-from dataclasses import fields, replace
-from typing import Callable, Iterable
-
-from app.config.tuning import TUNING, TuningConstants, to_dict
-
-
-# --- Cluster definitions -----------------------------------------------------
-
-
-# Cluster map: cluster_name -> list of (field_name, kind, kwargs)
-# kind ∈ {"abs_small", "rel_large", "int_window", "int_threshold",
-#         "dict_per_key", "enum"}.
-#
-# Built from inspection of TuningConstants. To add a new tunable field:
-# 1) add it to TuningConstants
-# 2) put it here in the right cluster
-# 3) (optionally) add a post_init / __post_perturb__ validator
-#
-# Frozen / structural fields (fib_tp1/2/3, extended_patterns, htf_rule,
-# funding_confluence_default, tp_close_pcts) are intentionally excluded
-# from the map — the loop tunes only the soft, continuous knobs whose
-# hard + soft constraints can be auto-repaired in __post_init__.
 DEFAULT_CLUSTER_MAP: dict[str, list[tuple[str, str, dict]]] = {
     # C1 Geometry — fee/slippage knobs and the PRZ distance tolerance
     "C1 Geometry": [
@@ -54,7 +53,6 @@ DEFAULT_CLUSTER_MAP: dict[str, list[tuple[str, str, dict]]] = {
         ("slippage_rate", "abs_small", {"min": 0.0001, "max": 0.005}),
         ("atr_stop_buffer", "dict_per_key", {"per_key": 0.20}),
     ],
-
     # C2 Discipline — risk gates, regime thresholds, ATR sizing, TTLs
     "C2 Discipline": [
         ("max_d_age_bars", "int_threshold", {"min": 5, "max": 60}),
@@ -68,7 +66,6 @@ DEFAULT_CLUSTER_MAP: dict[str, list[tuple[str, str, dict]]] = {
         ("target_atr_pct", "abs_small", {"min": 1.0, "max": 5.0}),
         ("default_ttl_bars", "int_threshold", {"min": 20, "max": 80}),
     ],
-
     # C3 Confluence — weights that combine multiple harmonic signals
     "C3 Confluence": [
         ("a_grade_min", "int_threshold", {"min": 50, "max": 90}),
@@ -78,7 +75,6 @@ DEFAULT_CLUSTER_MAP: dict[str, list[tuple[str, str, dict]]] = {
         ("pattern_base_score", "dict_per_key", {"per_key": 2.0}),
         ("stability_window", "int_threshold", {"min": 3, "max": 15}),
     ],
-
     # C4 Macro — macro bias overrides, regime weights
     "C4 Macro": [
         ("slope_trend_up", "abs_small", {"min": 0.2, "max": 1.0}),
@@ -92,7 +88,6 @@ DEFAULT_CLUSTER_MAP: dict[str, list[tuple[str, str, dict]]] = {
         ("extreme_deviation_pct", "abs_small", {"min": 10.0, "max": 40.0}),
         ("min_daily_bars", "int_window", {"min": 100, "max": 400}),
     ],
-
     # C5 Windows — rolling-window lookbacks for technical indicators
     "C5 Windows": [
         ("min_candles", "int_threshold", {"min": 30, "max": 200}),
@@ -120,10 +115,16 @@ def _clip(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
-_VALID_KINDS = frozenset({
-    "abs_small", "rel_large", "int_window", "int_threshold",
-    "dict_per_key", "enum",
-})
+_VALID_KINDS = frozenset(
+    {
+        "abs_small",
+        "rel_large",
+        "int_window",
+        "int_threshold",
+        "dict_per_key",
+        "enum",
+    }
+)
 
 
 def mutate_field(
@@ -151,8 +152,7 @@ def mutate_field(
     max_retries = kwargs.get("max_retries", 5)
     for _ in range(max_retries + 1):
         try:
-            new_t = _apply_one_mutation(name, kind, kwargs, t, rng,
-                                        sigma_scale)
+            new_t = _apply_one_mutation(name, kind, kwargs, t, rng, sigma_scale)
         except (ValueError, TypeError):
             continue
         if new_t is t:
@@ -229,8 +229,8 @@ def mutate_cluster(
     rng: random.Random | None = None,
     *,
     sigma_scale: float = 1.0,
-    n_mutations: int | None = None,
-    cluster_map: dict[str, list[tuple[str, str, dict]]] | None = None,
+    n_mutations: Optional[int] = None,
+    cluster_map: Optional[dict[str, list[tuple[str, str, dict]]]] = None,
 ) -> TuningConstants:
     """Mutate one field (or ``n_mutations`` fields) in ``cluster``.
 
@@ -264,22 +264,21 @@ def mutate_all_clusters(
     rng: random.Random | None = None,
     *,
     sigma_scale: float = 1.0,
-    cluster_map: dict[str, list[tuple[str, str, dict]]] | None = None,
+    cluster_map: Optional[dict[str, list[tuple[str, str, dict]]]] = None,
 ) -> TuningConstants:
     """One mutation in EACH cluster. Useful for global sensitivity scans."""
     rng = rng or random.Random()
     cm = cluster_map or DEFAULT_CLUSTER_MAP
     for cluster in cm:
-        t = mutate_cluster(t, cluster, rng=rng, sigma_scale=sigma_scale,
-                           cluster_map=cm)
+        t = mutate_cluster(t, cluster, rng=rng, sigma_scale=sigma_scale, cluster_map=cm)
     return t
 
 
 def random_child(
-    parent: TuningConstants | None = None,
+    parent: Optional[TuningConstants] = None,
     *,
-    seed: int | None = None,
-    cluster_map: dict[str, list[tuple[str, str, dict]]] | None = None,
+    seed: Optional[int] = None,
+    cluster_map: Optional[dict[str, list[tuple[str, str, dict]]]] = None,
 ) -> TuningConstants:
     """Return a fresh :class:`TuningConstants` mutated from ``parent`` (or
     :data:`TUNING`) at exactly one randomly-chosen cluster, with exactly
@@ -293,7 +292,7 @@ def random_child(
 
 def cluster_fields(
     cluster: str,
-    cluster_map: dict[str, list[tuple[str, str, dict]]] | None = None,
+    cluster_map: Optional[dict[str, list[tuple[str, str, dict]]]] = None,
 ) -> list[str]:
     """Return the field names in ``cluster`` (handy for sensitivity scans)."""
     cm = cluster_map or DEFAULT_CLUSTER_MAP
@@ -301,7 +300,7 @@ def cluster_fields(
 
 
 def all_clusters(
-    cluster_map: dict[str, list[tuple[str, str, dict]]] | None = None,
+    cluster_map: Optional[dict[str, list[tuple[str, str, dict]]]] = None,
 ) -> list[str]:
     cm = cluster_map or DEFAULT_CLUSTER_MAP
     return list(cm)

@@ -1,7 +1,8 @@
 """Base classes for vibe tools."""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 
 @dataclass
@@ -28,7 +29,13 @@ class ToolOutput:
         return cls(status="completed", data=data, summary=summary)
 
     @classmethod
-    def error(cls, message: str, code: str = "error") -> "ToolOutput":
+    def from_error(cls, message: str, code: str = "error") -> "ToolOutput":
+        """Construct an error ToolOutput.
+
+        Named ``from_error`` (not ``error``) so the dataclass field and the
+        factory don't share an attribute name — ruff F811 and runtime
+        attribute shadowing are both avoided.
+        """
         return cls(status="error", error=message, data={"code": code})
 
     @classmethod
@@ -53,7 +60,7 @@ class Tool(ABC):
         """Execute the tool with validated input."""
         ...
 
-    def validate_input(self, input: dict) -> tuple[bool, Optional[str]]:
+    def validate_input(self, input: dict) -> tuple[bool, str | None]:
         """Best-effort input validation.
 
         Returns (is_valid, error_message).

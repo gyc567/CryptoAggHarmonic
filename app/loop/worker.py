@@ -11,6 +11,7 @@ Why ProcessPool over ThreadPool: pandas / numpy release the GIL, so we
 get true parallelism, and each worker has its own interpreter so the
 hot-swap in :mod:`app.config.tuning` doesn't bleed across candidates.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,8 +25,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from app.config.tuning import TuningConstants, from_dict, to_dict
-from app.loop.state import atomic_write_json, params_sha
-
+from app.loop.state import params_sha
 
 # --- Result record -----------------------------------------------------------
 
@@ -91,9 +91,12 @@ def run_candidate(
     cmd = [
         sys.executable,
         ".scratch/backtest/run_backtest_v3.py",
-        "--symbol-set", symbol_set,
-        "--anchor-step", str(anchor_step),
-        "--out-dir", str(run_dir),
+        "--symbol-set",
+        symbol_set,
+        "--anchor-step",
+        str(anchor_step),
+        "--out-dir",
+        str(run_dir),
     ]
     if quarter:
         cmd.extend(["--quarter", quarter])
@@ -102,21 +105,27 @@ def run_candidate(
     env = dict(os.environ)
     # Ensure the repo root is on PYTHONPATH inside the subprocess even if it
     # was launched from somewhere unusual.
-    repo_root = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..")
-    )
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     env["PYTHONPATH"] = repo_root + os.pathsep + env.get("PYTHONPATH", "")
 
     try:
-        proc = subprocess.run(
-            cmd, cwd=repo_root, env=env,
-            stdout=open(log_path, "wb"), stderr=subprocess.STDOUT,
-            timeout=timeout_seconds, check=False,
+        proc = subprocess.run(  # noqa: S603  — sys.executable + list args, shell=False implicit
+            cmd,
+            cwd=repo_root,
+            env=env,
+            stdout=open(log_path, "wb"),
+            stderr=subprocess.STDOUT,
+            timeout=timeout_seconds,
+            check=False,
         )
     except subprocess.TimeoutExpired as exc:
         return CandidateResult(
-            candidate_id=candidate_id, params_sha=sha, cluster="?", gen=-1,
-            decision="error", run_dir=str(run_dir),
+            candidate_id=candidate_id,
+            params_sha=sha,
+            cluster="?",
+            gen=-1,
+            decision="error",
+            run_dir=str(run_dir),
             elapsed_seconds=time.time() - started,
             error=f"subprocess timed out after {timeout_seconds}s: {exc}",
         )
@@ -129,13 +138,14 @@ def run_candidate(
 
     if proc.returncode != 0 or not metrics_path.exists():
         return CandidateResult(
-            candidate_id=candidate_id, params_sha=sha, cluster="?", gen=-1,
-            decision="error", run_dir=str(run_dir),
+            candidate_id=candidate_id,
+            params_sha=sha,
+            cluster="?",
+            gen=-1,
+            decision="error",
+            run_dir=str(run_dir),
             elapsed_seconds=time.time() - started,
-            error=(
-                f"subprocess exit={proc.returncode}, "
-                f"metrics.json exists={metrics_path.exists()}"
-            ),
+            error=(f"subprocess exit={proc.returncode}, " f"metrics.json exists={metrics_path.exists()}"),
         )
 
     with open(metrics_path) as f:
@@ -149,17 +159,27 @@ def run_candidate(
     tc = exp.get("trades_count", 0)
     if tc < 30:
         return CandidateResult(
-            candidate_id=candidate_id, params_sha=sha, cluster="?", gen=-1,
+            candidate_id=candidate_id,
+            params_sha=sha,
+            cluster="?",
+            gen=-1,
             decision="rejected",
             rejection_reason=f"trades_count={tc} < 30",
-            metrics=exp, fitness=fitness, run_dir=str(run_dir),
+            metrics=exp,
+            fitness=fitness,
+            run_dir=str(run_dir),
             elapsed_seconds=time.time() - started,
         )
 
     return CandidateResult(
-        candidate_id=candidate_id, params_sha=sha, cluster="?", gen=-1,
+        candidate_id=candidate_id,
+        params_sha=sha,
+        cluster="?",
+        gen=-1,
         decision="accepted",
-        metrics=exp, fitness=fitness, run_dir=str(run_dir),
+        metrics=exp,
+        fitness=fitness,
+        run_dir=str(run_dir),
         elapsed_seconds=time.time() - started,
     )
 
@@ -167,9 +187,9 @@ def run_candidate(
 def _yaml_scalar(v: Any) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return str(v)
-    if isinstance(v, (list, tuple)):
+    if isinstance(v, list | tuple):
         return "[" + ", ".join(_yaml_scalar(x) for x in v) + "]"
     if isinstance(v, dict):
         return "{" + ", ".join(f"{k}: {_yaml_scalar(val)}" for k, val in v.items()) + "}"

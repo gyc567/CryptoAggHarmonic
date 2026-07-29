@@ -3,9 +3,9 @@
 Covers: mock determinism, accept_rate behaviour, default_backend env
 handling, error surfacing.
 """
+
 from __future__ import annotations
 
-import os
 import pytest
 
 from app.loop.maker_checker.llm_backend import (
@@ -73,7 +73,7 @@ class TestMockLLMBackend:
         assert 0.0 <= out["checker_score"] <= 1.0
         assert 0.0 <= out["confidence"] <= 1.0
         assert "components" in out
-        for k, v in out["components"].items():
+        for _k, v in out["components"].items():
             assert 0.0 <= v <= 1.0
         assert isinstance(out["accept"], bool)
 
@@ -97,10 +97,7 @@ class TestMockLLMBackend:
         outs1 = [m1.complete_proposals("x", n_proposals=3) for _ in range(10)]
         outs2 = [m2.complete_proposals("x", n_proposals=3) for _ in range(10)]
         # At least one should differ across the two seeds.
-        assert any(
-            o1["proposals"][0]["diff"] != o2["proposals"][0]["diff"]
-            for o1, o2 in zip(outs1, outs2)
-        )
+        assert any(o1["proposals"][0]["diff"] != o2["proposals"][0]["diff"] for o1, o2 in zip(outs1, outs2, strict=False))
 
 
 class TestProtocol:

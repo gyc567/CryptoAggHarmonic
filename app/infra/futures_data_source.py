@@ -1,8 +1,7 @@
 """Binance USDT-M Futures data source using REST API."""
+
 import logging
 import os
-from dataclasses import dataclass
-from typing import Optional
 
 import pandas as pd
 import requests
@@ -66,10 +65,12 @@ class FuturesDataSource:
         self.symbol = symbol.upper().strip()
         self.interval = interval.lower().strip()
         self._session = requests.Session()
-        self._session.headers.update({
-            "User-Agent": "pyharmonics-gpt/1.0",
-            "Accept": "application/json",
-        })
+        self._session.headers.update(
+            {
+                "User-Agent": "pyharmonics-gpt/1.0",
+                "Accept": "application/json",
+            }
+        )
 
     @property
     def websocket_url(self) -> str:
@@ -126,7 +127,7 @@ class FuturesDataSource:
             "close_time": int(k[6]),
         }
 
-    def get_latest_close_time(self) -> Optional[int]:
+    def get_latest_close_time(self) -> int | None:
         """获取最新一根K线的收盘时间（毫秒）"""
         data = self.get_candles(limit=1)
         if data.df.empty:

@@ -1,4 +1,5 @@
 """100% coverage tests for app.domain.signals (pure functions)."""
+
 import pytest
 
 from app.domain.signals import (
@@ -55,18 +56,30 @@ class TestCandidate:
 
 def make_signal(**overrides):
     target = SignalTarget(
-        label="TP1", price=120.0, fib_basis="AD 38.2% retrace",
-        close_pct=50, move_stop_to="breakeven",
+        label="TP1",
+        price=120.0,
+        fib_basis="AD 38.2% retrace",
+        close_pct=50,
+        move_stop_to="breakeven",
     )
     base = dict(
-        status="confirmed", grade="A", direction="long",
-        pattern_name="gartley", family="XABCD", formed=True,
-        entry_zone=(108.0, 112.0), entry_reference=110.0,
-        stop_loss=99.0, stop_basis="X/PRZ invalidation - 0.5*ATR",
+        status="confirmed",
+        grade="A",
+        direction="long",
+        pattern_name="gartley",
+        family="XABCD",
+        formed=True,
+        entry_zone=(108.0, 112.0),
+        entry_reference=110.0,
+        stop_loss=99.0,
+        stop_basis="X/PRZ invalidation - 0.5*ATR",
         stop_level="standard",
         invalidation_point=99.5,
-        targets=(target,), net_rr_tp1=1.2, net_rr_tp2=2.4,
-        confluence_score=80, confluence={"rsi": 15},
+        targets=(target,),
+        net_rr_tp1=1.2,
+        net_rr_tp2=2.4,
+        confluence_score=80,
+        confluence={"rsi": 15},
         htf_trend="bullish",
     )
     base.update(overrides)
@@ -92,8 +105,12 @@ class TestSignalToDict:
 
     def test_to_dict_includes_v4_metadata(self):
         signal = make_signal(
-            reasoning="方向：做多", sharpe=0.42, regime="high_quant",
-            position_multiplier=0.9, stability_score=85, trap_score=50,
+            reasoning="方向：做多",
+            sharpe=0.42,
+            regime="high_quant",
+            position_multiplier=0.9,
+            stability_score=85,
+            trap_score=50,
         )
         d = signal.to_dict()
         assert d["reasoning"] == "方向：做多"
@@ -164,7 +181,8 @@ class TestComputeStop:
         c = make_candidate(
             bullish=False,
             points=(150.0, 100.0, 130.0, 110.0, 140.0),
-            completion_min=138.0, completion_max=142.0,
+            completion_min=138.0,
+            completion_max=142.0,
         )
         stop, basis, inv = compute_stop(c, atr=2.0)
         assert stop == 150.0 + ATR_STOP_BUFFER["standard"] * 2.0
@@ -175,7 +193,8 @@ class TestComputeStop:
         c = make_candidate(
             bullish=False,
             points=(145.0, 100.0, 130.0, 110.0, 140.0),
-            completion_min=148.0, completion_max=152.0,
+            completion_min=148.0,
+            completion_max=152.0,
         )
         stop, _, _ = compute_stop(c, atr=2.0)
         assert stop == 152.0 + ATR_STOP_BUFFER["standard"] * 2.0
@@ -185,16 +204,19 @@ class TestComputeStop:
         c = make_candidate(
             name="butterfly",
             points=(100.0, 150.0, 120.0, 140.0, 95.0),
-            completion_min=94.0, completion_max=96.0,
+            completion_min=94.0,
+            completion_max=96.0,
         )
         stop, _, _ = compute_stop(c, atr=2.0)
         assert stop == 94.0 - ATR_STOP_BUFFER["standard"] * 2.0
 
     def test_extended_pattern_bearish_uses_prz(self):
         c = make_candidate(
-            name="crab", bullish=False,
+            name="crab",
+            bullish=False,
             points=(150.0, 100.0, 130.0, 110.0, 155.0),
-            completion_min=154.0, completion_max=156.0,
+            completion_min=154.0,
+            completion_max=156.0,
         )
         stop, _, _ = compute_stop(c, atr=2.0)
         assert stop == 156.0 + ATR_STOP_BUFFER["standard"] * 2.0
@@ -254,6 +276,7 @@ class TestNetRr:
         # boundary so the signal engine fails loudly instead of producing
         # a misleading "None = no signal" silently. Asserting both:
         from icontract import ViolationError
+
         with pytest.raises(ViolationError):
             net_rr(0.0, 95.0, 110.0)
 

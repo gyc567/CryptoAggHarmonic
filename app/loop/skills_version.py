@@ -1,3 +1,15 @@
+from __future__ import annotations
+
+import hashlib
+import os
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Optional
+
+from app.loop.state import DEFAULT_ROOT, atomic_write_json
+
+# Default set of files that affect strategy decisions. Keep this small —
+# these are the files the operator would expect a Pareto change to track.
 """Skills versioning — detect when repo skills / heuristics change so the
 loop can mark stale Pareto points.
 
@@ -18,18 +30,7 @@ This module is intentionally trivial — it's a file hash + a compare.
 The interesting part is the policy in the driver (plan §6): tag every
 HISTORY line with the skills_version at run time.
 """
-from __future__ import annotations
 
-import hashlib
-import os
-from pathlib import Path
-from typing import Iterable
-
-from app.loop.state import DEFAULT_ROOT, atomic_write_json
-
-
-# Default set of files that affect strategy decisions. Keep this small —
-# these are the files the operator would expect a Pareto change to track.
 DEFAULT_STRATEGY_FILES = (
     "app/config/tuning.py",
     "app/domain/signals.py",
@@ -52,7 +53,7 @@ def _hash_file(path: Path) -> str:
 
 
 def current_version(
-    repo_root: Path | None = None,
+    repo_root: Optional[Path] = None,
     extra_files: Iterable[str] = (),
 ) -> str:
     """Compute a short hash covering all strategic files.
@@ -71,9 +72,10 @@ def current_version(
     return h.hexdigest()[:12]
 
 
-def save_version(repo_root: Path | None = None) -> str:
+def save_version(repo_root: Optional[Path] = None) -> str:
     """Compute + persist the current skills version. Returns the hash."""
     from app.loop.state import ensure_root  # late import to avoid cycle
+
     root = (repo_root or Path(os.getcwd())) / DEFAULT_ROOT
     ensure_root(root)
     version = current_version(repo_root)

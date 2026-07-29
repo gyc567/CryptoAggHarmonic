@@ -10,6 +10,7 @@ endpoints, the Vibe blueprint and the trend-RSI blueprint, and gives the
 frontend a single parser rule (`"error" in res ? ... : res.data`) instead
 of one branch per endpoint.
 """
+
 from __future__ import annotations
 
 import logging

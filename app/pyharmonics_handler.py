@@ -1,34 +1,35 @@
-from pyharmonics.marketdata import YahooCandleData, BinanceCandleData, YahooOptionData
-from pyharmonics.technicals import OHLCTechnicals
-from pyharmonics.search import HarmonicSearch, DivergenceSearch
-from pyharmonics.positions import Position
-from pyharmonics.plotter import HarmonicPlotter, PositionPlotter, OptionPlotter
 import base64
 import logging
+
+from pyharmonics.marketdata import BinanceCandleData, YahooCandleData, YahooOptionData
+from pyharmonics.plotter import HarmonicPlotter, OptionPlotter, PositionPlotter
+from pyharmonics.positions import Position
+from pyharmonics.search import DivergenceSearch, HarmonicSearch
+from pyharmonics.technicals import OHLCTechnicals
 
 logging.basicConfig(level=logging.INFO)
 
 
 def outcome(t, hs, d, p):
     assesment = {
-        'forming': hs.get_patterns(formed=False),
-        'patterns': hs.get_patterns(),
+        "forming": hs.get_patterns(formed=False),
+        "patterns": hs.get_patterns(),
     }
     result = {}
-    result['divergences'] = {family: [pa.to_dict() for pa in found[-1:]] for family, found in d.get_patterns().items()}
+    result["divergences"] = {family: [pa.to_dict() for pa in found[-1:]] for family, found in d.get_patterns().items()}
 
-    if assesment['patterns'][hs.XABCD]:
-        pattern = assesment['patterns'][hs.XABCD][0]
-    elif assesment['patterns'][hs.ABCD]:
-        pattern = assesment['patterns'][hs.ABCD][0]
-    elif assesment['patterns'][hs.ABC]:
-        pattern = assesment['patterns'][hs.ABC][0]
-    elif assesment['forming'][hs.XABCD]:
-        pattern = assesment['forming'][hs.XABCD][0]
-    elif assesment['forming'][hs.ABCD]:
-        pattern = assesment['forming'][hs.ABCD][0]
-    elif assesment['forming'][hs.ABC]:
-        pattern = assesment['forming'][hs.ABC][0]
+    if assesment["patterns"][hs.XABCD]:
+        pattern = assesment["patterns"][hs.XABCD][0]
+    elif assesment["patterns"][hs.ABCD]:
+        pattern = assesment["patterns"][hs.ABCD][0]
+    elif assesment["patterns"][hs.ABC]:
+        pattern = assesment["patterns"][hs.ABC][0]
+    elif assesment["forming"][hs.XABCD]:
+        pattern = assesment["forming"][hs.XABCD][0]
+    elif assesment["forming"][hs.ABCD]:
+        pattern = assesment["forming"][hs.ABCD][0]
+    elif assesment["forming"][hs.ABC]:
+        pattern = assesment["forming"][hs.ABC][0]
     else:
         pattern = None
 
@@ -40,13 +41,14 @@ def outcome(t, hs, d, p):
         pos_plot = PositionPlotter(t, position)
         pos_plot.add_divergence_plots(d.get_patterns())
         logging.debug(f"Position plot built: {pos_plot}")
-        encoded_img = base64.b64encode(pos_plot.to_image(dpi=600)).decode('utf-8')
-        result['plot'] = f'{encoded_img}'
-        result['position'] = position
+        encoded_img = base64.b64encode(pos_plot.to_image(dpi=600)).decode("utf-8")
+        result["plot"] = f"{encoded_img}"
+        result["position"] = position
     else:
-        encoded_img = base64.b64encode(p.to_image(dpi=600)).decode('utf-8')
-        result['plot'] = f'{encoded_img}'
+        encoded_img = base64.b64encode(p.to_image(dpi=600)).decode("utf-8")
+        result["plot"] = f"{encoded_img}"
     return result
+
 
 def play_position(hs, pattern, strike, dollar_amount):
     pos = Position(pattern, strike, dollar_amount)
@@ -108,7 +110,7 @@ def whats_forming_yahoo(symbol, interval, limit_to=10, percent_complete=0.8, can
 
 def whats_options_volume(symbol):
     yo = YahooOptionData(symbol)
-    yo.analyse_options(trend='volume')
+    yo.analyse_options(trend="volume")
     p = OptionPlotter(yo, yo.ticker.options[0])
     return p, yo
 
@@ -121,4 +123,4 @@ def whats_options_interest(symbol):
 
 
 if __name__ == "__main__":
-    whats_forming_binance('STORJUSDT', '1d')
+    whats_forming_binance("STORJUSDT", "1d")

@@ -9,6 +9,7 @@ Why a separate module? Two reasons:
 2. The audit §2.9 rollback lever (``MAKER_CHECKER_ENABLED=false``)
    short-circuits to the M4-only path without touching any other file.
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,11 +18,9 @@ from typing import Optional
 from app.loop.checker import CheckerVerdict, check_candidate
 from app.loop.maker_checker.runner import (
     MakerCheckerRunner,
-    feature_enabled,
 )
 from app.loop.maker_checker.schemas import MergeResult
 from app.loop.worker import CandidateResult
-
 
 logger = logging.getLogger("app.loop.maker_checker.adapter")
 

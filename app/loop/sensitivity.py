@@ -10,22 +10,22 @@ The scan is intentionally synchronous — call it once before kicking off
 the search loop, persist the report as ``loop_state/sensitivity.json``,
 and reuse it across generations.
 """
+
 from __future__ import annotations
 
 import json
 import random
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Optional
 
-from app.config.tuning import TuningConstants, TUNING
+from app.config.tuning import TUNING, TuningConstants
 from app.loop.mutation import (
     DEFAULT_CLUSTER_MAP,
     all_clusters,
-    cluster_fields,
     mutate_field,
 )
-
 
 # --- Report dataclasses ------------------------------------------------------
 
@@ -65,7 +65,7 @@ class SensitivityReport:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "SensitivityReport":
+    def from_dict(cls, d: dict) -> SensitivityReport:
         return cls(
             fields=[FieldSensitivity(**f) for f in d.get("fields", [])],
             default_sigma_scale=d.get("default_sigma_scale", 1.0),
@@ -81,12 +81,12 @@ FitnessFn = Callable[[TuningConstants], float]
 
 def sensitivity_scan(
     *,
-    baseline: TuningConstants | None = None,
+    baseline: Optional[TuningConstants] = None,
     fitness_fn: FitnessFn,
     sigma: float = 1.0,
     n_perturbations: int = 1,
-    cluster_map: dict | None = None,
-    seed: int | None = None,
+    cluster_map: Optional[dict] = None,
+    seed: Optional[int] = None,
     fields_to_skip: Iterable[str] = (),
 ) -> SensitivityReport:
     """Estimate per-field gradient magnitudes.
@@ -110,10 +110,8 @@ def sensitivity_scan(
         for name, kind, kwargs in cm[cluster]:
             if name in fields_to_skip:
                 continue
-            plus = mutate_field(name, kind, kwargs, baseline, rng,
-                                sigma_scale=sigma)
-            minus = mutate_field(name, kind, kwargs, baseline, rng,
-                                 sigma_scale=-sigma)
+            plus = mutate_field(name, kind, kwargs, baseline, rng, sigma_scale=sigma)
+            minus = mutate_field(name, kind, kwargs, baseline, rng, sigma_scale=-sigma)
             plus_delta = fitness_fn(plus) - base_fitness
             minus_delta = fitness_fn(minus) - base_fitness
             grad_abs = (abs(plus_delta) + abs(minus_delta)) / 2.0
@@ -128,14 +126,18 @@ def sensitivity_scan(
                 # Dict / tuple / frozenset fields — store as str repr.
                 baseline_repr = str(getattr(baseline, name))
 
-            out.append(FieldSensitivity(
-                field=name, cluster=cluster, kind=kind,
-                baseline_value=baseline_repr,
-                plus_delta=float(plus_delta),
-                minus_delta=float(minus_delta),
-                gradient_abs=float(grad_abs),
-                recommended_sigma_scale=float(scale),
-            ))
+            out.append(
+                FieldSensitivity(
+                    field=name,
+                    cluster=cluster,
+                    kind=kind,
+                    baseline_value=baseline_repr,
+                    plus_delta=float(plus_delta),
+                    minus_delta=float(minus_delta),
+                    gradient_abs=float(grad_abs),
+                    recommended_sigma_scale=float(scale),
+                )
+            )
 
     return SensitivityReport(fields=out)
 

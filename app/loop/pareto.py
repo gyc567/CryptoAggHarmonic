@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Optional
+
+from app.loop.state import atomic_write_json
+
 """Pareto-front maintenance over the loop's multi-objective metrics.
 
 Objectives (all "maximise"):
@@ -16,15 +25,6 @@ The frontier is kept on disk as :class:`ParetoSet` JSON-serialisable
 records with full provenance (params_sha, gen, run_dir) so the driver can
 rehydrate a snapshot after a crash.
 """
-from __future__ import annotations
-
-import json
-import os
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Iterable, Optional
-
-from app.loop.state import atomic_write_json
 
 
 @dataclass
@@ -63,8 +63,8 @@ def dominates(a: ParetoPoint, b: ParetoPoint) -> bool:
     strictly better on at least one. Standard Pareto dominance."""
     oa = objectives(a)
     ob = objectives(b)
-    all_ge = all(x >= y for x, y in zip(oa, ob))
-    any_gt = any(x > y for x, y in zip(oa, ob))
+    all_ge = all(x >= y for x, y in zip(oa, ob, strict=False))
+    any_gt = any(x > y for x, y in zip(oa, ob, strict=False))
     return all_ge and any_gt
 
 
@@ -114,13 +114,10 @@ def save(path: Path, ps: ParetoSet) -> None:
     )
 
 
-def worst_regime_sharpe(metrics: dict) -> Optional[float]:
+def worst_regime_sharpe(metrics: dict) -> float | None:
     """Extract the minimum per-regime sharpe from the v3 metrics blob."""
     regimes = metrics.get("by_regime", {})
-    sharpes = [
-        b["sharpe"] for b in regimes.values()
-        if b.get("n", 0) >= 3 and b.get("sharpe") is not None
-    ]
+    sharpes = [b["sharpe"] for b in regimes.values() if b.get("n", 0) >= 3 and b.get("sharpe") is not None]
     if not sharpes:
         return None
     return min(sharpes)

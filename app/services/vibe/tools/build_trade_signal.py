@@ -1,5 +1,6 @@
 """build_trade_signal tool for vibe agent."""
-from app.domain.enums import Market, Interval, AnalysisType
+
+from app.domain.enums import AnalysisType, Interval, Market
 from app.domain.schemas import AnalyzeRequest
 from app.services.analysis import AnalysisOrchestrator
 from app.services.vibe.tools.base import Tool, ToolOutput, ToolRuntime
@@ -58,9 +59,7 @@ class BuildTradeSignalTool(Tool):
             return ToolOutput.invalid_input(f"参数错误: {e}")
 
         try:
-            result = self.orchestrator.analyze(
-                request, user_id=runtime.user_id, analysis_id=None
-            )
+            result = self.orchestrator.analyze(request, user_id=runtime.user_id, analysis_id=None)
         except Exception as e:
             return ToolOutput.error(f"信号生成失败: {e}", code="SIGNAL_FAILED")
 

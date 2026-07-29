@@ -24,6 +24,7 @@ that dataclasses lack, without the friction of API-boundary models
 (see ``app.domain.schemas._StrictModel`` for why we don't enable
 ``strict=True`` / ``extra="forbid"`` everywhere).
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -62,12 +63,12 @@ class CandidateMetrics(_DomainModel):
     the filter yet can still render a row. None means "not computed".
     """
 
-    bars_since_c: int = 0          # bars from C point to the latest bar
-    stale: bool = False            # True => TTL exceeded, downgrade not kill
-    breached_stop: bool = False    # True => C 点后路径触达 PRZ(形态已走完)
-    past_tp2: bool = False         # True => 现价已穿越 TP2(行情结束)
-    in_prz: bool = False           # True => 现价落在 PRZ 区间内
-    dist_pct: float = 0.0          # 现价到 PRZ 最近边缘距离(% 正数)
+    bars_since_c: int = 0  # bars from C point to the latest bar
+    stale: bool = False  # True => TTL exceeded, downgrade not kill
+    breached_stop: bool = False  # True => C 点后路径触达 PRZ(形态已走完)
+    past_tp2: bool = False  # True => 现价已穿越 TP2(行情结束)
+    in_prz: bool = False  # True => 现价落在 PRZ 区间内
+    dist_pct: float = 0.0  # 现价到 PRZ 最近边缘距离(% 正数)
 
 
 class MacroOverlay(_DomainModel):
@@ -80,8 +81,8 @@ class MacroOverlay(_DomainModel):
 
     size_mult: float = 1.0
     advice: str = ""
-    macro_dir: str = "unknown"           # 牛市(价>EMA200) / 熊市 / unknown
-    signal_vs_macro: str = "unknown"     # 顺势 / 逆势 / unknown
+    macro_dir: str = "unknown"  # 牛市(价>EMA200) / 熊市 / unknown
+    signal_vs_macro: str = "unknown"  # 顺势 / 逆势 / unknown
     deviation_pct: float = 0.0
     ema200_slope_20d: float = 0.0
 

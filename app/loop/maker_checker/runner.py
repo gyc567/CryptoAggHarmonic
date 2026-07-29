@@ -10,14 +10,14 @@ Feature flag (audit §2.9): ``MAKER_CHECKER_ENABLED=false`` short-
 circuits the runner to return the original driver's input unchanged.
 This is the rollback lever.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Optional
 
-from app.config.tuning import TuningConstants, to_dict
 from app.loop.checker import check_candidate
 from app.loop.maker_checker.arbiter import (
     Arbiter,
@@ -26,12 +26,10 @@ from app.loop.maker_checker.arbiter import (
 from app.loop.maker_checker.checker_agent import (
     CheckerAgent,
     CheckerConfig,
-    fit_calibration_from_history,
 )
 from app.loop.maker_checker.isolation import make_salt
 from app.loop.maker_checker.llm_backend import (
     LLMBackend,
-    MockLLMBackend,
     default_backend,
 )
 from app.loop.maker_checker.maker_agent import (
@@ -40,7 +38,6 @@ from app.loop.maker_checker.maker_agent import (
 )
 from app.loop.maker_checker.schemas import MergeResult
 from app.loop.worker import CandidateResult
-
 
 logger = logging.getLogger("app.loop.maker_checker.runner")
 
@@ -96,7 +93,7 @@ class MakerCheckerRunner:
         self,
         candidate: CandidateResult,
         *,
-        parent_metrics: dict[str, Any] | None = None,
+        parent_metrics: Optional[dict[str, Any]] = None,
     ) -> MergeResult:
         """Run M4 + LLM Checker + Arbiter on one :class:`CandidateResult`.
 
@@ -136,11 +133,11 @@ class MakerCheckerRunner:
 
 def make_runner(
     *,
-    maker_config: MakerConfig | None = None,
-    checker_config: CheckerConfig | None = None,
-    arbiter_config: ArbiterConfig | None = None,
-    backend: LLMBackend | None = None,
-    salt: str | None = None,
+    maker_config: Optional[MakerConfig] = None,
+    checker_config: Optional[CheckerConfig] = None,
+    arbiter_config: Optional[ArbiterConfig] = None,
+    backend: Optional[LLMBackend] = None,
+    salt: Optional[str] = None,
 ) -> MakerCheckerRunner:
     """Construct a fully-wired :class:`MakerCheckerRunner`.
 

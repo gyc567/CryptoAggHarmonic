@@ -5,6 +5,7 @@ fixed direction, entry price, stop loss and target price. It is intentionally
 simplified: it does not model slippage, fees, partial fills, position sizing,
 or time-in-force.
 """
+
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
@@ -22,8 +23,8 @@ class Trade:
     exit_price: float
     result: Literal["win", "loss", "scratch"]
     r_multiple: float = 0.0
-    entry_time: Optional[pd.Timestamp] = None
-    exit_time: Optional[pd.Timestamp] = None
+    entry_time: pd.Timestamp | None = None
+    exit_time: pd.Timestamp | None = None
 
 
 @dataclass
@@ -80,7 +81,7 @@ def simulate_trades(
     trades: list[Trade] = []
     in_trade = False
     trade: Optional[Trade] = None
-    last_timestamp: Optional[pd.Timestamp] = None
+    last_timestamp: pd.Timestamp | None = None
     last_close = 0.0
 
     def _close_trade(t: Trade, exit_price: float, result: Literal["win", "loss"], exit_time: pd.Timestamp) -> None:
@@ -101,11 +102,7 @@ def simulate_trades(
 
         if not in_trade:
             # Check whether price touched the entry level this candle.
-            entry_triggered = (
-                low <= entry_price <= high
-                if direction == "long"
-                else high >= entry_price >= low
-            )
+            entry_triggered = low <= entry_price <= high if direction == "long" else high >= entry_price >= low
             if entry_triggered:
                 in_trade = True
                 trade = Trade(
@@ -166,7 +163,7 @@ def _resolve_exit(
     entry_price: float,
     stop_loss: float,
     target_price: float,
-) -> tuple[float, Optional[Literal["win", "loss"]]]:
+) -> tuple[float, Literal["win", "loss"] | None]:
     """Return the assumed exit price and result for one candle.
 
     If neither level is touched, returns (0.0, None). If both are touched,

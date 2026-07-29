@@ -1,4 +1,5 @@
 """Stream helper for vibe agent events."""
+
 import uuid
 
 from app.infra.vibe_event_store import VibeEventStore

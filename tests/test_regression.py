@@ -1,6 +1,8 @@
 """Regression tests: ensure existing functionality is unchanged."""
-import pytest
+
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.main import app
 
@@ -30,9 +32,7 @@ class TestExistingRoutes:
     @patch("app.main.query_openai")
     @patch("app.main.parse_args")
     @patch("app.main.FUNCTION_ROUTER")
-    def test_query_endpoint_success(
-        self, mock_router, mock_parse_args, mock_query_openai, client
-    ):
+    def test_query_endpoint_success(self, mock_router, mock_parse_args, mock_query_openai, client):
         """POST /query should work as before with valid prompt."""
         mock_parse_args.return_value = (
             "forming_binance",
@@ -69,9 +69,7 @@ class TestExistingRoutes:
     @patch("app.main.query_openai")
     @patch("app.main.parse_args")
     @patch("app.main.FUNCTION_ROUTER")
-    def test_query_endpoint_out_of_scope(
-        self, mock_router, mock_parse_args, mock_query_openai, client
-    ):
+    def test_query_endpoint_out_of_scope(self, mock_router, mock_parse_args, mock_query_openai, client):
         """POST /query with out-of-scope function should return error message."""
         mock_parse_args.return_value = (
             "unknown_function",
@@ -84,6 +82,7 @@ class TestExistingRoutes:
         # The endpoint accesses prompt_context['extract_args'] before the not-in-router check
         # So we need both keys present. Modify module-level dict directly.
         import app.main as main_module
+
         original = dict(main_module.prompt_context)
         main_module.prompt_context = {
             "extract_args": "test prompt",
@@ -101,9 +100,7 @@ class TestExistingRoutes:
     @patch("app.main.query_openai")
     @patch("app.main.parse_args")
     @patch("app.main.FUNCTION_ROUTER")
-    def test_query_endpoint_pyharmonics_error(
-        self, mock_router, mock_parse_args, mock_query_openai, client
-    ):
+    def test_query_endpoint_pyharmonics_error(self, mock_router, mock_parse_args, mock_query_openai, client):
         """POST /query should handle pyharmonics exceptions gracefully."""
         mock_parse_args.return_value = (
             "forming_binance",

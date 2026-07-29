@@ -1,11 +1,10 @@
 """Tests for the local chart serving route GET /api/charts/<name>.png."""
-from pathlib import Path
+
 from unittest.mock import patch
 
 import pytest
 
 from app.main import app
-from app.services.chart_store import CHART_DIR
 
 VALID_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32

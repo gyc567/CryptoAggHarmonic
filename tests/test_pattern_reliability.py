@@ -8,10 +8,10 @@ Verifies that:
 * ``score_candidate`` actually applies the bump to the confluence score
   (a Gartley must outrank a Crab at the same confluence and grade).
 """
+
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from app.domain.signals import Candidate
 from app.services.signal_engine import (
@@ -30,14 +30,16 @@ def _make_df(n: int = 600) -> pd.DataFrame:
     closes[-1] = closes[-2] - 2.16
     rows = []
     for i, c in enumerate(closes):
-        rows.append({
-            "open": c,
-            "high": c + 0.5,
-            "low": c - 0.5,
-            "close": c,
-            "volume": 100.0,
-            "close_time": 1_700_000_000 + i * 900,
-        })
+        rows.append(
+            {
+                "open": c,
+                "high": c + 0.5,
+                "low": c - 0.5,
+                "close": c,
+                "volume": 100.0,
+                "close_time": 1_700_000_000 + i * 900,
+            }
+        )
     df = pd.DataFrame(rows)
     df["dts"] = pd.to_datetime(df["close_time"], unit="s", utc=True)
     # Last bar: hammer with volume spike.
@@ -87,7 +89,8 @@ class TestScoreCandidateAppliesBump:
     def test_gartley_outranks_crab_with_same_input(self):
         df = _make_df()
         ctx = _prepare_score_context(
-            df, "15m",
+            df,
+            "15m",
             {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
         )
         assert ctx is not None
@@ -100,7 +103,8 @@ class TestScoreCandidateAppliesBump:
     def test_width_pct_propagates_to_signal(self):
         df = _make_df()
         ctx = _prepare_score_context(
-            df, "15m",
+            df,
+            "15m",
             {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
         )
         assert ctx is not None

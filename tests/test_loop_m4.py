@@ -3,6 +3,7 @@
 These tests use no subprocess / no real harness; they exercise the
 scheduling / checking / hashing logic in isolation.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -10,31 +11,25 @@ import json
 import time
 from pathlib import Path
 
-import pytest
-
-from app.loop.worker import CandidateResult
+from app.loop.checker import (
+    _flag_bear_regime_sharpe,
+    _flag_low_sample,
+    _flag_regime_imbalance,
+    check_candidate,
+)
 from app.loop.scheduler import (
     SchedulerConfig,
-    WakeDecision,
     _in_quiet_hours,
     _is_weekend,
     next_wake_at,
     plateau_count_from_history,
 )
-from app.loop.checker import (
-    CheckerVerdict,
-    check_candidate,
-    _flag_regime_imbalance,
-    _flag_low_sample,
-    _flag_bear_regime_sharpe,
-)
 from app.loop.skills_version import (
-    DEFAULT_STRATEGY_FILES,
     current_version,
     is_outdated,
     save_version,
 )
-
+from app.loop.worker import CandidateResult
 
 # --- scheduler.py ------------------------------------------------------------
 
@@ -82,10 +77,8 @@ class TestPlateauFromHistory:
         p = tmp_path / "HISTORY.jsonl"
         # Two gens, both fitness 1.0.
         with open(p, "w") as f:
-            f.write(json.dumps({"gen": 1, "decision": "accepted",
-                                "fitness": 1.0, "ts": 1}) + "\n")
-            f.write(json.dumps({"gen": 2, "decision": "accepted",
-                                "fitness": 1.0, "ts": 2}) + "\n")
+            f.write(json.dumps({"gen": 1, "decision": "accepted", "fitness": 1.0, "ts": 1}) + "\n")
+            f.write(json.dumps({"gen": 2, "decision": "accepted", "fitness": 1.0, "ts": 2}) + "\n")
         # Plateau count = 1 (gen 2 didn't grow over gen 1).
         assert plateau_count_from_history(p) == 1
 
@@ -135,7 +128,8 @@ class TestNextWakeAt:
     def test_operator_action_5_min(self, tmp_path):
         now = _dt.datetime(2026, 1, 1, 12, 0)
         d = next_wake_at(
-            now=now, history_path=Path("/nonexistent"),
+            now=now,
+            history_path=Path("/nonexistent"),
             pending_operator_action=True,
         )
         assert (d.wake_at - now).total_seconds() == 300
@@ -152,8 +146,7 @@ class TestNextWakeAt:
         history = tmp_path / "HISTORY.jsonl"
         recent_ts = time.time() - 3600
         with open(history, "w") as f:
-            f.write(json.dumps({"gen": 1, "decision": "accepted",
-                                "fitness": 1.0, "ts": recent_ts}) + "\n")
+            f.write(json.dumps({"gen": 1, "decision": "accepted", "fitness": 1.0, "ts": recent_ts}) + "\n")
         now = _dt.datetime.fromtimestamp(time.time())
         d = next_wake_at(now=now, history_path=history)
         # 15-minute cadence for recent growth.
@@ -163,24 +156,27 @@ class TestNextWakeAt:
 # --- checker.py --------------------------------------------------------------
 
 
-def _mk_result(metrics: dict, decision: str = "accepted",
-               candidate_id: str = "c1") -> CandidateResult:
+def _mk_result(metrics: dict, decision: str = "accepted", candidate_id: str = "c1") -> CandidateResult:
     return CandidateResult(
-        candidate_id=candidate_id, params_sha="abc", cluster="C3",
-        gen=1, decision=decision, metrics=metrics, fitness=1.0,
-        run_dir="runs/abc", elapsed_seconds=10.0,
+        candidate_id=candidate_id,
+        params_sha="abc",
+        cluster="C3",
+        gen=1,
+        decision=decision,
+        metrics=metrics,
+        fitness=1.0,
+        run_dir="runs/abc",
+        elapsed_seconds=10.0,
     )
 
 
 class TestFlagRegimeImbalance:
     def test_balanced_returns_none(self):
-        m = {"by_regime": {"bull": {"n": 10}, "bear": {"n": 8},
-                           "range": {"n": 7}}}
+        m = {"by_regime": {"bull": {"n": 10}, "bear": {"n": 8}, "range": {"n": 7}}}
         assert _flag_regime_imbalance(m) is None
 
     def test_skewed_returns_flag(self):
-        m = {"by_regime": {"bull": {"n": 95}, "bear": {"n": 5},
-                           "range": {"n": 1}}}
+        m = {"by_regime": {"bull": {"n": 95}, "bear": {"n": 5}, "range": {"n": 1}}}
         flag = _flag_regime_imbalance(m)
         assert flag is not None
         assert "bull" in flag
@@ -215,13 +211,19 @@ class TestFlagBearSharpe:
 
 class TestCheckCandidate:
     def test_clean_accepted_is_promising(self):
-        r = _mk_result({
-            "trades_count": 50,
-            "sharpe": 0.5, "calmar": 1.5, "profit_factor": 2.0,
-            "by_regime": {"bull": {"n": 15, "sharpe": 0.5},
-                          "bear": {"n": 10, "sharpe": 0.2},
-                          "range": {"n": 25, "sharpe": 0.4}},
-        })
+        r = _mk_result(
+            {
+                "trades_count": 50,
+                "sharpe": 0.5,
+                "calmar": 1.5,
+                "profit_factor": 2.0,
+                "by_regime": {
+                    "bull": {"n": 15, "sharpe": 0.5},
+                    "bear": {"n": 10, "sharpe": 0.2},
+                    "range": {"n": 25, "sharpe": 0.4},
+                },
+            }
+        )
         v = check_candidate(r)
         assert v.decision == "promising"
         assert v.confidence > 0.5
@@ -234,11 +236,16 @@ class TestCheckCandidate:
         assert any("sample" in f for f in v.flags)
 
     def test_regime_imbalance_is_suspicious(self):
-        r = _mk_result({
-            "trades_count": 100, "by_regime": {
-                "bull": {"n": 95}, "bear": {"n": 3}, "range": {"n": 2},
-            },
-        })
+        r = _mk_result(
+            {
+                "trades_count": 100,
+                "by_regime": {
+                    "bull": {"n": 95},
+                    "bear": {"n": 3},
+                    "range": {"n": 2},
+                },
+            }
+        )
         v = check_candidate(r)
         assert v.decision == "suspicious"
         assert any("regime" in f for f in v.flags)
@@ -250,10 +257,13 @@ class TestCheckCandidate:
         assert v.confidence == 0.9
 
     def test_overfit_flag(self):
-        r = _mk_result({
-            "trades_count": 10, "fitness": 5.0,
-            "by_regime": {"bull": {"n": 10}},
-        })
+        r = _mk_result(
+            {
+                "trades_count": 10,
+                "fitness": 5.0,
+                "by_regime": {"bull": {"n": 10}},
+            }
+        )
         parent = {"trades_count": 30, "fitness": 1.0}
         v = check_candidate(r, parent_metrics=parent)
         assert any("fitness_gain_trade_drop" in f for f in v.flags)
@@ -276,8 +286,9 @@ class TestSkillsVersion:
 
     def test_save_version_creates_file(self, tmp_path, monkeypatch):
         # Patch DEFAULT_ROOT in BOTH modules since each captured a ref.
-        from app.loop import state as state_mod
         from app.loop import skills_version as sv_mod
+        from app.loop import state as state_mod
+
         monkeypatch.setattr(state_mod, "DEFAULT_ROOT", tmp_path)
         monkeypatch.setattr(sv_mod, "DEFAULT_ROOT", tmp_path)
         v = save_version(repo_root=Path("/tmp"))  # doesn't matter — files missing

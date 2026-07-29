@@ -3,22 +3,19 @@
 Covers: validation rules, convenience constructors, edge cases, the
 5-D Pareto back-compat invariant (``None`` -> ``-inf``).
 """
+
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from app.loop.maker_checker.schemas import (
-    CalibrationParams,
     MakerSelfScore,
-    MergeResult,
-    Proposal,
-    Verdict,
     make_calibration,
     make_merge_result,
     make_proposal,
     make_verdict,
 )
-
 
 # ---- MakerSelfScore -------------------------------------------------------
 
@@ -39,7 +36,7 @@ class TestMakerSelfScore:
 
     def test_frozen(self) -> None:
         s = MakerSelfScore(self_score=0.5)
-        with pytest.raises(Exception):
+        with pytest.raises((AttributeError, TypeError, ValidationError)):
             s.self_score = 0.9  # type: ignore[misc]
 
 
@@ -321,7 +318,7 @@ class TestCalibrationParams:
         # No-op calibration: a=1, b=0 → midpoint = sigmoid(0.5*1 + 0) ≈ 0.622
         c = make_calibration(a=1.0, b=0.0, ece=0.05, n_samples=10)
         mid = c.apply(0.5)
-        assert abs(mid - 1 / (1 + 2.718281828459045 ** -0.5)) < 1e-6
+        assert abs(mid - 1 / (1 + 2.718281828459045**-0.5)) < 1e-6
 
     def test_out_of_range_raw_raises(self) -> None:
         c = make_calibration(a=1.0, b=0.0, ece=0.01, n_samples=10)

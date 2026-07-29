@@ -4,11 +4,12 @@ Covers: MakerConfig validation, traditional_proposals (math-only
 baseline), MakerAgent LLM path, fallback semantics, the
 propose_batch wrapper, and the run_mode mixing logic.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from app.config.tuning import TUNING, from_dict, to_dict
+from app.config.tuning import TUNING, to_dict
 from app.loop.maker_checker.llm_backend import MockLLMBackend
 from app.loop.maker_checker.maker_agent import (
     MakerAgent,
@@ -16,9 +17,7 @@ from app.loop.maker_checker.maker_agent import (
     propose_batch,
     traditional_proposals,
 )
-from app.loop.maker_checker.schemas import Proposal, make_proposal
-from app.loop.mutation import DEFAULT_CLUSTER_MAP
-
+from app.loop.maker_checker.schemas import Proposal
 
 # ---- MakerConfig ----------------------------------------------------------
 
@@ -55,24 +54,28 @@ class TestMakerConfig:
 class TestSplitCount:
     def test_split_basic(self) -> None:
         from app.loop.maker_checker.maker_agent import _split_count
+
         llm, trad = _split_count(10, 0.6)
         assert llm == 6
         assert trad == 4
 
     def test_split_zero_llm_ratio(self) -> None:
         from app.loop.maker_checker.maker_agent import _split_count
+
         llm, trad = _split_count(10, 0.0)
         assert llm == 0
         assert trad == 10
 
     def test_split_full_llm_ratio(self) -> None:
         from app.loop.maker_checker.maker_agent import _split_count
+
         llm, trad = _split_count(10, 1.0)
         assert llm == 10
         assert trad == 0
 
     def test_split_sums_to_n(self) -> None:
         from app.loop.maker_checker.maker_agent import _split_count
+
         for n in [1, 2, 3, 5, 7, 11, 13]:
             llm, trad = _split_count(n, 0.4)
             assert llm + trad == n
@@ -84,13 +87,19 @@ class TestSplitCount:
 class TestTraditionalProposals:
     def test_returns_n_proposals(self) -> None:
         proposals = traditional_proposals(
-            TUNING, n=3, cluster="C1 Geometry", seed=42,
+            TUNING,
+            n=3,
+            cluster="C1 Geometry",
+            seed=42,
         )
         assert len(proposals) == 3
 
     def test_each_proposal_is_valid(self) -> None:
         proposals = traditional_proposals(
-            TUNING, n=5, cluster="C4 Macro", seed=7,
+            TUNING,
+            n=5,
+            cluster="C4 Macro",
+            seed=7,
         )
         for p in proposals:
             assert isinstance(p, Proposal)
@@ -100,12 +109,18 @@ class TestTraditionalProposals:
     def test_unknown_cluster_raises(self) -> None:
         with pytest.raises(ValueError, match="unknown cluster"):
             traditional_proposals(
-                TUNING, n=2, cluster="Z Unknown", seed=0,
+                TUNING,
+                n=2,
+                cluster="Z Unknown",
+                seed=0,
             )
 
     def test_diff_magnitude_within_cap(self) -> None:
         proposals = traditional_proposals(
-            TUNING, n=20, cluster="C1 Geometry", seed=0,
+            TUNING,
+            n=20,
+            cluster="C1 Geometry",
+            seed=0,
         )
         for p in proposals:
             for mag in p.diff.values():
@@ -113,20 +128,27 @@ class TestTraditionalProposals:
 
     def test_accepts_dict_input(self) -> None:
         proposals = traditional_proposals(
-            to_dict(TUNING), n=2, cluster="C4 Macro", seed=0,
+            to_dict(TUNING),
+            n=2,
+            cluster="C4 Macro",
+            seed=0,
         )
         assert len(proposals) >= 0  # may be fewer due to constraints
 
     def test_deterministic_with_same_seed(self) -> None:
         a = traditional_proposals(
-            TUNING, n=5, cluster="C1 Geometry", seed=42,
+            TUNING,
+            n=5,
+            cluster="C1 Geometry",
+            seed=42,
         )
         b = traditional_proposals(
-            TUNING, n=5, cluster="C1 Geometry", seed=42,
+            TUNING,
+            n=5,
+            cluster="C1 Geometry",
+            seed=42,
         )
-        assert [(p.diff, p.maker_intent) for p in a] == [
-            (p.diff, p.maker_intent) for p in b
-        ]
+        assert [(p.diff, p.maker_intent) for p in a] == [(p.diff, p.maker_intent) for p in b]
 
 
 # ---- MakerAgent.propose_batch --------------------------------------------
@@ -143,10 +165,13 @@ class TestMakerAgent:
     def test_trad_only_skips_llm(self) -> None:
         backend = MockLLMBackend(seed=0)
         agent = MakerAgent(
-            backend=backend, config=MakerConfig(run_mode="trad_only"),
+            backend=backend,
+            config=MakerConfig(run_mode="trad_only"),
         )
         proposals = agent.propose_batch(
-            TUNING, n=4, cluster="C1 Geometry",
+            TUNING,
+            n=4,
+            cluster="C1 Geometry",
         )
         # Some mutations may be skipped (no change / constraint
         # violation), so we just assert *some* proposals and no LLM
@@ -157,20 +182,26 @@ class TestMakerAgent:
     def test_trad_only_returns_at_most_n(self) -> None:
         backend = MockLLMBackend(seed=0)
         agent = MakerAgent(
-            backend=backend, config=MakerConfig(run_mode="trad_only"),
+            backend=backend,
+            config=MakerConfig(run_mode="trad_only"),
         )
         proposals = agent.propose_batch(
-            TUNING, n=10, cluster="C4 Macro",
+            TUNING,
+            n=10,
+            cluster="C4 Macro",
         )
         assert len(proposals) <= 10
 
     def test_llm_only_calls_backend_once(self) -> None:
         backend = MockLLMBackend(seed=0)
         agent = MakerAgent(
-            backend=backend, config=MakerConfig(run_mode="llm_only"),
+            backend=backend,
+            config=MakerConfig(run_mode="llm_only"),
         )
         proposals = agent.propose_batch(
-            TUNING, n=3, cluster="C4 Macro",
+            TUNING,
+            n=3,
+            cluster="C4 Macro",
         )
         # Should be 3 LLM proposals (mock returns exactly n).
         assert len(proposals) == 3
@@ -183,7 +214,9 @@ class TestMakerAgent:
             config=MakerConfig(run_mode="mix", llm_ratio=0.5),
         )
         proposals = agent.propose_batch(
-            TUNING, n=4, cluster="C4 Macro",
+            TUNING,
+            n=4,
+            cluster="C4 Macro",
         )
         assert len(proposals) == 4
         # 1 LLM call for 2 proposals + 2 traditional proposals.
@@ -215,7 +248,9 @@ class TestMakerAgent:
             config=MakerConfig(run_mode="mix", llm_ratio=0.5),
         )
         proposals = agent.propose_batch(
-            TUNING, n=4, cluster="C1 Geometry",
+            TUNING,
+            n=4,
+            cluster="C1 Geometry",
         )
         # The 2 LLM slots fall back to traditional (which also runs).
         # We just assert no exception propagated and got *some* output.
@@ -226,7 +261,12 @@ class TestMakerAgent:
             call_count = 0
 
             def complete_proposals(
-                self, prompt, *, n_proposals, seed, cluster=None,
+                self,
+                prompt,
+                *,
+                n_proposals,
+                seed,
+                cluster=None,
             ):
                 self.call_count += 1
                 return {
@@ -238,7 +278,8 @@ class TestMakerAgent:
                             "reasoning": "y",
                             "self_score": 0.5,
                         }
-                    ] * n_proposals
+                    ]
+                    * n_proposals
                 }
 
         backend = BadBackend()
@@ -249,7 +290,9 @@ class TestMakerAgent:
         # The LLM proposals are rejected (cluster mismatch);
         # the shortfall top-up fills with traditional proposals.
         proposals = agent.propose_batch(
-            TUNING, n=3, cluster="C4 Macro",
+            TUNING,
+            n=3,
+            cluster="C4 Macro",
         )
         # All 3 are now traditional (LLM produced 0 valid).
         assert len(proposals) == 3
@@ -262,7 +305,9 @@ class TestMakerAgent:
 class TestProposeBatchWrapper:
     def test_returns_list(self) -> None:
         proposals = propose_batch(
-            TUNING, n=3, cluster="C4 Macro",
+            TUNING,
+            n=3,
+            cluster="C4 Macro",
             config=MakerConfig(run_mode="trad_only"),
         )
         assert isinstance(proposals, list)

@@ -25,6 +25,7 @@ Safety rails (plan §3.4):
   locally on the developer's CPU; the budget check is a no-op unless
   the operator sets a positive value.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,7 +33,7 @@ import json
 import logging
 import random
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -43,15 +44,11 @@ from app.loop.mutation import (
     all_clusters,
     mutate_cluster,
     mutate_field,
-    random_child,
 )
 from app.loop.sensitivity import (
     SensitivityReport,
     load_report,
-    save_report,
-    sensitivity_scan,
 )
-
 
 logger = logging.getLogger("app.loop.search")
 
@@ -116,40 +113,43 @@ def check_safety(
     checks: list[SafetyCheck] = []
 
     # 1) Diff size — at most n_mutations fields touched.
-    checks.append(SafetyCheck(
-        name="diff_size",
-        ok=cfg.n_mutations <= 5,
-        detail=f"n_mutations={cfg.n_mutations} (cap=5)",
-    ))
+    checks.append(
+        SafetyCheck(
+            name="diff_size",
+            ok=cfg.n_mutations <= 5,
+            detail=f"n_mutations={cfg.n_mutations} (cap=5)",
+        )
+    )
 
     # 2) Timeout — at least 60s per candidate so slow but valid runs aren't
     # killed prematurely.
-    checks.append(SafetyCheck(
-        name="timeout_floor",
-        ok=cfg.timeout_seconds >= 60,
-        detail=f"timeout={cfg.timeout_seconds}s (floor=60)",
-    ))
+    checks.append(
+        SafetyCheck(
+            name="timeout_floor",
+            ok=cfg.timeout_seconds >= 60,
+            detail=f"timeout={cfg.timeout_seconds}s (floor=60)",
+        )
+    )
 
     # 3) Weekly budget — caller passes weekly_spend_usd so we don't have
     # to read it from a global state file.
-    over_budget = (
-        cfg.weekly_budget_usd > 0
-        and weekly_spend_usd + cfg.lambda_ * 0.01 > cfg.weekly_budget_usd
+    over_budget = cfg.weekly_budget_usd > 0 and weekly_spend_usd + cfg.lambda_ * 0.01 > cfg.weekly_budget_usd
+    checks.append(
+        SafetyCheck(
+            name="weekly_budget",
+            ok=not over_budget,
+            detail=(f"spend={weekly_spend_usd:.2f} budget={cfg.weekly_budget_usd:.2f}"),
+        )
     )
-    checks.append(SafetyCheck(
-        name="weekly_budget",
-        ok=not over_budget,
-        detail=(
-            f"spend={weekly_spend_usd:.2f} budget={cfg.weekly_budget_usd:.2f}"
-        ),
-    ))
 
     # 4) Cluster exists.
-    checks.append(SafetyCheck(
-        name="cluster_exists",
-        ok=cfg.cluster in DEFAULT_CLUSTER_MAP,
-        detail=f"cluster={cfg.cluster!r}",
-    ))
+    checks.append(
+        SafetyCheck(
+            name="cluster_exists",
+            ok=cfg.cluster in DEFAULT_CLUSTER_MAP,
+            detail=f"cluster={cfg.cluster!r}",
+        )
+    )
 
     return checks
 
@@ -182,7 +182,10 @@ def make_child_candidates(
     for i in range(lambda_):
         if sensitivity is None:
             child = mutate_cluster(
-                parent, cluster, rng=rng, sigma_scale=sigma_scale,
+                parent,
+                cluster,
+                rng=rng,
+                sigma_scale=sigma_scale,
                 n_mutations=n_mutations,
             )
         else:
@@ -190,12 +193,13 @@ def make_child_candidates(
             child = parent
             for name, kind, kwargs in chosen:
                 scale = sensitivity.scale_for(name)
-                child = mutate_field(name, kind, kwargs, child, rng,
-                                     sigma_scale=scale)
-        children.append({
-            "candidate_id": f"gen{gen}-{cluster.replace(' ', '')}-{i:03d}",
-            "tuning": to_dict(child),
-        })
+                child = mutate_field(name, kind, kwargs, child, rng, sigma_scale=scale)
+        children.append(
+            {
+                "candidate_id": f"gen{gen}-{cluster.replace(' ', '')}-{i:03d}",
+                "tuning": to_dict(child),
+            }
+        )
     return children
 
 
@@ -223,31 +227,38 @@ def run_generation(
     in parallel with multiple operators on different machines).
     """
     result = GenerationResult(
-        gen=cfg.gen, cluster=cfg.cluster, parent_sha=cfg.parent_sha,
+        gen=cfg.gen,
+        cluster=cfg.cluster,
+        parent_sha=cfg.parent_sha,
         started_at=time.time(),
     )
     result.safety = check_safety(cfg, weekly_spend_usd=weekly_spend_usd)
     if not all(c.ok for c in result.safety):
         result.skipped = True
-        result.skip_reason = "; ".join(
-            f"{c.name}: {c.detail}" for c in result.safety if not c.ok
-        )
+        result.skip_reason = "; ".join(f"{c.name}: {c.detail}" for c in result.safety if not c.ok)
         result.finished_at = time.time()
         logger.warning("generation skipped: %s", result.skip_reason)
         return result
 
     children = make_child_candidates(
-        cfg.parent, cfg.cluster, lambda_=cfg.lambda_,
-        sigma_scale=cfg.sigma_scale, n_mutations=cfg.n_mutations,
-        gen=cfg.gen, sensitivity=sensitivity, seed=seed,
+        cfg.parent,
+        cfg.cluster,
+        lambda_=cfg.lambda_,
+        sigma_scale=cfg.sigma_scale,
+        n_mutations=cfg.n_mutations,
+        gen=cfg.gen,
+        sensitivity=sensitivity,
+        seed=seed,
     )
 
     # Persist the candidates file the driver will read.
     state_root = state.ensure_root(state_root)
     cand_path = state_root / "next_generation.json"
     cand_payload = {
-        "gen": cfg.gen, "cluster": cfg.cluster,
-        "symbol_set": symbol_set, "quarter": quarter,
+        "gen": cfg.gen,
+        "cluster": cfg.cluster,
+        "symbol_set": symbol_set,
+        "quarter": quarter,
         "candidates": children,
     }
     cand_path.write_text(json.dumps(cand_payload, indent=2))
@@ -256,7 +267,10 @@ def run_generation(
     result.finished_at = time.time()
     logger.info(
         "gen=%d cluster=%s candidates=%d -> %s",
-        cfg.gen, cfg.cluster, len(children), cand_path,
+        cfg.gen,
+        cfg.cluster,
+        len(children),
+        cand_path,
     )
     return result
 
@@ -266,16 +280,14 @@ def run_generation(
 
 def main():
     p = argparse.ArgumentParser(description="Generate one loop generation")
-    p.add_argument("--parent-yaml", default=None,
-                   help="YAML/JSON file with TuningConstants; defaults to TUNING")
+    p.add_argument("--parent-yaml", default=None, help="YAML/JSON file with TuningConstants; defaults to TUNING")
     p.add_argument("--state-root", default=str(state.DEFAULT_ROOT))
     p.add_argument("--gen", type=int, default=1)
     p.add_argument("--cluster", choices=all_clusters(), default="C1 Geometry")
     p.add_argument("--lambda", dest="lambda_", type=int, default=10)
     p.add_argument("--sigma-scale", type=float, default=1.0)
     p.add_argument("--n-mutations", type=int, default=1)
-    p.add_argument("--sensitivity", default=None,
-                   help="Optional sensitivity.json for per-field σ scaling")
+    p.add_argument("--sensitivity", default=None, help="Optional sensitivity.json for per-field σ scaling")
     p.add_argument("--timeout", type=int, default=900)
     p.add_argument("--weekly-budget", type=float, default=0.0)
     p.add_argument("--dollars-per-cpu-second", type=float, default=0.0)
@@ -310,16 +322,26 @@ def main():
         dollars_per_cpu_second=args.dollars_per_cpu_second,
     )
     res = run_generation(
-        cfg, state_root=Path(args.state_root), sensitivity=sensitivity,
-        quarter=args.quarter, seed=args.seed,
+        cfg,
+        state_root=Path(args.state_root),
+        sensitivity=sensitivity,
+        quarter=args.quarter,
+        seed=args.seed,
     )
-    print(json.dumps({
-        "gen": res.gen, "cluster": res.cluster,
-        "parent_sha": res.parent_sha,
-        "skipped": res.skipped, "skip_reason": res.skip_reason,
-        "n_candidates": len(res.candidates),
-        "candidates_path": str(Path(args.state_root) / "next_generation.json"),
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "gen": res.gen,
+                "cluster": res.cluster,
+                "parent_sha": res.parent_sha,
+                "skipped": res.skipped,
+                "skip_reason": res.skip_reason,
+                "n_candidates": len(res.candidates),
+                "candidates_path": str(Path(args.state_root) / "next_generation.json"),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

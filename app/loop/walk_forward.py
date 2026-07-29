@@ -1,3 +1,17 @@
+from __future__ import annotations
+
+import json
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Optional
+
+from app.loop import state
+from app.loop.worker import run_candidate
+
+# --- Quarter discovery -------------------------------------------------------
+
+
 """Walk-forward quarterly validation.
 
 Plan §7 specifies a 4-quarter rolling walk-forward: for each candidate
@@ -16,18 +30,6 @@ The actual subprocess invocation lives in :mod:`app.loop.worker`. This
 module owns the orchestration + aggregation only, which makes it easy
 to unit-test without spinning up the harness.
 """
-from __future__ import annotations
-
-import json
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Iterable, Optional
-
-from app.loop import state
-from app.loop.worker import CandidateResult, run_candidate
-
-
-# --- Quarter discovery -------------------------------------------------------
 
 
 def list_quarters(start_year: int = 2024, n_quarters: int = 8) -> list[str]:
@@ -70,8 +72,7 @@ class WalkForwardAggregate:
         return asdict(self)
 
 
-def aggregate(per_quarter: list[tuple[str, dict]],
-              oos_quarter: Optional[str] = None) -> WalkForwardAggregate:
+def aggregate(per_quarter: list[tuple[str, dict]], oos_quarter: Optional[str] = None) -> WalkForwardAggregate:
     """Aggregate per-quarter metric blobs into walk-forward scores.
 
     ``per_quarter`` is a list of ``(quarter_label, metrics_blob)``. Each
@@ -100,19 +101,12 @@ def aggregate(per_quarter: list[tuple[str, dict]],
             oos_sharpe = oos_metrics.get("sharpe")
             oos_tc = oos_metrics.get("trades_count", 0)
             # Flag collapse if OOS sharpe < 0 or trade count < 15.
-            oos_collapse = (
-                oos_sharpe is None
-                or oos_sharpe < 0.0
-                or oos_tc < 15
-            )
+            oos_collapse = oos_sharpe is None or oos_sharpe < 0.0 or oos_tc < 15
 
     return WalkForwardAggregate(
         candidate_id=per_quarter[0][1].get("__candidate_id__", "?"),
         quarters=quarters,
-        per_quarter=[
-            {"quarter": q, **{k: v for k, v in m.items() if not k.startswith("_")}}
-            for q, m in per_quarter
-        ],
+        per_quarter=[{"quarter": q, **{k: v for k, v in m.items() if not k.startswith("_")}} for q, m in per_quarter],
         mean_sharpe=sum(sharpes) / len(sharpes),
         mean_calmar=sum(calmars) / len(calmars),
         mean_trade_count=sum(counts) / len(counts),

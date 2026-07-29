@@ -1,4 +1,5 @@
 """100% coverage tests for app.services.signal_engine."""
+
 import pandas as pd
 import pytest
 
@@ -14,7 +15,6 @@ from app.services.signal_engine import (
     htf_trend,
 )
 
-
 # --- Fixtures -----------------------------------------------------------------
 
 
@@ -23,13 +23,19 @@ def make_df(closes, interval_sec=900, volumes=None, start=1_700_000_000):
     n = len(closes)
     close_time = [start + i * interval_sec for i in range(n)]
     opens = [closes[i - 1] if i else closes[0] for i in range(n)]
-    highs = [max(o, c) + 0.5 for o, c in zip(opens, closes)]
-    lows = [min(o, c) - 0.5 for o, c in zip(opens, closes)]
+    highs = [max(o, c) + 0.5 for o, c in zip(opens, closes, strict=False)]
+    lows = [min(o, c) - 0.5 for o, c in zip(opens, closes, strict=False)]
     vols = volumes or [100.0] * n
-    df = pd.DataFrame({
-        "open": opens, "high": highs, "low": lows, "close": closes,
-        "volume": vols, "close_time": close_time,
-    })
+    df = pd.DataFrame(
+        {
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": vols,
+            "close_time": close_time,
+        }
+    )
     df["dts"] = pd.to_datetime(df["close_time"], unit="s", utc=True)
     return df
 
@@ -54,11 +60,15 @@ def bullish_df(n=600):
 def gartley_candidate(entry_area=None, **overrides):
     """Bullish gartley with PRZ around the tail of bullish_df."""
     last = 50.0 + 589 * 0.2 - 2.16 * 10  # ~146.24
-    lo, hi = (entry_area or (last - 2.4, last + 1.6))
+    lo, hi = entry_area or (last - 2.4, last + 1.6)
     base = dict(
-        family="XABCD", name="gartley", bullish=True, formed=True,
+        family="XABCD",
+        name="gartley",
+        bullish=True,
+        formed=True,
         points=(142.0, 170.0, 155.0, 165.0, last),
-        completion_min=lo, completion_max=hi,
+        completion_min=lo,
+        completion_max=hi,
     )
     base.update(overrides)
     return Candidate(**base)
@@ -79,10 +89,12 @@ class TestExtractCandidates:
             name = "gartley"
             bullish = True
 
-        detection = {"raw_assessment": {
-            "patterns": {"XABCD": [P()], "ABCD": [], "ABC": []},
-            "forming": {"XABCD": [P()], "ABCD": [], "ABC": []},
-        }}
+        detection = {
+            "raw_assessment": {
+                "patterns": {"XABCD": [P()], "ABCD": [], "ABC": []},
+                "forming": {"XABCD": [P()], "ABCD": [], "ABC": []},
+            }
+        }
         cands = extract_candidates(detection)
         assert len(cands) == 2
         assert cands[0].formed is True
@@ -163,6 +175,7 @@ class TestToCandidate:
         filter at rejection_reason() compares seconds to bar indices and
         rejects every real candidate as stale_age.
         """
+
         class P:
             y = (1.0, 2.0, 3.0)
             completion_min_price = 1.0
@@ -227,21 +240,27 @@ class TestToCandidate:
         Without the fix, candidate.times stays at bar indices and the
         staleness filter rejects every real candidate.
         """
-        from pyharmonics.technicals import OHLCTechnicals
-        from pyharmonics.search import HarmonicSearch
         from types import SimpleNamespace
+
+        from pyharmonics.search import HarmonicSearch
+        from pyharmonics.technicals import OHLCTechnicals
 
         n = 600
         closes = [50.0 + i * 0.2 for i in range(n - 10)]
         closes += [closes[-1] - 2.16 * (i + 1) for i in range(10)]
         opens = [closes[i - 1] if i else closes[0] for i in range(n)]
-        highs = [max(o, c) + 0.5 for o, c in zip(opens, closes)]
-        lows = [min(o, c) - 0.5 for o, c in zip(opens, closes)]
-        df = pd.DataFrame({
-            "open": opens, "high": highs, "low": lows,
-            "close": closes, "volume": [100.0] * n,
-            "close_time": [1_700_000_000 + i * 900 for i in range(n)],
-        })
+        highs = [max(o, c) + 0.5 for o, c in zip(opens, closes, strict=False)]
+        lows = [min(o, c) - 0.5 for o, c in zip(opens, closes, strict=False)]
+        df = pd.DataFrame(
+            {
+                "open": opens,
+                "high": highs,
+                "low": lows,
+                "close": closes,
+                "volume": [100.0] * n,
+                "close_time": [1_700_000_000 + i * 900 for i in range(n)],
+            }
+        )
         candle = SimpleNamespace(df=df, symbol="BTCUSDT", interval="15m")
         t = OHLCTechnicals(candle.df, candle.symbol, candle.interval, peak_spacing=5)
         hs = HarmonicSearch(t, fib_tolerance=0.05)
@@ -250,15 +269,16 @@ class TestToCandidate:
         # Patch raw_assessment into a dict of {family: [patterns]} shape that
         # extract_candidates expects.
         formed = hs.get_patterns()
-        det = {"raw_assessment": {
-            "forming": formed, "patterns": {},
-        }}
+        det = {
+            "raw_assessment": {
+                "forming": formed,
+                "patterns": {},
+            }
+        }
         cands = extract_candidates(det, df["close_time"])
         # At least one candidate should survive stale_age (D within 20 bars).
         if cands:
-            assert all(t > 1_700_000_000 for t in cands[0].times), (
-                f"times still in bar-index units: {cands[0].times}"
-            )
+            assert all(t > 1_700_000_000 for t in cands[0].times), f"times still in bar-index units: {cands[0].times}"
 
 
 # --- Indicator helpers ---------------------------------------------------------
@@ -432,9 +452,7 @@ class TestBuildSignal:
     def test_confirmed_a_grade_signal(self):
         df = bullish_df()
         cand = gartley_candidate()
-        signal = build_signal(df, "15m", [cand],
-                              divergences={"rsi": [{"bullish": True}],
-                                           "macd": [{"bullish": True}]})
+        signal = build_signal(df, "15m", [cand], divergences={"rsi": [{"bullish": True}], "macd": [{"bullish": True}]})
         assert signal is not None
         assert signal.grade == "A"
         assert signal.direction == "long"
@@ -453,7 +471,8 @@ class TestBuildSignal:
         # PRZ far above current price -> approaching.
         cand = gartley_candidate(
             points=(140.0, 170.0, 155.0, 165.0, last),
-            completion_min=last + 10.0, completion_max=last + 12.0,
+            completion_min=last + 10.0,
+            completion_max=last + 12.0,
         )
         signal = build_signal(df, "15m", [cand])
         if signal is not None:
@@ -481,12 +500,15 @@ class TestBuildSignal:
         df = make_df(closes)
         last = float(df["close"].iloc[-1])
         cand = Candidate(
-            family="XABCD", name="gartley", bullish=False, formed=True,
+            family="XABCD",
+            name="gartley",
+            bullish=False,
+            formed=True,
             points=(last + 30, last - 30, last + 10, last - 5, last),
-            completion_min=last - 2.0, completion_max=last + 2.0,
+            completion_min=last - 2.0,
+            completion_max=last + 2.0,
         )
-        signal = build_signal(df, "15m", [cand],
-                              divergences={"rsi": [{"bullish": False}]})
+        signal = build_signal(df, "15m", [cand], divergences={"rsi": [{"bullish": False}]})
         assert signal is not None
         assert signal.direction == "short"
         assert signal.stop_loss > signal.entry_reference
@@ -515,8 +537,7 @@ class TestBuildSignal:
             name="gartley",
             points=(140.0, last + 0.05, 155.0, 165.0, last),
         )
-        signal = build_signal(df, "15m", [bad, good],
-                              divergences={"rsi": [{"bullish": True}]})
+        signal = build_signal(df, "15m", [bad, good], divergences={"rsi": [{"bullish": True}]})
         assert signal is not None
         assert signal.entry_zone[0] == good.prz_low
 
@@ -552,13 +573,17 @@ class TestBuildSignal:
 
     def test_adverse_momentum_veto(self):
         # Relentless downtrend: long candidate walks into a falling knife.
-        closes = [200.0 * 0.995 ** i for i in range(300)]
+        closes = [200.0 * 0.995**i for i in range(300)]
         df = make_df(closes)
         last = closes[-1]
         cand = Candidate(
-            family="XABCD", name="gartley", bullish=True, formed=True,
+            family="XABCD",
+            name="gartley",
+            bullish=True,
+            formed=True,
             points=(last * 0.9, last * 1.3, last * 1.1, last * 1.2, last),
-            completion_min=last * 0.99, completion_max=last * 1.01,
+            completion_min=last * 0.99,
+            completion_max=last * 1.01,
         )
         assert build_signal(df, "15m", [cand]) is None
 
@@ -584,6 +609,7 @@ class TestBuildSignal:
 
     def test_volume_authenticity_hard_veto(self):
         from app.services.signal_engine import volume_authenticity
+
         rows_vol = []
         closes = []
         price = 100.0
@@ -606,12 +632,11 @@ class TestBuildSignal:
         # geometry (here: descending targets on a long), the candidate is
         # dropped at the invariant gate.
         from unittest.mock import patch
+
         from app.domain.signals import SignalTarget
 
         bad_targets = tuple(
-            SignalTarget(label=f"TP{i+1}", price=100.0 - i * 10,
-                         fib_basis="x", close_pct=50, move_stop_to="y")
-            for i in range(3)
+            SignalTarget(label=f"TP{i+1}", price=100.0 - i * 10, fib_basis="x", close_pct=50, move_stop_to="y") for i in range(3)
         )
         df = bullish_df()
         with patch("app.services.signal_engine.compute_targets", return_value=bad_targets):
@@ -622,7 +647,9 @@ class TestBuildSignal:
         cand = gartley_candidate()
         # Sub-windows find nothing -> pattern only exists in full window -> veto.
         signal = build_signal(
-            df, "15m", [cand],
+            df,
+            "15m",
+            [cand],
             divergences={"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
             stability_detector=lambda _df: None,
         )
@@ -632,7 +659,9 @@ class TestBuildSignal:
         df = bullish_df()
         cand = gartley_candidate()
         signal = build_signal(
-            df, "15m", [cand],
+            df,
+            "15m",
+            [cand],
             divergences={"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
             stability_detector=lambda _df: "gartley",
         )
@@ -647,7 +676,9 @@ class TestBuildSignal:
             raise RuntimeError("detector exploded")
 
         signal = build_signal(
-            df, "15m", [cand],
+            df,
+            "15m",
+            [cand],
             divergences={"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
             stability_detector=boom,
         )
@@ -664,7 +695,9 @@ class TestBuildSignal:
             return "gartley" if calls["n"] == 1 else None
 
         signal = build_signal(
-            df, "15m", [cand],
+            df,
+            "15m",
+            [cand],
             divergences={"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
             stability_detector=detector,
         )
@@ -675,7 +708,9 @@ class TestBuildSignal:
         df = bullish_df()
         cand = gartley_candidate()
         signal = build_signal(
-            df, "15m", [cand],
+            df,
+            "15m",
+            [cand],
             divergences={"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
         )
         assert signal is not None
@@ -698,7 +733,6 @@ class TestPipelineHelpers:
     """
 
     def test_rank_signals_prefers_higher_grade(self):
-        from dataclasses import replace
 
         from app.services.signal_engine import rank_signals
 
@@ -707,7 +741,6 @@ class TestPipelineHelpers:
         assert rank_signals([b, a]).pattern_name == a.pattern_name
 
     def test_rank_signals_breaks_ties_by_score_then_formed(self):
-        from dataclasses import replace
 
         from app.services.signal_engine import rank_signals
 
@@ -717,6 +750,7 @@ class TestPipelineHelpers:
 
     def test_rank_signals_empty_returns_none(self):
         from app.services.signal_engine import rank_signals
+
         assert rank_signals([]) is None
 
     def test_apply_stability_passes_through_for_c_grade(self):
@@ -745,11 +779,12 @@ class TestPipelineHelpers:
 
     def test_score_candidate_rejects_when_trap_veto(self, monkeypatch):
         from app.services import signal_engine as se
-        from app.services.signal_engine import score_candidate, _prepare_score_context
+        from app.services.signal_engine import _prepare_score_context, score_candidate
 
         df = bullish_df()
         ctx = _prepare_score_context(
-            df, "15m",
+            df,
+            "15m",
             {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
         )
         assert ctx is not None
@@ -767,12 +802,14 @@ class TestPipelineHelpers:
 class TestV2EngineAmendments:
     def test_pattern_reliability_bump_visible_on_signal(self):
         from app.services.signal_engine import (
-            _prepare_score_context, score_candidate,
+            _prepare_score_context,
+            score_candidate,
         )
 
         df = bullish_df()
         ctx = _prepare_score_context(
-            df, "15m",
+            df,
+            "15m",
             {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
         )
         assert ctx is not None
@@ -783,7 +820,9 @@ class TestV2EngineAmendments:
 
     def test_reverse_rsi_divergence_penalised(self):
         from app.services.signal_engine import (
-            confluence_score, compute_atr, compute_rsi,
+            compute_atr,
+            compute_rsi,
+            confluence_score,
         )
 
         # Use a flat series: RSI returns 50 (mid-zone, not extreme so the
@@ -795,31 +834,44 @@ class TestV2EngineAmendments:
         # Bearish divergence on a bullish candidate must subtract 5.
         divs = {"rsi": [{"bullish": False}]}
         _score, factors = confluence_score(
-            df, cand, atr, rsi, "unknown", divs,
+            df,
+            cand,
+            atr,
+            rsi,
+            "unknown",
+            divs,
         )
         assert factors["rsi"] == -5
 
         # Same divergence on a bearish candidate is aligned (not penalised).
         bear_cand = gartley_candidate(bullish=False)
         _score, factors_bear = confluence_score(
-            df, bear_cand, atr, rsi, "unknown", divs,
+            df,
+            bear_cand,
+            atr,
+            rsi,
+            "unknown",
+            divs,
         )
         assert factors_bear["rsi"] >= 0
 
     def test_wide_width_pct_demotes_to_observation(self):
         from app.services.signal_engine import (
-            _prepare_score_context, score_candidate,
+            _prepare_score_context,
+            score_candidate,
         )
 
         df = bullish_df()
         ctx = _prepare_score_context(
-            df, "15m",
+            df,
+            "15m",
             {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
         )
         assert ctx is not None
         # 8% PRZ width (mid=143, range=11.4) → above the 4% gate.
         wide = gartley_candidate(
-            completion_min=137.5, completion_max=148.5,
+            completion_min=137.5,
+            completion_max=148.5,
         )
         sig = score_candidate(ctx, wide)
         assert sig is not None
@@ -830,7 +882,8 @@ class TestV2EngineAmendments:
     def test_forming_pattern_volume_gate_is_lenient(self):
         # Forming pattern with low volume authenticity → still produces a signal.
         from app.services.signal_engine import (
-            _prepare_score_context, score_candidate,
+            _prepare_score_context,
+            score_candidate,
         )
 
         df = bullish_df()
@@ -838,7 +891,8 @@ class TestV2EngineAmendments:
         df["volume"] = 1.0
         df.loc[df.index[-1], "volume"] = 1.0  # no spike
         ctx = _prepare_score_context(
-            df, "15m",
+            df,
+            "15m",
             {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
         )
         assert ctx is not None
@@ -849,12 +903,14 @@ class TestV2EngineAmendments:
 
     def test_formed_pattern_vetoed_on_low_volume(self):
         from app.services.signal_engine import (
-            _prepare_score_context, score_candidate,
+            _prepare_score_context,
+            score_candidate,
         )
 
         df = bullish_df()
         ctx = _prepare_score_context(
-            df, "15m",
+            df,
+            "15m",
             {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
         )
         assert ctx is not None

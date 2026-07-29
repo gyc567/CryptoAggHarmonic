@@ -1,4 +1,5 @@
 """Vibe agent orchestrator."""
+
 import json
 import logging
 import os
@@ -7,21 +8,20 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.domain.vibe_schemas import VibeEvent
 from app.infra.supabase_client import (
-    get_supabase_client,
     consume_ledger_quota,
+    get_supabase_client,
     release_ledger_quota,
 )
 from app.infra.vibe_event_store import VibeEventStore
 from app.infra.vibe_session_store import VibeSessionStore
 from app.infra.vibe_trace_store import VibeTraceStore
+from app.services.vibe.cancellation import CancellationToken
 from app.services.vibe.context import (
     build_system_prompt,
     compress_messages,
     extract_position_summary,
 )
-from app.services.vibe.cancellation import CancellationToken
 from app.services.vibe.llm.provider import LLMProvider, ToolCall
 from app.services.vibe.stream import VibeStream
 from app.services.vibe.tools.base import ToolRuntime
@@ -133,10 +133,7 @@ class VibeOrchestrator:
                     {
                         "iteration": iteration,
                         "response": response.content,
-                        "tool_calls": [
-                            {"name": tc.name, "arguments": tc.arguments}
-                            for tc in response.tool_calls
-                        ],
+                        "tool_calls": [{"name": tc.name, "arguments": tc.arguments} for tc in response.tool_calls],
                     }
                 )
 
@@ -154,9 +151,7 @@ class VibeOrchestrator:
                                 "type": "function",
                                 "function": {
                                     "name": tc.name,
-                                    "arguments": json.dumps(
-                                        tc.arguments, ensure_ascii=False
-                                    ),
+                                    "arguments": json.dumps(tc.arguments, ensure_ascii=False),
                                 },
                             }
                             for tc in response.tool_calls
@@ -167,9 +162,7 @@ class VibeOrchestrator:
                     for tc in response.tool_calls:
                         if _is_cancelled():
                             raise RuntimeError("运行已被用户取消")
-                        tool_output = self._execute_tool(
-                            tc, user_id, session_id, run_id, stream
-                        )
+                        tool_output = self._execute_tool(tc, user_id, session_id, run_id, stream)
                         trace["tool_calls"].append(
                             {
                                 "name": tc.name,
@@ -327,12 +320,8 @@ class VibeOrchestrator:
             "entry_zone": [data.get("entry_price"), data.get("entry_price")],
             "entry_reference": data.get("entry_price"),
             "stop_loss": data.get("stop_loss"),
-            "targets": [
-                {"label": "TP1", "price": data.get("target_price"), "close_pct": 100}
-            ],
+            "targets": [{"label": "TP1", "price": data.get("target_price"), "close_pct": 100}],
         }
-
-
 
     def _build_cards(self, messages: list[dict]) -> list[dict]:
         """Build final card list from tool results in the message history."""
@@ -394,22 +383,14 @@ class VibeOrchestrator:
                     }
                 )
             else:
-                formatted.append(
-                    {"role": msg.get("role"), "content": msg.get("content") or ""}
-                )
+                formatted.append({"role": msg.get("role"), "content": msg.get("content") or ""})
         return compress_messages(formatted)
 
-    def _load_position(self, user_id: str) -> tuple[Optional[dict], Optional[dict]]:
+    def _load_position(self, user_id: str) -> tuple[dict | None, dict | None]:
         """Load user's position config and balance from Supabase."""
         try:
             client = get_supabase_client(use_service_role=True)
-            result = (
-                client.table("profiles")
-                .select("position_config, position_balance")
-                .eq("id", user_id)
-                .single()
-                .execute()
-            )
+            result = client.table("profiles").select("position_config, position_balance").eq("id", user_id).single().execute()
             data = result.data or {}
             return data.get("position_config"), data.get("position_balance")
         except Exception as e:

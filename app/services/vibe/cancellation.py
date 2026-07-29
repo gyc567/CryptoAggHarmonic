@@ -4,6 +4,7 @@ Sync-thread fallbacks run in the same process as the API, so a local
 ``threading.Event`` is sufficient. RQ workers run in separate processes, so we
 also publish a Redis key that workers poll.
 """
+
 import logging
 import os
 import threading
@@ -22,7 +23,7 @@ _RUN_EVENTS: dict[str, threading.Event] = {}
 _redis_client: Optional[object] = None
 
 
-def _get_redis() -> Optional[object]:
+def _get_redis() -> object | None:
     """Return a shared Redis client for cancellation checks, if configured."""
     global _redis_client
     if _redis_client is not None:
@@ -52,7 +53,7 @@ class CancellationToken:
     def __init__(
         self,
         run_id: str,
-        local_event: Optional[threading.Event] = None,
+        local_event: threading.Event | None = None,
         redis_client: Optional[object] = None,
     ):
         self.run_id = run_id
@@ -65,9 +66,7 @@ class CancellationToken:
             self._local_event.set()
         if self._redis is not None:
             try:
-                self._redis.setex(
-                    _cancel_key(self.run_id), _CANCEL_KEY_TTL_SECONDS, "1"
-                )
+                self._redis.setex(_cancel_key(self.run_id), _CANCEL_KEY_TTL_SECONDS, "1")
             except Exception as e:
                 logger.warning("Failed to set Redis cancel key for %s: %s", self.run_id, e)
 
@@ -90,7 +89,7 @@ def register_run(run_id: str) -> CancellationToken:
     return CancellationToken(run_id, local_event=event, redis_client=_get_redis())
 
 
-def get_token(run_id: str) -> Optional[CancellationToken]:
+def get_token(run_id: str) -> CancellationToken | None:
     """Return an existing cancellation token for a run, if any."""
     event = _RUN_EVENTS.get(run_id)
     return CancellationToken(run_id, local_event=event, redis_client=_get_redis())

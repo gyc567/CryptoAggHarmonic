@@ -14,15 +14,16 @@ These tests are deliberately strict: any change to the schema that
 *appears* to loosen a constraint without a matching test update is a
 regression that should be caught in code review or by CI.
 """
+
 from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from app.domain.enums import AnalysisType, Interval, Market
+from app.domain.enums import AnalysisType, ErrorCode, Interval, Market, Status
 from app.domain.schemas import (
-    AnalyzeRequest,
     AnalysisData,
+    AnalyzeRequest,
     ChartMeta,
     ErrorResponse,
     HealthResponse,
@@ -31,11 +32,8 @@ from app.domain.schemas import (
     Signal,
     SignalTarget,
     SuccessResponse,
-    TechnicalResult,
     TimingInfo,
 )
-from app.domain.enums import Status, ErrorCode
-
 
 # ---------------------------------------------------------------------------
 # AnalyzeRequest — request body
@@ -232,9 +230,7 @@ class TestResponseEnvelopes:
             MarketsResponse(markets=[], intervals=["1h"], analysis_types=["forming"])
 
     def test_error_response_happy_path(self):
-        e = ErrorResponse(
-            error={"code": ErrorCode.INVALID_PARAMS, "message": "bad"}
-        )
+        e = ErrorResponse(error={"code": ErrorCode.INVALID_PARAMS, "message": "bad"})
         assert e.success is False
         assert e.error.code is ErrorCode.INVALID_PARAMS
         assert e.details is None  # default: omitted when not a 422
@@ -258,16 +254,15 @@ class TestResponseEnvelopes:
     def test_field_error_required_fields(self):
         """msg and type are required (min_length=1); loc may be empty for cross-field errors."""
         from app.domain.schemas import FieldError
-        from pydantic import ValidationError as VE
 
         # Empty loc is OK — Pydantic model_validators emit loc=() (empty tuple).
         fe = FieldError(loc="", msg="x", type="y")
         assert fe.loc == ""
 
         # But msg and type must be non-empty.
-        with pytest.raises(VE):
+        with pytest.raises(ValidationError):
             FieldError(loc="x", msg="", type="y")
-        with pytest.raises(VE):
+        with pytest.raises(ValidationError):
             FieldError(loc="x", msg="y", type="")
 
     def test_success_response_wraps_data(self):

@@ -1,5 +1,6 @@
 """Pydantic schemas for the AI Trading Assistant (Vibe) module."""
-from typing import Annotated, Any, Literal, Optional, Union
+
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -174,15 +175,7 @@ class ErrorEvent(_VibeEventBase):
 
 
 VibeEvent = Annotated[
-    Union[
-        RunStartedEvent,
-        ToolCallStartEvent,
-        ToolCallEndEvent,
-        DeltaEvent,
-        CardEvent,
-        DoneEvent,
-        ErrorEvent,
-    ],
+    RunStartedEvent | ToolCallStartEvent | ToolCallEndEvent | DeltaEvent | CardEvent | DoneEvent | ErrorEvent,
     Field(discriminator="type"),
 ]
 

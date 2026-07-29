@@ -14,12 +14,12 @@ input. The set of fields to strip is versioned (``STRIPPED_FIELDS_V1``)
 so that a future schema change can add a new constant rather than
 mutating the old one.
 """
+
 from __future__ import annotations
 
 import hashlib
 import os
 from typing import Any
-
 
 STRICT = "strict"
 MODERATE = "moderate"
@@ -98,10 +98,7 @@ def strip_maker_artifacts(
         neither ``candidate_id`` nor ``salt`` is provided.
     """
     if level not in VALID_LEVELS:
-        raise ValueError(
-            f"unknown isolation level {level!r}; must be one of "
-            f"{VALID_LEVELS}"
-        )
+        raise ValueError(f"unknown isolation level {level!r}; must be one of " f"{VALID_LEVELS}")
 
     out = dict(payload)
     for field_name in STRIPPED_FIELDS_V1[level]:
@@ -110,9 +107,7 @@ def strip_maker_artifacts(
     if level == STRICT:
         raw_id = payload.get("candidate_id", "")
         if not raw_id:
-            raise ValueError(
-                "strict isolation requires payload['candidate_id']"
-            )
+            raise ValueError("strict isolation requires payload['candidate_id']")
         # Re-hash so the Checker cannot correlate across generations.
         out["candidate_id"] = _salted_id(raw_id, salt)
 
@@ -158,8 +153,7 @@ def leakage_metrics(
         raise ValueError("verdicts_a and verdicts_b must be same length")
     n = len(verdicts_a)
     if n == 0:
-        return {"kl_divergence": 0.0, "disagreement_rate": 0.0,
-                "n": 0}
+        return {"kl_divergence": 0.0, "disagreement_rate": 0.0, "n": 0}
 
     p_a = sum(verdicts_a) / n
     p_b = sum(verdicts_b) / n
@@ -168,15 +162,11 @@ def leakage_metrics(
     eps = 1e-9
     p_a_c = max(min(p_a, 1.0 - eps), eps)
     p_b_c = max(min(p_b, 1.0 - eps), eps)
-    kl = (
-        p_a_c * (0 if p_a_c <= 0 else (0 if p_b_c <= 0 else
-              __import__("math").log(p_a_c / p_b_c)))
-        + (1 - p_a_c) * (0 if (1 - p_a_c) <= 0 else
-              (0 if (1 - p_b_c) <= 0 else
-               __import__("math").log((1 - p_a_c) / (1 - p_b_c))))
+    kl = p_a_c * (0 if p_a_c <= 0 else (0 if p_b_c <= 0 else __import__("math").log(p_a_c / p_b_c))) + (1 - p_a_c) * (
+        0 if (1 - p_a_c) <= 0 else (0 if (1 - p_b_c) <= 0 else __import__("math").log((1 - p_a_c) / (1 - p_b_c)))
     )
 
-    disagree = sum(1 for a, b in zip(verdicts_a, verdicts_b) if a != b) / n
+    disagree = sum(1 for a, b in zip(verdicts_a, verdicts_b, strict=False) if a != b) / n
 
     return {
         "kl_divergence": max(0.0, kl),

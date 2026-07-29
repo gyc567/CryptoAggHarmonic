@@ -28,35 +28,27 @@ are either structural invariants (``fib_tp*``, ``extended_patterns``),
 depend on data we don't yet have (``funding_confluence_default``), or are
 out-of-scope for the current search (RSI trend subsystem).
 """
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import FrozenSet, Mapping
-
 
 # Hard-coded families the stop-placement algorithm needs to special-case.
 # Keep in sync with tests/test_signal_engine.py::_pattern_base_score.
-_REQUIRED_EXTENDED_FAMILIES: FrozenSet[str] = frozenset(
-    {"butterfly", "deep butterfly", "crab", "deep crab", "shark", "deep shark"}
-)
+_REQUIRED_EXTENDED_FAMILIES: frozenset[str] = frozenset({"butterfly", "deep butterfly", "crab", "deep crab", "shark", "deep shark"})
 
 # Required keys in PATTERN_BASE_SCORE. Loop never removes entries, only bumps.
-_REQUIRED_PATTERN_FAMILIES: FrozenSet[str] = frozenset(
-    {"gartley", "bat", "butterfly", "crab", "deep crab", "shark"}
-)
+_REQUIRED_PATTERN_FAMILIES: frozenset[str] = frozenset({"gartley", "bat", "butterfly", "crab", "deep crab", "shark"})
 
 # Required keys in CONFLUENCE_WEIGHTS and the sum of their values (must be 100).
-_REQUIRED_CONFLUENCE_KEYS: FrozenSet[str] = frozenset(
-    {"price_action", "htf_trend", "rsi", "structure", "macd", "funding"}
-)
+_REQUIRED_CONFLUENCE_KEYS: frozenset[str] = frozenset({"price_action", "htf_trend", "rsi", "structure", "macd", "funding"})
 
 # Allowed stop-loss risk levels — stop-placement logic branches on these.
-_REQUIRED_STOP_LOSS_LEVELS: FrozenSet[str] = frozenset(
-    {"conservative", "standard", "aggressive"}
-)
+_REQUIRED_STOP_LOSS_LEVELS: frozenset[str] = frozenset({"conservative", "standard", "aggressive"})
 
 # Required HTF rule keys (matches Interval enum values used in production).
-_REQUIRED_HTF_KEYS: FrozenSet[str] = frozenset({"15m", "1h", "4h", "1d", "1w"})
+_REQUIRED_HTF_KEYS: frozenset[str] = frozenset({"15m", "1h", "4h", "1d", "1w"})
 
 
 @dataclass(frozen=True)
@@ -79,9 +71,7 @@ class TuningConstants:
     # Frozen — extended patterns require a special stop rule (X is not the
     # invalidation anchor for butterfly/crab/shark). Mutating this would
     # invalidate the stop algorithm in compute_stop().
-    extended_patterns: FrozenSet[str] = field(
-        default_factory=lambda: frozenset(_REQUIRED_EXTENDED_FAMILIES)
-    )
+    extended_patterns: frozenset[str] = field(default_factory=lambda: frozenset(_REQUIRED_EXTENDED_FAMILIES))
 
     # Frozen — must cover every Interval enum value so htf_trend() never
     # returns "unknown" silently in production.
@@ -96,9 +86,7 @@ class TuningConstants:
     )
 
     # Tunable — ATR buffer for the 3 stop-loss levels. Higher = wider stop.
-    atr_stop_buffer: Mapping[str, float] = field(
-        default_factory=lambda: {"conservative": 1.0, "standard": 0.5, "aggressive": 0.25}
-    )
+    atr_stop_buffer: Mapping[str, float] = field(default_factory=lambda: {"conservative": 1.0, "standard": 0.5, "aggressive": 0.25})
 
     # Tunable — within this ATR distance of the PRZ mid counts as "at the zone"
     # for the structure-confluence factor.
@@ -234,37 +222,26 @@ class TuningConstants:
 
         # C1 — Fibonacci retracement ordering.
         if not (self.fib_tp1 < self.fib_tp2 < self.fib_tp3):
-            raise ValueError(
-                f"fib_tp ordering violated: "
-                f"{self.fib_tp1} < {self.fib_tp2} < {self.fib_tp3}"
-            )
+            raise ValueError(f"fib_tp ordering violated: " f"{self.fib_tp1} < {self.fib_tp2} < {self.fib_tp3}")
 
         # C1 — TP close percentages must cover all three legs.
         if sum(self.tp_close_pcts) != 100:
-            raise ValueError(
-                f"tp_close_pcts must sum to 100, got {sum(self.tp_close_pcts)}"
-            )
+            raise ValueError(f"tp_close_pcts must sum to 100, got {sum(self.tp_close_pcts)}")
 
         # C2 — Authenticity ordering (veto must be stricter than halve).
         if not (self.authenticity_veto < self.authenticity_halve):
             raise ValueError(
-                f"authenticity_veto ({self.authenticity_veto}) must be < "
-                f"authenticity_halve ({self.authenticity_halve})"
+                f"authenticity_veto ({self.authenticity_veto}) must be < " f"authenticity_halve ({self.authenticity_halve})"
             )
 
         # C2 — Regime ordering.
         if not (self.regime_moderate < self.regime_high):
-            raise ValueError(
-                f"regime_moderate ({self.regime_moderate}) must be < "
-                f"regime_high ({self.regime_high})"
-            )
+            raise ValueError(f"regime_moderate ({self.regime_moderate}) must be < " f"regime_high ({self.regime_high})")
 
         # C3 — Confluence weights must sum to 100 and contain all required keys.
         weight_sum = sum(self.confluence_weights.values())
         if abs(weight_sum - 100) > 1e-6:
-            raise ValueError(
-                f"confluence_weights must sum to 100, got {weight_sum}"
-            )
+            raise ValueError(f"confluence_weights must sum to 100, got {weight_sum}")
         missing = _REQUIRED_CONFLUENCE_KEYS - set(self.confluence_weights.keys())
         if missing:
             raise ValueError(f"confluence_weights missing keys: {sorted(missing)}")
@@ -273,31 +250,22 @@ class TuningConstants:
         # the stop-placement algorithm misroutes).
         missing_families = _REQUIRED_EXTENDED_FAMILIES - set(self.extended_patterns)
         if missing_families:
-            raise ValueError(
-                f"extended_patterns missing required families: "
-                f"{sorted(missing_families)}"
-            )
+            raise ValueError(f"extended_patterns missing required families: " f"{sorted(missing_families)}")
 
         # C1 — atr_stop_buffer must define every risk level.
         missing_levels = _REQUIRED_STOP_LOSS_LEVELS - set(self.atr_stop_buffer.keys())
         if missing_levels:
-            raise ValueError(
-                f"atr_stop_buffer missing levels: {sorted(missing_levels)}"
-            )
+            raise ValueError(f"atr_stop_buffer missing levels: {sorted(missing_levels)}")
 
         # C1 — htf_rule must cover every supported interval.
         missing_intervals = _REQUIRED_HTF_KEYS - set(self.htf_rule.keys())
         if missing_intervals:
-            raise ValueError(
-                f"htf_rule missing intervals: {sorted(missing_intervals)}"
-            )
+            raise ValueError(f"htf_rule missing intervals: {sorted(missing_intervals)}")
 
         # C3 — pattern_base_score must include the canonical family set.
         missing_pat = _REQUIRED_PATTERN_FAMILIES - set(self.pattern_base_score.keys())
         if missing_pat:
-            raise ValueError(
-                f"pattern_base_score missing families: {sorted(missing_pat)}"
-            )
+            raise ValueError(f"pattern_base_score missing families: {sorted(missing_pat)}")
 
         # ---- Soft monotonicity (C4 macro policy coherence) --------------------
 
@@ -318,26 +286,19 @@ class TuningConstants:
             ("mult_ranging_aligned", self.mult_ranging_aligned),
         ):
             if val < inverse_min:
-                raise ValueError(
-                    f"{name} ({val}) must be >= min(inverse bands) = {inverse_min}"
-                )
+                raise ValueError(f"{name} ({val}) must be >= min(inverse bands) = {inverse_min}")
 
         # data_short is a "don't know" fallback (insufficient daily data).
         # It must sit in the cautious-but-not-floor range [0.5, 1.0] — a real
         # signal always gets a tighter or larger mult than "we have no data".
         if not (0.5 <= self.mult_data_short <= 1.0):
-            raise ValueError(
-                f"mult_data_short ({self.mult_data_short}) must lie in [0.5, 1.0]"
-            )
+            raise ValueError(f"mult_data_short ({self.mult_data_short}) must lie in [0.5, 1.0]")
 
         # Risk-parity ceiling: the extreme-inverse band is the only one that
         # can exceed 1.0; clamp it so vol_mult * regime_mult * macro_mult <= 1.5
         # for any single trade (regime/vol mults are independently <= 1.5).
         if self.mult_extreme_inverse > 1.5:
-            raise ValueError(
-                f"mult_extreme_inverse ({self.mult_extreme_inverse}) > 1.5 "
-                f"violates risk-parity product ceiling"
-            )
+            raise ValueError(f"mult_extreme_inverse ({self.mult_extreme_inverse}) > 1.5 " f"violates risk-parity product ceiling")
 
         # ---- Window positivity ------------------------------------------------
         int_fields = (
@@ -369,10 +330,7 @@ class TuningConstants:
         # ATR long window must be >= ATR short window (the robust-ATR formula
         # uses min(short, long), so flipping them is a silent bug).
         if self.atr_long_window < self.atr_window:
-            raise ValueError(
-                f"atr_long_window ({self.atr_long_window}) must be >= "
-                f"atr_window ({self.atr_window})"
-            )
+            raise ValueError(f"atr_long_window ({self.atr_long_window}) must be >= " f"atr_window ({self.atr_window})")
 
 
 # Singleton — read this from anywhere in the codebase.
@@ -461,9 +419,7 @@ def apply_tuning(t: TuningConstants) -> None:
         try:
             mod = importlib.import_module(module_name)
         except ImportError as exc:  # pragma: no cover - defensive
-            raise ImportError(
-                f"apply_tuning: cannot import {module_name}: {exc}"
-            ) from exc
+            raise ImportError(f"apply_tuning: cannot import {module_name}: {exc}") from exc
         for alias_name, field_name in aliases.items():
             value = getattr(t, field_name)
             # Mapping fields are stored as dict on TUNING; copy so callers
@@ -480,12 +436,12 @@ def reset_tuning() -> None:
     apply_tuning(TUNING)
 
 
-class tuning_scope:
+class TuningScope:
     """Context manager: apply ``t`` on enter, revert to ``TUNING`` on exit.
 
     Example::
 
-        with tuning_scope(my_candidate):
+        with TuningScope(my_candidate):
             run_backtest(symbol)
     """
 

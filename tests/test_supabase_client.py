@@ -1,30 +1,31 @@
 """Tests for Supabase client module."""
+
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
 
 from app.infra.supabase_client import (
-    get_supabase_url,
+    check_invited_email,
+    consume_ledger_quota,
+    create_analysis_record,
+    create_profile_for_user,
+    delete_chart,
+    get_analysis_by_idem_key,
+    get_chart_url,
+    get_db_connection_string,
     get_supabase_anon_key,
     get_supabase_service_key,
-    get_db_connection_string,
-    verify_user_token,
-    check_invited_email,
-    create_profile_for_user,
+    get_supabase_url,
     get_user_profile,
     list_user_analyses,
-    create_analysis_record,
-    update_analysis_record,
-    reserve_user_quota,
-    consume_ledger_quota,
-    release_ledger_quota,
-    upload_chart,
-    get_chart_url,
-    delete_chart,
     log_audit_event,
-    get_analysis_by_idem_key,
+    release_ledger_quota,
+    reserve_user_quota,
     reset_idem_cache,
+    update_analysis_record,
+    upload_chart,
+    verify_user_token,
 )
-from app.api.errors import AppError
 
 
 class TestEnvironmentFunctions:
@@ -37,7 +38,11 @@ class TestEnvironmentFunctions:
         with pytest.raises(RuntimeError):
             get_supabase_url()
 
-    @patch.dict("os.environ", {"SUPABASE_URL": "", "SUPABASE_DB_URL": "postgresql://user:pass@db.test.supabase.co:5432/postgres"}, clear=True)
+    @patch.dict(
+        "os.environ",
+        {"SUPABASE_URL": "", "SUPABASE_DB_URL": "postgresql://user:pass@db.test.supabase.co:5432/postgres"},
+        clear=True,
+    )
     def test_get_supabase_url_from_db_url(self):
         url = get_supabase_url()
         assert "test.supabase.co" in url
@@ -78,13 +83,17 @@ class TestEnvironmentFunctions:
         assert "postgresql://" in conn_str
         assert "host" in conn_str
 
-    @patch.dict("os.environ", {
-        "SUPABASE_DB_HOST": "db.test.supabase.co",
-        "SUPABASE_DB_PORT": "5432",
-        "SUPABASE_DB_USER": "postgres",
-        "SUPABASE_DB_PASSWORD": "test!pass@123",
-        "SUPABASE_DB_NAME": "postgres",
-    }, clear=True)
+    @patch.dict(
+        "os.environ",
+        {
+            "SUPABASE_DB_HOST": "db.test.supabase.co",
+            "SUPABASE_DB_PORT": "5432",
+            "SUPABASE_DB_USER": "postgres",
+            "SUPABASE_DB_PASSWORD": "test!pass@123",
+            "SUPABASE_DB_NAME": "postgres",
+        },
+        clear=True,
+    )
     def test_get_db_connection_string_from_components(self):
         conn_str = get_db_connection_string()
         assert "db.test.supabase.co" in conn_str
@@ -95,6 +104,7 @@ class TestVerifyUserToken:
     def _client_factory(self, anon_client, service_client):
         def factory(use_service_role=False):
             return service_client if use_service_role else anon_client
+
         return factory
 
     @patch("app.infra.supabase_client.get_supabase_client")
@@ -114,7 +124,9 @@ class TestVerifyUserToken:
         }
         mock_profile_result = MagicMock()
         mock_profile_result.data = mock_profile_data
-        mock_service_client.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = mock_profile_result
+        mock_service_client.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = (
+            mock_profile_result
+        )
 
         mock_get_client.side_effect = self._client_factory(mock_anon_client, mock_service_client)
         result = verify_user_token("valid-token")
@@ -212,7 +224,9 @@ class TestAnalysisFunctions:
             {"id": "a1", "symbol": "BTCUSDT", "status": "completed"},
             {"id": "a2", "symbol": "AAPL", "status": "no_result"},
         ]
-        mock_client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.offset.return_value.execute.return_value = mock_result
+        mock_client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.offset.return_value.execute.return_value = (
+            mock_result
+        )
         mock_get_client.return_value = mock_client
 
         result = list_user_analyses("user-123", limit=10)
@@ -224,7 +238,9 @@ class TestAnalysisFunctions:
         mock_client = MagicMock()
         mock_result = MagicMock()
         mock_result.data = [{"id": "a1", "symbol": "BTCUSDT", "status": "completed", "market": "binance"}]
-        mock_client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.offset.return_value.eq.return_value.eq.return_value.execute.return_value = mock_result
+        mock_client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.offset.return_value.eq.return_value.eq.return_value.execute.return_value = (
+            mock_result
+        )
         mock_get_client.return_value = mock_client
 
         result = list_user_analyses("user-123", status="completed", market="binance")
@@ -259,15 +275,11 @@ class TestAnalysisFunctions:
         reset_idem_cache()
         mock_client = MagicMock()
         mock_result = MagicMock()
-        mock_result.data = [{"id": "a1", "user_id": "user-1", "idempotency_key": "k1", "status": "completed", "technical_result": {"x": 1}}]
+        mock_result.data = [
+            {"id": "a1", "user_id": "user-1", "idempotency_key": "k1", "status": "completed", "technical_result": {"x": 1}}
+        ]
         (
-            mock_client.table.return_value
-            .select.return_value
-            .eq.return_value
-            .eq.return_value
-            .order.return_value
-            .limit.return_value
-            .execute.return_value
+            mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value
         ) = mock_result
         mock_get_client.return_value = mock_client
 
@@ -299,7 +311,9 @@ class TestQuotaFunctions:
 
         mock_ledger_result = MagicMock()
         mock_ledger_result.data = [{"id": "ledger-123"}]
-        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = mock_ledger_result
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = (
+            mock_ledger_result
+        )
 
         mock_get_client.return_value = mock_client
 

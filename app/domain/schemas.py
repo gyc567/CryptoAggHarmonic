@@ -21,9 +21,10 @@ Layer 1 (mypy / pyright) and Layer 2 (icontract in :mod:`app.domain.signals`)
 cover the rest; this module is the source of truth for what enters and leaves
 the system.
 """
+
 from __future__ import annotations
 
-from typing import Optional, Annotated, Any
+from typing import Annotated, Any, Optional
 
 from pydantic import (
     BaseModel,
@@ -40,6 +41,7 @@ from app.domain.enums import AnalysisType, ErrorCode, Interval, Market, Status
 # Every schema in this module inherits from _StrictModel so the ConfigDict knobs
 # are set in one place. Adding a new schema? Inherit from this; do NOT pass
 # model_config=... per-class.
+
 
 class _StrictModel(BaseModel):
     """Base for every Pydantic model in this module.
@@ -67,47 +69,71 @@ class _StrictModel(BaseModel):
 class AnalyzeRequest(_StrictModel):
     """Structured analysis request."""
 
-    market: Annotated[Market, Field(
-        default=Market.FUTURES,
-        description="Market data source. Defaults to USDT-M perpetuals.",
-    )]
-    symbol: Annotated[str, Field(
-        ...,
-        min_length=1,
-        max_length=20,
-        description="Trading symbol, e.g. 'BTCUSDT' or 'AAPL'. Case-insensitive.",
-    )]
-    interval: Annotated[Interval, Field(
-        ...,
-        description="Candle interval.",
-    )]
-    analysis_type: Annotated[AnalysisType, Field(
-        default=AnalysisType.FORMING,
-        description="Detection mode. AUTO lets the engine pick the resolved type.",
-    )]
-    limit_to: Annotated[int, Field(
-        default=10,
-        ge=1,
-        le=100,
-        description="Maximum number of pattern candidates to return.",
-    )]
-    percent_complete: Annotated[float, Field(
-        default=0.8,
-        ge=0.1,
-        le=1.0,
-        description="Minimum completion ratio for forming patterns.",
-    )]
-    candles: Annotated[int, Field(
-        default=1000,
-        ge=100,
-        le=5000,
-        description="Number of historical candles to fetch for analysis.",
-    )]
-    idempotency_key: Annotated[Optional[str], Field(
-        default=None,
-        max_length=64,
-        description="Caller-supplied retry key; dedupes repeat submissions.",
-    )]
+    market: Annotated[
+        Market,
+        Field(
+            default=Market.FUTURES,
+            description="Market data source. Defaults to USDT-M perpetuals.",
+        ),
+    ]
+    symbol: Annotated[
+        str,
+        Field(
+            ...,
+            min_length=1,
+            max_length=20,
+            description="Trading symbol, e.g. 'BTCUSDT' or 'AAPL'. Case-insensitive.",
+        ),
+    ]
+    interval: Annotated[
+        Interval,
+        Field(
+            ...,
+            description="Candle interval.",
+        ),
+    ]
+    analysis_type: Annotated[
+        AnalysisType,
+        Field(
+            default=AnalysisType.FORMING,
+            description="Detection mode. AUTO lets the engine pick the resolved type.",
+        ),
+    ]
+    limit_to: Annotated[
+        int,
+        Field(
+            default=10,
+            ge=1,
+            le=100,
+            description="Maximum number of pattern candidates to return.",
+        ),
+    ]
+    percent_complete: Annotated[
+        float,
+        Field(
+            default=0.8,
+            ge=0.1,
+            le=1.0,
+            description="Minimum completion ratio for forming patterns.",
+        ),
+    ]
+    candles: Annotated[
+        int,
+        Field(
+            default=1000,
+            ge=100,
+            le=5000,
+            description="Number of historical candles to fetch for analysis.",
+        ),
+    ]
+    idempotency_key: Annotated[
+        Optional[str],
+        Field(
+            default=None,
+            max_length=64,
+            description="Caller-supplied retry key; dedupes repeat submissions.",
+        ),
+    ]
 
     @field_validator("symbol")
     @classmethod
@@ -133,11 +159,14 @@ class AnalyzeRequest(_StrictModel):
 class ChartMeta(_StrictModel):
     """Chart metadata (no base64 data)."""
 
-    format: Annotated[str, Field(
-        default="png",
-        min_length=1,
-        max_length=8,
-    )]
+    format: Annotated[
+        str,
+        Field(
+            default="png",
+            min_length=1,
+            max_length=8,
+        ),
+    ]
     width: Annotated[Optional[int], Field(default=None, ge=1, le=8192)] = None
     height: Annotated[Optional[int], Field(default=None, ge=1, le=8192)] = None
     path: Annotated[Optional[str], Field(default=None, max_length=512)] = None
@@ -230,15 +259,9 @@ class AnalysisData(_StrictModel):
     interval: Interval
     analysis_type: AnalysisType
     parameters: Annotated[dict[str, Any], Field(default_factory=dict)]
-    technical_result: TechnicalResult = Field(
-        default_factory=lambda: TechnicalResult(divergences={}, raw_patterns={})
-    )
-    interpretation: Interpretation = Field(
-        default_factory=lambda: Interpretation(timeframes={})
-    )
-    chart: ChartMeta = Field(
-        default_factory=lambda: ChartMeta(format="png")
-    )
+    technical_result: TechnicalResult = Field(default_factory=lambda: TechnicalResult(divergences={}, raw_patterns={}))
+    interpretation: Interpretation = Field(default_factory=lambda: Interpretation(timeframes={}))
+    chart: ChartMeta = Field(default_factory=lambda: ChartMeta(format="png"))
     timing: TimingInfo = Field(default_factory=TimingInfo)
     binance_ws_url: Annotated[Optional[str], Field(default=None, max_length=512)] = None  # 客户端直连 Binance WS（仅 FUTURES）
     # v2: ranked list of forming-pattern candidates with discipline + macro tags.

@@ -1,9 +1,9 @@
 """Tests for the vibe backtest engine."""
+
 import pandas as pd
 import pytest
 
 from app.services.vibe.backtest_engine import (
-    BacktestSummary,
     Trade,
     compute_metrics,
     simulate_trades,
@@ -19,10 +19,12 @@ def _make_df(rows: list[dict]) -> pd.DataFrame:
 
 
 def test_simulate_long_win():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
-        {"dts": "2026-01-01 01:00", "open": 100, "high": 105, "low": 99, "close": 104},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
+            {"dts": "2026-01-01 01:00", "open": 100, "high": 105, "low": 99, "close": 104},
+        ]
+    )
     trades = simulate_trades(df, "long", 100, 98, 105)
     assert len(trades) == 1
     assert trades[0].result == "win"
@@ -30,10 +32,12 @@ def test_simulate_long_win():
 
 
 def test_simulate_long_stop():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
-        {"dts": "2026-01-01 01:00", "open": 100, "high": 102, "low": 97, "close": 98},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
+            {"dts": "2026-01-01 01:00", "open": 100, "high": 102, "low": 97, "close": 98},
+        ]
+    )
     trades = simulate_trades(df, "long", 100, 98, 105)
     assert len(trades) == 1
     assert trades[0].result == "loss"
@@ -41,10 +45,12 @@ def test_simulate_long_stop():
 
 
 def test_simulate_short_win():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
-        {"dts": "2026-01-01 01:00", "open": 100, "high": 101, "low": 95, "close": 96},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
+            {"dts": "2026-01-01 01:00", "open": 100, "high": 101, "low": 95, "close": 96},
+        ]
+    )
     trades = simulate_trades(df, "short", 100, 103, 95)
     assert len(trades) == 1
     assert trades[0].result == "win"
@@ -52,10 +58,12 @@ def test_simulate_short_win():
 
 
 def test_simulate_short_stop():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
-        {"dts": "2026-01-01 01:00", "open": 100, "high": 104, "low": 99, "close": 102},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
+            {"dts": "2026-01-01 01:00", "open": 100, "high": 104, "low": 99, "close": 102},
+        ]
+    )
     trades = simulate_trades(df, "short", 100, 103, 95)
     assert len(trades) == 1
     assert trades[0].result == "loss"
@@ -63,12 +71,14 @@ def test_simulate_short_stop():
 
 
 def test_simulate_multiple_entries():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
-        {"dts": "2026-01-01 01:00", "open": 100, "high": 105, "low": 99, "close": 104},
-        {"dts": "2026-01-01 02:00", "open": 104, "high": 105, "low": 100, "close": 102},
-        {"dts": "2026-01-01 03:00", "open": 102, "high": 103, "low": 98, "close": 99},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
+            {"dts": "2026-01-01 01:00", "open": 100, "high": 105, "low": 99, "close": 104},
+            {"dts": "2026-01-01 02:00", "open": 104, "high": 105, "low": 100, "close": 102},
+            {"dts": "2026-01-01 03:00", "open": 102, "high": 103, "low": 98, "close": 99},
+        ]
+    )
     trades = simulate_trades(df, "long", 100, 98, 105)
     assert len(trades) == 3
     assert trades[0].result == "win"
@@ -77,9 +87,11 @@ def test_simulate_multiple_entries():
 
 
 def test_simulate_same_candle_exit_long():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 105, "low": 99, "close": 104},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 105, "low": 99, "close": 104},
+        ]
+    )
     trades = simulate_trades(df, "long", 100, 98, 105)
     assert len(trades) == 1
     assert trades[0].result == "win"
@@ -87,9 +99,11 @@ def test_simulate_same_candle_exit_long():
 
 
 def test_simulate_same_candle_stop_long():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 97, "close": 98},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 97, "close": 98},
+        ]
+    )
     trades = simulate_trades(df, "long", 100, 98, 105)
     assert len(trades) == 1
     assert trades[0].result == "loss"
@@ -97,9 +111,11 @@ def test_simulate_same_candle_stop_long():
 
 
 def test_simulate_scratch_at_end():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
+        ]
+    )
     trades = simulate_trades(df, "long", 100, 98, 105)
     assert len(trades) == 1
     assert trades[0].result == "scratch"
@@ -108,9 +124,11 @@ def test_simulate_scratch_at_end():
 
 
 def test_simulate_invalid_levels():
-    df = _make_df([
-        {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
-    ])
+    df = _make_df(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100, "high": 101, "low": 99, "close": 100},
+        ]
+    )
     with pytest.raises(ValueError):
         simulate_trades(df, "long", 100, 101, 105)
 

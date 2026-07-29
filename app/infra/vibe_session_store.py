@@ -8,10 +8,11 @@ When Supabase is not configured (e.g. local dev without env vars), the store
 falls back to bounded in-memory caches so the Vibe UI can still be exercised
 without unbounded growth.
 """
+
 import logging
 import uuid
-from typing import Optional
 from datetime import datetime, timezone
+from typing import Optional
 
 from app.infra.memory_cache import MemoryCache
 from app.infra.supabase_client import get_supabase_client
@@ -67,26 +68,19 @@ class VibeSessionStore:
         try:
             result = self.client.table("vibe_sessions").insert(payload).execute()
             return result.data[0] if result.data else payload
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to create vibe session")
             self._memory_sessions.set(session_id, payload)
             return payload
 
-    def get_session(self, session_id: str, user_id: str) -> Optional[dict]:
+    def get_session(self, session_id: str, user_id: str) -> dict | None:
         """Fetch a session if it belongs to the user."""
         if self._use_memory():
             session = self._memory_sessions.get(session_id)
             return session if session and session.get("user_id") == user_id else None
 
         try:
-            result = (
-                self.client.table("vibe_sessions")
-                .select("*")
-                .eq("id", session_id)
-                .eq("user_id", user_id)
-                .single()
-                .execute()
-            )
+            result = self.client.table("vibe_sessions").select("*").eq("id", session_id).eq("user_id", user_id).single().execute()
             return result.data
         except Exception as e:
             logger.warning("Failed to get vibe session %s: %s", session_id, e)
@@ -102,12 +96,9 @@ class VibeSessionStore:
     ) -> list[dict]:
         """List sessions for a user, newest first."""
         if self._use_memory():
-            sessions = [
-                s for s in self._memory_sessions.values()
-                if s.get("user_id") == user_id and s.get("status") == status
-            ]
+            sessions = [s for s in self._memory_sessions.values() if s.get("user_id") == user_id and s.get("status") == status]
             sessions.sort(key=lambda s: s.get("updated_at") or s.get("created_at"), reverse=True)
-            return sessions[offset:offset + limit]
+            return sessions[offset : offset + limit]
 
         try:
             result = (
@@ -122,12 +113,9 @@ class VibeSessionStore:
             return result.data or []
         except Exception as e:
             logger.warning("Failed to list vibe sessions: %s", e)
-            sessions = [
-                s for s in self._memory_sessions.values()
-                if s.get("user_id") == user_id and s.get("status") == status
-            ]
+            sessions = [s for s in self._memory_sessions.values() if s.get("user_id") == user_id and s.get("status") == status]
             sessions.sort(key=lambda s: s.get("updated_at") or s.get("created_at"), reverse=True)
-            return sessions[offset:offset + limit]
+            return sessions[offset : offset + limit]
 
     def update_session_title(self, session_id: str, title: str) -> bool:
         """Update session title (usually auto-generated)."""
@@ -140,9 +128,7 @@ class VibeSessionStore:
             return True
 
         try:
-            self.client.table("vibe_sessions").update(
-                {"title": title, "updated_at": _now_iso()}
-            ).eq("id", session_id).execute()
+            self.client.table("vibe_sessions").update({"title": title, "updated_at": _now_iso()}).eq("id", session_id).execute()
             return True
         except Exception as e:
             logger.warning("Failed to update session title %s: %s", session_id, e)
@@ -164,9 +150,9 @@ class VibeSessionStore:
             return True
 
         try:
-            self.client.table("vibe_sessions").update(
-                {"status": "deleted", "updated_at": _now_iso()}
-            ).eq("id", session_id).eq("user_id", user_id).execute()
+            self.client.table("vibe_sessions").update({"status": "deleted", "updated_at": _now_iso()}).eq("id", session_id).eq(
+                "user_id", user_id
+            ).execute()
             return True
         except Exception as e:
             logger.warning("Failed to archive vibe session %s: %s", session_id, e)
@@ -179,7 +165,7 @@ class VibeSessionStore:
 
     # ---- Messages ----
 
-    def create_message(self, message: dict) -> Optional[dict]:
+    def create_message(self, message: dict) -> dict | None:
         """Insert a single message."""
         msg_id = message.get("id") or str(uuid.uuid4())
         enriched = {**message, "id": msg_id}
@@ -243,7 +229,7 @@ class VibeSessionStore:
         """List messages for a session, oldest first."""
         if self._use_memory():
             messages = self._memory_messages.get(session_id) or []
-            return messages[offset:offset + limit]
+            return messages[offset : offset + limit]
 
         try:
             result = (
@@ -258,11 +244,11 @@ class VibeSessionStore:
         except Exception as e:
             logger.warning("Failed to list vibe messages: %s", e)
             messages = self._memory_messages.get(session_id) or []
-            return messages[offset:offset + limit]
+            return messages[offset : offset + limit]
 
     # ---- Runs ----
 
-    def create_run(self, run: dict) -> Optional[dict]:
+    def create_run(self, run: dict) -> dict | None:
         """Insert a run record."""
         run_id = run.get("id") or str(uuid.uuid4())
         enriched = {**run, "id": run_id}
@@ -279,21 +265,14 @@ class VibeSessionStore:
             self._memory_runs.set(run_id, enriched)
             return enriched
 
-    def get_run(self, run_id: str, user_id: str) -> Optional[dict]:
+    def get_run(self, run_id: str, user_id: str) -> dict | None:
         """Fetch a run if it belongs to the user."""
         if self._use_memory():
             run = self._memory_runs.get(run_id)
             return run if run and run.get("user_id") == user_id else None
 
         try:
-            result = (
-                self.client.table("vibe_runs")
-                .select("*")
-                .eq("id", run_id)
-                .eq("user_id", user_id)
-                .single()
-                .execute()
-            )
+            result = self.client.table("vibe_runs").select("*").eq("id", run_id).eq("user_id", user_id).single().execute()
             return result.data
         except Exception as e:
             logger.warning("Failed to get vibe run %s: %s", run_id, e)
@@ -310,9 +289,7 @@ class VibeSessionStore:
             return True
 
         try:
-            self.client.table("vibe_runs").update(updates).eq(
-                "id", run_id
-            ).execute()
+            self.client.table("vibe_runs").update(updates).eq("id", run_id).execute()
             return True
         except Exception as e:
             logger.warning("Failed to update vibe run %s: %s", run_id, e)

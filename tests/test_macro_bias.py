@@ -10,14 +10,13 @@ Covers the five regimes from the v2 audit:
 
 Plus the data-short fallback (<210 bars) and unknown signal direction.
 """
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from app.services.macro_bias import (_EXTREME_DEVIATION_PCT, _MIN_DAILY_BARS,
-                                       compute)
+from app.services.macro_bias import _EXTREME_DEVIATION_PCT, _MIN_DAILY_BARS, compute
 
 
 def _series(closes) -> pd.Series:
@@ -83,7 +82,7 @@ class TestInverseRanging:
     def test_ranging_inverse_drops_to_half(self):
         # 100 bars rising, then 150 bars flat. Price (≈200) > EMA200 (≈200 ish).
         # short_signal → not aligned (since price > EMA200). EMA200 slope ≈ 0 (ranging).
-        rises = [100.0 * (1.005 ** i) for i in range(100)]   # 100 → 164.46
+        rises = [100.0 * (1.005**i) for i in range(100)]  # 100 → 164.46
         flat = [rises[-1]] * 150
         closes = rises + flat
         overlay = compute(_series(closes), signal_dir=-1)

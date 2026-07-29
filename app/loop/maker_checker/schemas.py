@@ -1,3 +1,11 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+# ---- Reusable primitives --------------------------------------------------
+
+
 """Schemas — the contract between Maker, Checker, and Arbiter.
 
 Plain dataclasses (no Pydantic dependency to keep the runtime lean and to
@@ -15,13 +23,6 @@ Design choices:
 * All ``None`` defaults are explicit so the 5-D Pareto back-compat rule
   (``None`` → ``-inf``) is unambiguous at every call site.
 """
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import Any, Optional
-
-
-# ---- Reusable primitives --------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -43,9 +44,7 @@ class MakerSelfScore:
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.self_score <= 1.0:
-            raise ValueError(
-                f"self_score must be in [0, 1]; got {self.self_score}"
-            )
+            raise ValueError(f"self_score must be in [0, 1]; got {self.self_score}")
 
 
 @dataclass(frozen=True)
@@ -83,20 +82,11 @@ class Proposal:
             raise ValueError("Proposal.diff must be non-empty")
         for field_name, magnitude in self.diff.items():
             if abs(magnitude) > self.MAX_DIFF_PCT:
-                raise ValueError(
-                    f"diff magnitude for {field_name!r} = {magnitude} "
-                    f"exceeds ±{self.MAX_DIFF_PCT}%"
-                )
+                raise ValueError(f"diff magnitude for {field_name!r} = {magnitude} " f"exceeds ±{self.MAX_DIFF_PCT}%")
         if len(self.maker_intent) > self.MAX_INTENT_LEN:
-            raise ValueError(
-                f"maker_intent too long ({len(self.maker_intent)} > "
-                f"{self.MAX_INTENT_LEN})"
-            )
+            raise ValueError(f"maker_intent too long ({len(self.maker_intent)} > " f"{self.MAX_INTENT_LEN})")
         if len(self.reasoning) > self.MAX_REASONING_LEN:
-            raise ValueError(
-                f"reasoning too long ({len(self.reasoning)} > "
-                f"{self.MAX_REASONING_LEN})"
-            )
+            raise ValueError(f"reasoning too long ({len(self.reasoning)} > " f"{self.MAX_REASONING_LEN})")
 
 
 # ---- Checker output ------------------------------------------------------
@@ -140,24 +130,14 @@ class Verdict:
                 raise ValueError(f"{name} must be in [0, 1]; got {v}")
         for comp, v in self.components.items():
             if not 0.0 <= v <= 1.0:
-                raise ValueError(
-                    f"components[{comp!r}] must be in [0, 1]; got {v}"
-                )
+                raise ValueError(f"components[{comp!r}] must be in [0, 1]; got {v}")
         for f in self.flags:
             if "severity" not in f or "issue" not in f:
-                raise ValueError(
-                    f"flag missing severity/issue: {f}"
-                )
+                raise ValueError(f"flag missing severity/issue: {f}")
             if f["severity"] not in {"high", "medium", "low"}:
-                raise ValueError(
-                    f"flag severity must be high|medium|low; got "
-                    f"{f['severity']!r}"
-                )
+                raise ValueError(f"flag severity must be high|medium|low; got " f"{f['severity']!r}")
         if len(self.feedback) > self.MAX_FEEDBACK_LEN:
-            raise ValueError(
-                f"feedback too long ({len(self.feedback)} > "
-                f"{self.MAX_FEEDBACK_LEN})"
-            )
+            raise ValueError(f"feedback too long ({len(self.feedback)} > " f"{self.MAX_FEEDBACK_LEN})")
 
 
 # ---- Arbiter output ------------------------------------------------------
@@ -192,20 +172,12 @@ class MergeResult:
 
     def __post_init__(self) -> None:
         if self.final_decision not in self.VALID_DECISIONS:
-            raise ValueError(
-                f"final_decision must be one of {self.VALID_DECISIONS}; "
-                f"got {self.final_decision!r}"
-            )
+            raise ValueError(f"final_decision must be one of {self.VALID_DECISIONS}; " f"got {self.final_decision!r}")
         if not -10.0 <= self.final_score <= 10.0:
-            raise ValueError(
-                f"final_score out of plausible range: {self.final_score}"
-            )
+            raise ValueError(f"final_score out of plausible range: {self.final_score}")
         if self.checker_confidence is not None:
             if not 0.0 <= self.checker_confidence <= 1.0:
-                raise ValueError(
-                    "checker_confidence must be None or in [0, 1]; "
-                    f"got {self.checker_confidence}"
-                )
+                raise ValueError("checker_confidence must be None or in [0, 1]; " f"got {self.checker_confidence}")
 
 
 # ---- Calibration ---------------------------------------------------------
@@ -322,7 +294,7 @@ def make_merge_result(
     final_score: float,
     m4_verdict: str,
     trigger_reasons: list[str] | tuple[str, ...],
-    checker_confidence: float | None = None,
+    checker_confidence: Optional[float] = None,
     checker_flags: list[dict] | tuple[dict, ...] = (),
 ) -> MergeResult:
     """Build a :class:`MergeResult` from keyword args."""

@@ -17,6 +17,7 @@ stop is assumed to be hit first.
 R multiples are position-weighted: ``r(price)`` is the reward in units of
 initial risk, and partial exits contribute ``fraction * r(price)``.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -167,18 +168,14 @@ def _simulate_one(
                     half = remaining * 0.5
                     r = _r_multiple(direction, entry, initial_stop, target)
                     realized_r += half * r
-                    partials.append(
-                        PartialExit(half, target, half * r, EXIT_PARTIAL_TARGET, time)
-                    )
+                    partials.append(PartialExit(half, target, half * r, EXIT_PARTIAL_TARGET, time))
                     remaining -= half
                     t1_done = True
                     stop = entry  # default: move to breakeven
                     trailing_active = trailing_stop
                 else:
                     exit_price, exit_reason = target, EXIT_TARGET
-                    realized_r += remaining * _r_multiple(
-                        direction, entry, initial_stop, target
-                    )
+                    realized_r += remaining * _r_multiple(direction, entry, initial_stop, target)
                     remaining = 0.0
                     exit_index, exit_time = i, time
                     break
@@ -190,9 +187,7 @@ def _simulate_one(
                     half = remaining * 0.5
                     r = _r_multiple(direction, entry, initial_stop, close)
                     realized_r += half * r
-                    partials.append(
-                        PartialExit(half, close, half * r, EXIT_RSI_EXTREME, time)
-                    )
+                    partials.append(PartialExit(half, close, half * r, EXIT_RSI_EXTREME, time))
                     remaining -= half
                     rsi_done = True
 
@@ -216,9 +211,7 @@ def _simulate_one(
                 flipped = close < ema200 if long else close > ema200
                 if flipped:
                     exit_price, exit_reason = close, EXIT_TREND_FLIP
-                    realized_r += remaining * _r_multiple(
-                        direction, entry, initial_stop, close
-                    )
+                    realized_r += remaining * _r_multiple(direction, entry, initial_stop, close)
                     remaining = 0.0
                     exit_index, exit_time = i, time
                     break
@@ -276,9 +269,7 @@ def run_backtest(
     for signal in signals:
         if signal.index <= open_until:
             continue
-        trade = _simulate_one(
-            data, signal, partial_mode=partial_mode, trailing_stop=trailing_stop, bar_time=_bar_time
-        )
+        trade = _simulate_one(data, signal, partial_mode=partial_mode, trailing_stop=trailing_stop, bar_time=_bar_time)
         trades.append(trade)
         open_until = signal.index + trade.bars_held
 
@@ -288,9 +279,7 @@ def run_backtest(
     total_r = sum(t.r_multiple for t in trades)
     gross_win = sum(t.r_multiple for t in wins)
     gross_loss = abs(sum(t.r_multiple for t in losses))
-    profit_factor = (gross_win / gross_loss) if gross_loss > 0 else (
-        None if gross_win == 0 else float("inf")
-    )
+    profit_factor = (gross_win / gross_loss) if gross_loss > 0 else (None if gross_win == 0 else float("inf"))
 
     # Max drawdown on the cumulative-R equity curve (trade close order).
     peak = 0.0

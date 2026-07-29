@@ -1,4 +1,5 @@
 """Pydantic request schemas for the trend-RSI strategy API."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -26,13 +27,9 @@ class RsiTrendScanRequest(BaseModel):
     def _check_market_interval(self):
         # Yahoo has no continuous 4H session for stocks; restrict intervals.
         if self.market == "yahoo" and self.interval not in STOCK_INTERVALS:
-            raise ValueError(
-                f"股票市场(yahoo)仅支持周期: {', '.join(STOCK_INTERVALS)}"
-            )
+            raise ValueError(f"股票市场(yahoo)仅支持周期: {', '.join(STOCK_INTERVALS)}")
         if self.market == "binance" and self.interval not in CRYPTO_INTERVALS:
-            raise ValueError(
-                f"加密货币(binance)仅支持周期: {', '.join(CRYPTO_INTERVALS)}"
-            )
+            raise ValueError(f"加密货币(binance)仅支持周期: {', '.join(CRYPTO_INTERVALS)}")
         return self
 
 

@@ -3,12 +3,13 @@
 Uses Redis lists as the primary backend. Falls back to an in-memory store
 when Redis is unavailable (local dev / tests).
 """
+
 import json
 import logging
 import os
 import uuid
-from typing import Optional, Any
 from datetime import datetime, timezone
+from typing import Any, Optional
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -98,7 +99,9 @@ class VibeEventStore:
             # Don't fail the run for a malformed event; log loud and skip.
             logger.error(
                 "Dropping malformed vibe event for run %s: %s | payload=%s",
-                run_id, e.errors(), event,
+                run_id,
+                e.errors(),
+                event,
             )
             return event["event_id"]
 
@@ -118,7 +121,7 @@ class VibeEventStore:
         events = self._memory.get(run_id) or []
         events.append(validated.model_dump())
         self._memory.set(run_id, events)
-        return event["event_id"]   
+        return event["event_id"]
 
     def get_events(
         self,

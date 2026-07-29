@@ -1,4 +1,5 @@
 """save_to_journal tool for vibe agent."""
+
 from app.infra.supabase_client import get_supabase_client
 from app.services.vibe.tools.base import Tool, ToolOutput, ToolRuntime
 

@@ -1,35 +1,42 @@
-from .openai_handler import parse_args, query_openai, FUNCTION_ROUTER  # Import parse_args from the appropriate module
-from flask import Flask, jsonify, request, render_template
-import os
-import yaml
 import logging
+import os
 import uuid
 
+import yaml
+from flask import Flask, jsonify, render_template, request
+
+from app.api.auth import check_quota, is_local_dev_mode, require_auth
+from app.api.errors import AppError
+
 # New SaaS API imports
-from app.api.middleware import register_error_handlers, log_request_middleware
-from app.api.auth import require_auth, check_quota, is_local_dev_mode
+from app.api.middleware import log_request_middleware, register_error_handlers
+from app.api.rsi_trend_routes import rsi_trend_bp
 from app.api.validation import parse_request
 from app.api.vibe_routes import vibe_bp
-from app.api.rsi_trend_routes import rsi_trend_bp
-from app.domain.enums import Market, Interval, AnalysisType, ErrorCode
+from app.domain.enums import AnalysisType, ErrorCode, Interval, Market
 from app.domain.schemas import (
     AnalyzeRequest,
-    SuccessResponse,
     ErrorResponse,
     HealthResponse,
     MarketsResponse,
-)
-from app.services.analysis import AnalysisOrchestrator
-from app.infra.supabase_client import (
-    create_analysis_record,
-    update_analysis_record,
-    consume_ledger_quota,
-    release_ledger_quota,
-    log_audit_event,
-    get_analysis_by_idem_key,
+    SuccessResponse,
 )
 from app.infra.health_check import run_health_checks
-from app.api.errors import AppError
+from app.infra.supabase_client import (
+    consume_ledger_quota,
+    create_analysis_record,
+    get_analysis_by_idem_key,
+    log_audit_event,
+    release_ledger_quota,
+    update_analysis_record,
+)
+from app.services.analysis import AnalysisOrchestrator
+
+from .openai_handler import (  # Import parse_args from the appropriate module
+    FUNCTION_ROUTER,
+    parse_args,
+    query_openai,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -83,7 +90,8 @@ def after_request_cors(response):
         response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
-with open("prompt_intent.yaml", "r") as _prompt_intent_file:
+
+with open("prompt_intent.yaml") as _prompt_intent_file:
     prompt_context = yaml.safe_load(_prompt_intent_file)
 logging.debug("Loaded model context: %s", prompt_context)
 
@@ -93,10 +101,12 @@ orchestrator = AnalysisOrchestrator(prompt_context=prompt_context)
 
 # ---- New SaaS API Routes ----
 
-@app.route('/api/health', methods=['GET'])
+
+@app.route("/api/health", methods=["GET"])
 def health_check():
     """Health check endpoint with dependency status."""
     import time
+
     result = run_health_checks()
     response = HealthResponse(
         status=result["status"],
@@ -108,19 +118,22 @@ def health_check():
     return jsonify(response), status_code
 
 
-@app.route('/api/markets', methods=['GET'])
+@app.route("/api/markets", methods=["GET"])
 def get_markets():
     """Return supported markets, intervals, and analysis types."""
-    return jsonify(
-        MarketsResponse(
-            markets=[m.value for m in Market],
-            intervals=[i.value for i in Interval],
-            analysis_types=[a.value for a in AnalysisType],
-        ).model_dump()
-    ), 200
+    return (
+        jsonify(
+            MarketsResponse(
+                markets=[m.value for m in Market],
+                intervals=[i.value for i in Interval],
+                analysis_types=[a.value for a in AnalysisType],
+            ).model_dump()
+        ),
+        200,
+    )
 
 
-@app.route('/api/charts/<name>.png', methods=['GET'])
+@app.route("/api/charts/<name>.png", methods=["GET"])
 def serve_chart(name):
     """Serve a locally stored chart PNG (fallback when Storage is unavailable).
 
@@ -128,19 +141,29 @@ def serve_chart(name):
     an unguessable analysis id; the name whitelist blocks path traversal.
     """
     from flask import send_file
+
     from app.services.chart_store import chart_file_path
 
     path = chart_file_path(name)
     if path is None:
-        return jsonify({"success": False, "error": {
-            "code": "NOT_FOUND", "message": "Chart not found.",
-            "retryable": False, "request_id": "",
-        }}), 404
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "NOT_FOUND",
+                        "message": "Chart not found.",
+                        "retryable": False,
+                        "request_id": "",
+                    },
+                }
+            ),
+            404,
+        )
     return send_file(path, mimetype="image/png")
 
 
-
-@app.route('/api/analyze', methods=['POST'])
+@app.route("/api/analyze", methods=["POST"])
 @require_auth
 def analyze(user):
     """Structured analysis endpoint with auth and quota.
@@ -171,27 +194,30 @@ def analyze(user):
         if isinstance(prior, dict) and prior.get("status") == "completed" and prior.get("technical_result"):
             replayed_id = prior.get("id") or str(uuid.uuid4())
             logging.info("Replaying analysis by idempotency_key=%s", req.idempotency_key)
-            return jsonify(
-                SuccessResponse(
-                    data={
-                        "analysis_id": replayed_id,
-                        "status": prior.get("status", "completed"),
-                        "market": prior.get("market"),
-                        "symbol": prior.get("symbol"),
-                        "interval": prior.get("interval"),
-                        "analysis_type": prior.get("analysis_type"),
-                        "technical_result": prior.get("technical_result"),
-                        "interpretation": prior.get("interpretation"),
-                        "chart": {"path": prior.get("chart_path")} if prior.get("chart_path") else {},
-                        "timing": {
-                            "duration_ms": prior.get("duration_ms"),
-                            "started_at": prior.get("started_at"),
-                            "completed_at": prior.get("completed_at"),
-                        },
-                        "idempotent_replay": True,
-                    }
-                ).model_dump()
-            ), 200
+            return (
+                jsonify(
+                    SuccessResponse(
+                        data={
+                            "analysis_id": replayed_id,
+                            "status": prior.get("status", "completed"),
+                            "market": prior.get("market"),
+                            "symbol": prior.get("symbol"),
+                            "interval": prior.get("interval"),
+                            "analysis_type": prior.get("analysis_type"),
+                            "technical_result": prior.get("technical_result"),
+                            "interpretation": prior.get("interpretation"),
+                            "chart": {"path": prior.get("chart_path")} if prior.get("chart_path") else {},
+                            "timing": {
+                                "duration_ms": prior.get("duration_ms"),
+                                "started_at": prior.get("started_at"),
+                                "completed_at": prior.get("completed_at"),
+                            },
+                            "idempotent_replay": True,
+                        }
+                    ).model_dump()
+                ),
+                200,
+            )
 
     # Reserve quota
     analysis_id = str(uuid.uuid4())
@@ -201,16 +227,19 @@ def analyze(user):
     else:
         reserved, remaining, ledger_id = check_quota(user_id, analysis_id, units=1)
     if not reserved:
-        return jsonify(
-            ErrorResponse(
-                error={
-                    "code": "QUOTA_EXCEEDED",
-                    "message": f"Daily quota exceeded. Remaining: {remaining}",
-                    "retryable": False,
-                    "request_id": "",
-                }
-            ).model_dump()
-        ), 429
+        return (
+            jsonify(
+                ErrorResponse(
+                    error={
+                        "code": "QUOTA_EXCEEDED",
+                        "message": f"Daily quota exceeded. Remaining: {remaining}",
+                        "retryable": False,
+                        "request_id": "",
+                    }
+                ).model_dump()
+            ),
+            429,
+        )
 
     # Create analysis record using the same ID returned to the caller.
     # In local dev mode without Supabase configured this may fail; we log a
@@ -278,9 +307,7 @@ def analyze(user):
             details={"symbol": req.symbol, "market": req.market.value},
         )
 
-        return jsonify(
-            SuccessResponse(data=result.model_dump()).model_dump()
-        ), 200
+        return jsonify(SuccessResponse(data=result.model_dump()).model_dump()), 200
 
     except AppError as e:
         # Release quota on failure and mark record failed.
@@ -301,10 +328,10 @@ def analyze(user):
             "Analysis failed. Please try again.",
             retryable=True,
             original_error=e,
-        )
+        ) from e
 
 
-@app.route('/api/history', methods=['GET'])
+@app.route("/api/history", methods=["GET"])
 @require_auth
 def history(user):
     """Return analysis history.
@@ -315,7 +342,7 @@ def history(user):
     return jsonify({"success": True, "data": {"items": [], "total": 0}}), 200
 
 
-@app.route('/api/analysis/<analysis_id>', methods=['GET'])
+@app.route("/api/analysis/<analysis_id>", methods=["GET"])
 @require_auth
 def analysis_detail(user, analysis_id):
     """Return a single analysis record by ID.
@@ -323,51 +350,52 @@ def analysis_detail(user, analysis_id):
     Currently returns a 404 placeholder. Real implementation should query the
     analyses table and verify ownership via RLS.
     """
-    return jsonify({
-        "success": False,
-        "error": {
-            "code": ErrorCode.NOT_FOUND.value,
-            "message": "Analysis not found.",
-            "retryable": False,
-            "request_id": "",
-        },
-    }), 404
+    return (
+        jsonify(
+            {
+                "success": False,
+                "error": {
+                    "code": ErrorCode.NOT_FOUND.value,
+                    "message": "Analysis not found.",
+                    "retryable": False,
+                    "request_id": "",
+                },
+            }
+        ),
+        404,
+    )
 
 
 # ---- Existing Routes (Unchanged) ----
 
+
 # Route to interact with OpenAI's GPT-3
-@app.route('/query', methods=['POST'])
+@app.route("/query", methods=["POST"])
 def query_openai_route():
     """
-        Queries OpenAI's GPT* model to determine the how Pyharmonics API should be called.
-        Calls the appropriate Pyharmonics API function and sends that response to OpenAI for further processing.
-        Finally, returns the response from OpenAI to the client.
+    Queries OpenAI's GPT* model to determine the how Pyharmonics API should be called.
+    Calls the appropriate Pyharmonics API function and sends that response to OpenAI for further processing.
+    Finally, returns the response from OpenAI to the client.
     """
     try:
         # Get JSON data from the request
         data = request.get_json(force=True, silent=True)
         if data is None:
             return jsonify({"error": "Invalid JSON"}), 400
-        user_prompt = data.get('prompt')
+        user_prompt = data.get("prompt")
 
         # User prompt isd required
         if not user_prompt:
             return jsonify({"error": "Prompt is required"}), 400
 
         # Determine the api call to make based on the user prompt
-        function_name, args, kwargs = parse_args(
-            query_openai(
-                user_prompt,
-                prompt_context['extract_args']
-            )
-        )
+        function_name, args, kwargs = parse_args(query_openai(user_prompt, prompt_context["extract_args"]))
 
         # In this example we only want the user to interact with our Pyharmonics API.
         # If the user asks for something out of scope we explain to them what to ask first.
         # You may want to handle this differently in your application.
         if function_name not in FUNCTION_ROUTER:
-            return jsonify({"response": prompt_context['extract_args_error']}), 200
+            return jsonify({"response": prompt_context["extract_args_error"]}), 200
 
         # Call the appropriate Pyharmonics API function and deal with any exceptions.
         symbol, interval = args
@@ -378,47 +406,40 @@ def query_openai_route():
             return jsonify({"response": f"Pyharmonics raised the following exception: {str(e)}"}), 200
 
         # Extract the plot and remove it from the harmonic data
-        plot = harmonic_data.pop('plot', None)
+        plot = harmonic_data.pop("plot", None)
         logging.info(f"harmonic data: {harmonic_data}")
         logging.info(f"base 64 image: {type(plot)}")
 
         # Prepare the response data. We only want to send the position or divergences to OpenAI.
-        pyharmonics_response = str({
-            "asset": symbol,
-            "timeframe": interval,
-            "found": harmonic_data.get('position', harmonic_data.get('divergences', {})),
-        })
+        pyharmonics_response = str(
+            {
+                "asset": symbol,
+                "timeframe": interval,
+                "found": harmonic_data.get("position", harmonic_data.get("divergences", {})),
+            }
+        )
         logging.debug(f"Pyharmonics response is built as {type(pyharmonics_response)}\n{pyharmonics_response}")
 
         # Now we query OpenAI with the Pyharmonics response and the technical analysis context.
-        model_response = query_openai(
-            pyharmonics_response,
-            prompt_context['technical_analysis']
-        )
+        model_response = query_openai(pyharmonics_response, prompt_context["technical_analysis"])
         logging.debug(f"OpenAI model response: {model_response}")
 
         # Return the OpenAI response with the Pyharmonics response and the plot
-        response_data = {
-            "response": {
-                "model": model_response,
-                "image": {
-                    "data": plot,
-                    "format": "image/png"
-                }
-            }
-        }
+        response_data = {"response": {"model": model_response, "image": {"data": plot, "format": "image/png"}}}
         return jsonify(response_data), 200
 
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
         return jsonify({"error": f"{str(e)}"}), 500
 
-@app.route('/')
+
+@app.route("/")
 def index():
     """
-        Renders the chat UI.
+    Renders the chat UI.
     """
-    return render_template('chat_ui.html')
+    return render_template("chat_ui.html")
+
 
 if __name__ == "__main__":
     # Run the app on the host and port specified in environment variables

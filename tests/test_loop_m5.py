@@ -5,27 +5,25 @@ Aggregation logic is exercised directly with hand-built metric blobs
 we can validate the quarter-by-quarter flow without invoking the real
 v3 harness.
 """
+
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from app.config.tuning import TUNING
-from app.loop.worker import CandidateResult
+from app.loop.oos_validator import oos_validate
+from app.loop.regime_buckets import aggregate_regimes
 from app.loop.walk_forward import (
-    WalkForwardAggregate,
     aggregate,
     list_quarters,
     load_walk_forward,
     save_walk_forward,
     walk_forward,
 )
-from app.loop.regime_buckets import RegimeAggregate, aggregate_regimes
-from app.loop.oos_validator import OOSVerdict, oos_validate
-
+from app.loop.worker import CandidateResult
 
 # --- walk_forward.py ---------------------------------------------------------
 
@@ -47,11 +45,15 @@ def _mkm(quarter: str, sharpe: float, trades: int = 30) -> dict:
     return {
         "__candidate_id__": "c1",
         "__quarter__": quarter,
-        "sharpe": sharpe, "calmar": 1.0, "profit_factor": 2.0,
+        "sharpe": sharpe,
+        "calmar": 1.0,
+        "profit_factor": 2.0,
         "trades_count": trades,
-        "by_regime": {"bull": {"n": trades // 3, "sharpe": sharpe + 0.1},
-                      "bear": {"n": trades // 3, "sharpe": sharpe - 0.1},
-                      "range": {"n": trades // 3, "sharpe": sharpe}},
+        "by_regime": {
+            "bull": {"n": trades // 3, "sharpe": sharpe + 0.1},
+            "bear": {"n": trades // 3, "sharpe": sharpe - 0.1},
+            "range": {"n": trades // 3, "sharpe": sharpe},
+        },
     }
 
 
@@ -117,20 +119,29 @@ class TestWalkForwardOrchestration:
             run_dir.mkdir(parents=True, exist_ok=True)
             # Write a minimal metrics.json so aggregate() can parse it.
             metrics = _mkm(kwargs.get("quarter") or "?", sharpe=0.5)
-            (run_dir / "metrics.json").write_text(json.dumps({
-                "__aggregate__": {"experimental": metrics},
-                "__meta__": {"fitness": {"experimental": 1.0}},
-            }))
+            (run_dir / "metrics.json").write_text(
+                json.dumps(
+                    {
+                        "__aggregate__": {"experimental": metrics},
+                        "__meta__": {"fitness": {"experimental": 1.0}},
+                    }
+                )
+            )
             return CandidateResult(
-                candidate_id="c1", params_sha="abc", cluster="C1",
-                gen=1, decision="accepted", metrics=metrics,
-                fitness=1.0, run_dir=str(run_dir),
+                candidate_id="c1",
+                params_sha="abc",
+                cluster="C1",
+                gen=1,
+                decision="accepted",
+                metrics=metrics,
+                fitness=1.0,
+                run_dir=str(run_dir),
             )
 
-        with mock.patch("app.loop.walk_forward.run_candidate",
-                        side_effect=fake_run):
+        with mock.patch("app.loop.walk_forward.run_candidate", side_effect=fake_run):
             agg = walk_forward(
-                candidate_id="c1", tuning=TUNING,
+                candidate_id="c1",
+                tuning=TUNING,
                 symbol_set="BTCUSD",
                 quarters=["2024-Q1", "2024-Q2", "2024-Q3"],
                 state_root=tmp_path,
@@ -148,24 +159,38 @@ class TestWalkForwardOrchestration:
             run_dir.mkdir(parents=True, exist_ok=True)
             if kwargs.get("quarter") == "2024-Q2":
                 return CandidateResult(
-                    candidate_id="c1", params_sha="abc", cluster="C1",
-                    gen=1, decision="error", error="boom",
+                    candidate_id="c1",
+                    params_sha="abc",
+                    cluster="C1",
+                    gen=1,
+                    decision="error",
+                    error="boom",
                     run_dir=str(run_dir),
                 )
-            (run_dir / "metrics.json").write_text(json.dumps({
-                "__aggregate__": {"experimental": _mkm("?", 0.5)},
-                "__meta__": {"fitness": {"experimental": 1.0}},
-            }))
+            (run_dir / "metrics.json").write_text(
+                json.dumps(
+                    {
+                        "__aggregate__": {"experimental": _mkm("?", 0.5)},
+                        "__meta__": {"fitness": {"experimental": 1.0}},
+                    }
+                )
+            )
             return CandidateResult(
-                candidate_id="c1", params_sha="abc", cluster="C1",
-                gen=1, decision="accepted", metrics=_mkm("?", 0.5),
-                fitness=1.0, run_dir=str(run_dir),
+                candidate_id="c1",
+                params_sha="abc",
+                cluster="C1",
+                gen=1,
+                decision="accepted",
+                metrics=_mkm("?", 0.5),
+                fitness=1.0,
+                run_dir=str(run_dir),
             )
 
-        with mock.patch("app.loop.walk_forward.run_candidate",
-                        side_effect=fake_run):
+        with mock.patch("app.loop.walk_forward.run_candidate", side_effect=fake_run):
             agg = walk_forward(
-                candidate_id="c1", tuning=TUNING, symbol_set="BTCUSD",
+                candidate_id="c1",
+                tuning=TUNING,
+                symbol_set="BTCUSD",
                 quarters=["2024-Q1", "2024-Q2", "2024-Q3"],
                 state_root=tmp_path,
             )

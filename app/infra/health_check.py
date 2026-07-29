@@ -1,14 +1,13 @@
 """Health checks for downstream dependencies."""
+
 import logging
 import os
-from typing import Any, Dict
-
-from app.infra.tradingview_adapter import is_bridge_healthy
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def _check_supabase() -> Dict[str, Any]:
+def _check_supabase() -> dict[str, Any]:
     """Check Supabase connectivity by fetching the current user count via service role."""
     url = os.getenv("SUPABASE_URL")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SECRET_KEY")
@@ -17,6 +16,7 @@ def _check_supabase() -> Dict[str, Any]:
 
     try:
         from app.infra.supabase_client import get_supabase_client
+
         client = get_supabase_client(use_service_role=True)
         # Lightweight query that does not depend on application data.
         client.table("profiles").select("id", count="exact").limit(1).execute()
@@ -26,7 +26,7 @@ def _check_supabase() -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
-def _check_redis() -> Dict[str, Any]:
+def _check_redis() -> dict[str, Any]:
     """Check Redis connectivity."""
     redis_url = os.getenv("REDIS_URL")
     if not redis_url:
@@ -34,6 +34,7 @@ def _check_redis() -> Dict[str, Any]:
 
     try:
         import redis as redis_lib
+
         r = redis_lib.from_url(redis_url)
         r.ping()
         return {"status": "ok"}
@@ -42,14 +43,16 @@ def _check_redis() -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
-def _check_tradingview_bridge() -> Dict[str, Any]:
+def _check_tradingview_bridge() -> dict[str, Any]:
     """Check TradingView bridge connectivity."""
     if os.getenv("USE_TRADINGVIEW", "true").lower() in ("0", "false", "no"):
         return {"status": "skipped", "message": "TradingView disabled"}
 
     try:
-        from app.infra.tradingview_adapter import get_bridge_url
         import requests
+
+        from app.infra.tradingview_adapter import get_bridge_url
+
         resp = requests.get(f"{get_bridge_url()}/health", timeout=2)
         if resp.status_code != 200:
             return {"status": "error", "message": f"Bridge returned {resp.status_code}"}
@@ -65,7 +68,7 @@ def _check_tradingview_bridge() -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
-def run_health_checks() -> Dict[str, Any]:
+def run_health_checks() -> dict[str, Any]:
     """Run all dependency health checks.
 
     Returns a dict with overall status and per-dependency details.

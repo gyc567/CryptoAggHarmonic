@@ -12,11 +12,12 @@ carries a ``by_regime`` dict (from the v3 harness). This module:
 The output is a flat dict so the v3 harness can read it back via
 ``metrics["regime_aggregate"]``.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from typing import Iterable
 
 
 @dataclass
@@ -33,8 +34,7 @@ class RegimeAggregate:
         return asdict(self)
 
 
-def aggregate_regimes(by_regime_blobs: Iterable[dict],
-                      skew_threshold: float = 0.85) -> RegimeAggregate:
+def aggregate_regimes(by_regime_blobs: Iterable[dict], skew_threshold: float = 0.85) -> RegimeAggregate:
     """Combine multiple ``by_regime`` dicts into one aggregate.
 
     Each input dict maps regime name → ``{n, sharpe, total_r, ...}``.
@@ -64,9 +64,7 @@ def aggregate_regimes(by_regime_blobs: Iterable[dict],
     regimes: dict[str, dict] = {}
     for regime in sorted(counts):
         n = counts[regime]
-        sharpe_mean = (
-            sharpe_sums[regime] / sharpe_n[regime] if sharpe_n[regime] else None
-        )
+        sharpe_mean = sharpe_sums[regime] / sharpe_n[regime] if sharpe_n[regime] else None
         regimes[regime] = {
             "n": n,
             "share": (n / n_total) if n_total else 0.0,
@@ -74,10 +72,7 @@ def aggregate_regimes(by_regime_blobs: Iterable[dict],
         }
 
     # Worst regime = min sharpe_mean over regimes with at least one sample.
-    mean_sharpes = [
-        (r, v["sharpe_mean"]) for r, v in regimes.items()
-        if v["sharpe_mean"] is not None
-    ]
+    mean_sharpes = [(r, v["sharpe_mean"]) for r, v in regimes.items() if v["sharpe_mean"] is not None]
     if mean_sharpes:
         worst_label, worst_sharpe = min(mean_sharpes, key=lambda kv: kv[1])
         dispersion = _stddev([s for _, s in mean_sharpes])
@@ -105,4 +100,4 @@ def _stddev(xs: list[float]) -> float:
         return 0.0
     mean = sum(xs) / len(xs)
     var = sum((x - mean) ** 2 for x in xs) / (len(xs) - 1)
-    return var ** 0.5
+    return var**0.5

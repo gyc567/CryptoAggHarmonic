@@ -4,10 +4,11 @@ Used as a fallback when Redis/Supabase is unavailable. Not suitable for
 multi-process deployments, but prevents unbounded growth in single-process
 local dev / test environments.
 """
+
 import threading
 import time
 from collections import OrderedDict
-from typing import Any, Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -28,7 +29,7 @@ class MemoryCache(Generic[T]):
         self._data: OrderedDict[str, tuple[float, T]] = OrderedDict()
         self._lock = threading.Lock()
 
-    def get(self, key: str) -> Optional[T]:
+    def get(self, key: str) -> T | None:
         now = time.time()
         with self._lock:
             item = self._data.get(key)
@@ -70,8 +71,4 @@ class MemoryCache(Generic[T]):
     def values(self):
         now = time.time()
         with self._lock:
-            return [
-                value
-                for expires_at, value in self._data.values()
-                if now <= expires_at
-            ]
+            return [value for expires_at, value in self._data.values() if now <= expires_at]

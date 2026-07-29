@@ -1,4 +1,5 @@
 """API routes for the AI Trading Assistant (Vibe) module."""
+
 import json
 import logging
 import os
@@ -8,33 +9,32 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from flask import Blueprint, Response, request
-from redis import Redis, ConnectionError as RedisConnectionError
+from redis import ConnectionError as RedisConnectionError
+from redis import Redis
 from rq import Queue
+from rq.command import send_stop_job_command
 
-from app.api.auth import require_auth, is_local_dev_mode
-from app.api.errors import AppError
-from app.api.responses import success as _success, error as _error
+from app.api.auth import is_local_dev_mode, require_auth
+from app.api.responses import error as _error
+from app.api.responses import success as _success
 from app.api.validation import parse_request
-from app.domain.enums import ErrorCode
 from app.domain.vibe_schemas import (
     CreateSessionRequest,
     SendMessageRequest,
     ToolRequest,
-    VibeErrorDetail,
 )
 from app.infra.supabase_client import (
-    reserve_user_quota,
     consume_ledger_quota,
-    release_ledger_quota,
     log_audit_event,
+    release_ledger_quota,
+    reserve_user_quota,
 )
 from app.infra.vibe_event_store import VibeEventStore
 from app.infra.vibe_session_store import VibeSessionStore
 from app.infra.vibe_trace_store import VibeTraceStore
 from app.services.analysis import AnalysisOrchestrator
-from app.services.vibe.llm import create_llm_provider
-from app.services.vibe.cancellation import register_run, cancel_run as signal_cancel_run
-from rq.command import send_stop_job_command
+from app.services.vibe.cancellation import cancel_run as signal_cancel_run
+from app.services.vibe.cancellation import register_run
 from app.services.vibe.runner import run_vibe_agent
 from app.services.vibe.tools import create_default_registry
 from app.services.vibe.tools.base import ToolRuntime
@@ -95,9 +95,7 @@ def list_sessions(user):
     limit = min(int(request.args.get("limit", 50)), 100)
     offset = int(request.args.get("offset", 0))
     store = _get_session_store()
-    sessions = store.list_sessions(
-        user_id=user["id"], limit=limit, offset=offset, status="active"
-    )
+    sessions = store.list_sessions(user_id=user["id"], limit=limit, offset=offset, status="active")
     return _success({"items": sessions, "total": len(sessions)})
 
 
@@ -221,9 +219,7 @@ def cancel_run(user, run_id):
             try:
                 send_stop_job_command(queue.connection, run_id)
             except Exception as e:
-                logger.warning(
-                    "Failed to send stop job command for %s: %s", run_id, e
-                )
+                logger.warning("Failed to send stop job command for %s: %s", run_id, e)
         # Signal sync-thread fallback or RQ worker via Redis/local event.
         signal_cancel_run(run_id)
         store.cancel_run(run_id, user["id"])
@@ -321,9 +317,7 @@ def invoke_tool(user, tool_name):
 # ---- SSE Streaming ----
 
 
-def _enqueue_or_run_sync(
-    session_id: str, run_id: str, user_id: str, content: str, ledger_id: Optional[str] = None
-) -> bool:
+def _enqueue_or_run_sync(session_id: str, run_id: str, user_id: str, content: str, ledger_id: Optional[str] = None) -> bool:
     """Try to enqueue to RQ; fall back to a background thread if Redis is down."""
     try:
         queue = _get_queue()
@@ -341,9 +335,7 @@ def _enqueue_or_run_sync(
         )
         return True
     except (RedisConnectionError, ConnectionError) as e:
-        logger.warning(
-            "Redis/RQ unavailable (%s), falling back to synchronous thread", e
-        )
+        logger.warning("Redis/RQ unavailable (%s), falling back to synchronous thread", e)
         token = register_run(run_id)
         thread = threading.Thread(
             target=run_vibe_agent,
@@ -353,7 +345,7 @@ def _enqueue_or_run_sync(
         )
         thread.start()
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to enqueue vibe job")
         return False
 
@@ -362,7 +354,6 @@ def _stream_events(run_id: str, user_id: str):
     """Generate an SSE stream for a run."""
     event_store = _get_event_store()
     session_store = _get_session_store()
-    seen_count = 0
 
     def generate():
         import time
@@ -373,6 +364,9 @@ def _stream_events(run_id: str, user_id: str):
 
         max_empty_polls = int(os.getenv("VIBE_SSE_TIMEOUT_SECONDS", "60")) // 1
         empty_polls = 0
+        # Offset into the event stream; advances per streamed event so SSE is
+        # O(1) amortized instead of O(n^2).
+        seen_count = 0
 
         while empty_polls < max_empty_polls:
             # Use offset to fetch only events that have not been streamed yet,

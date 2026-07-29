@@ -1,4 +1,5 @@
 """position_check tool for vibe agent."""
+
 from app.infra.supabase_client import get_supabase_client
 from app.services.vibe.tools.base import Tool, ToolOutput, ToolRuntime
 
@@ -43,11 +44,7 @@ class PositionCheckTool(Tool):
         try:
             client = get_supabase_client(use_service_role=True)
             result = (
-                client.table("profiles")
-                .select("position_config, position_balance")
-                .eq("id", runtime.user_id)
-                .single()
-                .execute()
+                client.table("profiles").select("position_config, position_balance").eq("id", runtime.user_id).single().execute()
             )
             profile = result.data or {}
         except Exception as e:
@@ -96,13 +93,12 @@ class PositionCheckTool(Tool):
                 "suggestion": "常规管理资金不足，请检查总资金与切割仓位设置。",
             }
 
-        emergency_ratio = float(config.get("emergencyRatio", 0.3))
+        float(config.get("emergencyRatio", 0.3))
         btc_ratio = float(config.get("btcRatio", 0.5))
         alt_max_ratio = float(config.get("altcoinMaxRatio", 0.2))
         small_ratio = float(config.get("smallAccountRatio", 0.05))
         small_tradable_ratio = float(config.get("smallTradableRatio", 0.7))
 
-        emergency = regular * emergency_ratio
         btc_trend = regular * btc_ratio
         alt_limit = regular * alt_max_ratio
         small_account = alt_limit * small_ratio

@@ -3,13 +3,14 @@
 Supports both REST API (via supabase-py) and direct PostgreSQL connections.
 Handles proxy environments and connection pooling.
 """
-import os
-import time
+
 import logging
+import os
 import threading
+import time
 import urllib.parse
-from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
+from typing import Any, Optional
 
 # Import create_client at module level for testability
 try:
@@ -20,7 +21,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Lazy-loaded clients keyed by role to avoid anon/service_role cross-over.
-_supabase_clients: Dict[str, Any] = {}
+_supabase_clients: dict[str, Any] = {}
 _db_pool: Optional[Any] = None
 
 # ---------------------------------------------------------------------------
@@ -33,16 +34,16 @@ _db_pool: Optional[Any] = None
 
 _IDEM_CACHE_TTL_SECONDS = float(os.getenv("ANALYSIS_IDEM_CACHE_TTL", "60"))
 _IDEM_CACHE_MAX_ENTRIES = int(os.getenv("ANALYSIS_IDEM_CACHE_MAX", "1024"))
-_idem_cache: Dict[tuple, tuple] = {}
+_idem_cache: dict[tuple, tuple] = {}
 _idem_lock = threading.Lock()
 
 
-def _get_proxy_settings() -> Dict[str, str]:
+def _get_proxy_settings() -> dict[str, str]:
     """Get proxy settings from environment."""
     proxies = {}
-    for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']:
+    for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
         if os.getenv(key):
-            proxies[key.lower().replace('_proxy', '')] = os.getenv(key)
+            proxies[key.lower().replace("_proxy", "")] = os.getenv(key)
     return proxies
 
 
@@ -86,9 +87,7 @@ def get_supabase_service_key() -> str:
         # Fallback: try new secret key naming convention
         key = os.getenv("SUPABASE_SECRET_KEY")
     if not key:
-        raise RuntimeError(
-            "SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) environment variable not set"
-        )
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) environment variable not set")
     return key
 
 
@@ -141,9 +140,7 @@ def get_db_connection_string() -> str:
         netloc = f"{parsed.username}:{encoded_password}@{parsed.hostname}"
         if parsed.port:
             netloc += f":{parsed.port}"
-        return urllib.parse.urlunparse(
-            (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
-        )
+        return urllib.parse.urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
     return raw_url
 
 
@@ -157,6 +154,7 @@ def get_db_pool():
     if _db_pool is None:
         try:
             from psycopg2 import pool
+
             conn_string = get_db_connection_string()
             _db_pool = pool.ThreadedConnectionPool(
                 minconn=1,
@@ -203,7 +201,7 @@ def db_connection():
             pool.putconn(conn)
 
 
-def verify_user_token(token: str) -> Optional[Dict[str, Any]]:
+def verify_user_token(token: str) -> dict[str, Any] | None:
     """Verify Supabase JWT and return user info.
 
     Args:
@@ -229,7 +227,7 @@ def verify_user_token(token: str) -> Optional[Dict[str, Any]]:
 
         profile = profile_result.data
         # Handle both dict and MagicMock cases
-        if hasattr(profile, 'get'):
+        if hasattr(profile, "get"):
             role = profile.get("role", "user")
             status = profile.get("status", "active")
             daily_quota = profile.get("daily_quota", 5)
@@ -262,7 +260,7 @@ def check_invited_email(email: str) -> bool:
         client = get_supabase_client(use_service_role=True)
         result = client.rpc("is_invited_email", {"p_email": email.lower()}).execute()
         return bool(result.data) if result.data else False
-    except Exception as e:
+    except Exception:
         logger.exception("Invite check failed")
         return False
 
@@ -280,20 +278,22 @@ def create_profile_for_user(user_id: str, email: str, daily_quota: int = 5) -> b
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        client.table("profiles").insert({
-            "id": user_id,
-            "email": email,
-            "role": "user",
-            "status": "active",
-            "daily_quota": daily_quota,
-        }).execute()
+        client.table("profiles").insert(
+            {
+                "id": user_id,
+                "email": email,
+                "role": "user",
+                "status": "active",
+                "daily_quota": daily_quota,
+            }
+        ).execute()
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Profile creation failed")
         return False
 
 
-def get_user_profile(user_id: str) -> Optional[Dict[str, Any]]:
+def get_user_profile(user_id: str) -> dict[str, Any] | None:
     """Get user profile by ID.
 
     Args:
@@ -306,13 +306,14 @@ def get_user_profile(user_id: str) -> Optional[Dict[str, Any]]:
         client = get_supabase_client(use_service_role=True)
         result = client.table("profiles").select("*").eq("id", user_id).single().execute()
         return result.data if result.data else None
-    except Exception as e:
+    except Exception:
         logger.exception("Profile fetch failed")
         return None
 
 
-def list_user_analyses(user_id: str, limit: int = 20, offset: int = 0,
-                       status: Optional[str] = None, market: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_user_analyses(
+    user_id: str, limit: int = 20, offset: int = 0, status: Optional[str] = None, market: Optional[str] = None
+) -> list[dict[str, Any]]:
     """List analyses for a user.
 
     Args:
@@ -327,23 +328,25 @@ def list_user_analyses(user_id: str, limit: int = 20, offset: int = 0,
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        query = client.table("analyses").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).offset(offset)
+        query = (
+            client.table("analyses").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).offset(offset)
+        )
         if status:
             query = query.eq("status", status)
         if market:
             query = query.eq("market", market)
         result = query.execute()
         return result.data or []
-    except Exception as e:
+    except Exception:
         logger.exception("Analyses list failed")
         return []
 
 
 def create_analysis_record(
     user_id: str,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     analysis_id: Optional[str] = None,
-) -> Optional[str]:
+) -> str | None:
     """Create analysis record.
 
     Args:
@@ -358,6 +361,7 @@ def create_analysis_record(
     """
     try:
         import uuid
+
         record_id = analysis_id if analysis_id else str(uuid.uuid4())
         record = {
             "id": record_id,
@@ -367,12 +371,12 @@ def create_analysis_record(
         client = get_supabase_client(use_service_role=True)
         client.table("analyses").insert(record).execute()
         return record_id
-    except Exception as e:
+    except Exception:
         logger.exception("Analysis creation failed")
         return None
 
 
-def update_analysis_record(analysis_id: str, updates: Dict[str, Any]) -> bool:
+def update_analysis_record(analysis_id: str, updates: dict[str, Any]) -> bool:
     """Update analysis record.
 
     Args:
@@ -386,12 +390,12 @@ def update_analysis_record(analysis_id: str, updates: Dict[str, Any]) -> bool:
         client = get_supabase_client(use_service_role=True)
         client.table("analyses").update(updates).eq("id", analysis_id).execute()
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Analysis update failed")
         return False
 
 
-def get_analysis_by_idem_key(user_id: str, idem_key: str) -> Optional[Dict[str, Any]]:
+def get_analysis_by_idem_key(user_id: str, idem_key: str) -> dict[str, Any] | None:
     """Return the most recent analysis row matching ``(user_id, idempotency_key)``.
 
     The route ``/api/analyze`` deduplicates retries by ``idempotency_key``:
@@ -450,7 +454,7 @@ def reset_idem_cache() -> None:
         _idem_cache.clear()
 
 
-def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[bool, int, Optional[str]]:
+def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[bool, int, str | None]:
     """Reserve daily quota for user.
 
     Args:
@@ -463,11 +467,14 @@ def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        result = client.rpc("reserve_quota", {
-            "p_user_id": user_id,
-            "p_analysis_id": analysis_id,
-            "p_units": units,
-        }).execute()
+        result = client.rpc(
+            "reserve_quota",
+            {
+                "p_user_id": user_id,
+                "p_analysis_id": analysis_id,
+                "p_units": units,
+            },
+        ).execute()
 
         if not result.data:
             return False, 0, None
@@ -477,17 +484,27 @@ def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[
         remaining = row.get("remaining", 0)
 
         # Get ledger ID
-        ledger_result = client.table("usage_ledger").select("id").eq("user_id", user_id).eq("analysis_id", analysis_id).eq("status", "reserved").order("created_at", desc=True).limit(1).execute()
+        ledger_result = (
+            client.table("usage_ledger")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("analysis_id", analysis_id)
+            .eq("status", "reserved")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
         ledger_id = ledger_result.data[0]["id"] if ledger_result.data else None
 
         return reserved, remaining, ledger_id
-    except Exception as e:
+    except Exception:
         logger.exception("Quota reservation failed")
         return False, 0, None
 
 
-def consume_ledger_quota(ledger_id: str, input_tokens: Optional[int] = None,
-                         output_tokens: Optional[int] = None, cost_micros: Optional[int] = None) -> bool:
+def consume_ledger_quota(
+    ledger_id: str, input_tokens: Optional[int] = None, output_tokens: Optional[int] = None, cost_micros: Optional[int] = None
+) -> bool:
     """Mark reserved quota as consumed.
 
     Args:
@@ -501,14 +518,17 @@ def consume_ledger_quota(ledger_id: str, input_tokens: Optional[int] = None,
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        client.rpc("consume_quota", {
-            "p_ledger_id": ledger_id,
-            "p_input_tokens": input_tokens,
-            "p_output_tokens": output_tokens,
-            "p_cost_micros": cost_micros,
-        }).execute()
+        client.rpc(
+            "consume_quota",
+            {
+                "p_ledger_id": ledger_id,
+                "p_input_tokens": input_tokens,
+                "p_output_tokens": output_tokens,
+                "p_cost_micros": cost_micros,
+            },
+        ).execute()
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Quota consumption failed")
         return False
 
@@ -524,16 +544,19 @@ def release_ledger_quota(ledger_id: str) -> bool:
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        client.rpc("release_quota", {
-            "p_ledger_id": ledger_id,
-        }).execute()
+        client.rpc(
+            "release_quota",
+            {
+                "p_ledger_id": ledger_id,
+            },
+        ).execute()
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Quota release failed")
         return False
 
 
-def upload_chart(user_id: str, analysis_id: str, image_bytes: bytes) -> Optional[str]:
+def upload_chart(user_id: str, analysis_id: str, image_bytes: bytes) -> str | None:
     """Upload chart to Supabase Storage.
 
     Args:
@@ -547,19 +570,23 @@ def upload_chart(user_id: str, analysis_id: str, image_bytes: bytes) -> Optional
     try:
         client = get_supabase_client(use_service_role=True)
         path = f"{user_id}/{analysis_id}.png"
-        result = client.storage.from_("pyharmonics-gpt-bucket").upload(path, image_bytes, {
-            "content-type": "image/png",
-            "upsert": "true",
-        })
+        result = client.storage.from_("pyharmonics-gpt-bucket").upload(
+            path,
+            image_bytes,
+            {
+                "content-type": "image/png",
+                "upsert": "true",
+            },
+        )
         if result:
             return path
         return None
-    except Exception as e:
+    except Exception:
         logger.exception("Chart upload failed")
         return None
 
 
-def get_chart_url(path: str, expires_in: int = 300) -> Optional[str]:
+def get_chart_url(path: str, expires_in: int = 300) -> str | None:
     """Generate signed URL for chart download.
 
     Args:
@@ -573,7 +600,7 @@ def get_chart_url(path: str, expires_in: int = 300) -> Optional[str]:
         client = get_supabase_client(use_service_role=True)
         result = client.storage.from_("pyharmonics-gpt-bucket").create_signed_url(path, expires_in)
         return result.get("signedURL") if result else None
-    except Exception as e:
+    except Exception:
         logger.exception("Chart URL generation failed")
         return None
 
@@ -591,13 +618,14 @@ def delete_chart(path: str) -> bool:
         client = get_supabase_client(use_service_role=True)
         client.storage.from_("pyharmonics-gpt-bucket").remove([path])
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Chart deletion failed")
         return False
 
 
-def log_audit_event(actor_id: Optional[str], action: str, target_type: str,
-                    target_id: Optional[str] = None, details: Optional[Dict] = None) -> bool:
+def log_audit_event(
+    actor_id: Optional[str], action: str, target_type: str, target_id: Optional[str] = None, details: Optional[dict] = None
+) -> bool:
     """Log audit event.
 
     Args:
@@ -612,14 +640,16 @@ def log_audit_event(actor_id: Optional[str], action: str, target_type: str,
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        client.table("audit_events").insert({
-            "actor_id": actor_id,
-            "action": action,
-            "target_type": target_type,
-            "target_id": target_id,
-            "details": details or {},
-        }).execute()
+        client.table("audit_events").insert(
+            {
+                "actor_id": actor_id,
+                "action": action,
+                "target_type": target_type,
+                "target_id": target_id,
+                "details": details or {},
+            }
+        ).execute()
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Audit logging failed")
         return False

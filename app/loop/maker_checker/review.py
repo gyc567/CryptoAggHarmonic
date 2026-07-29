@@ -8,6 +8,7 @@ intentionally minimal: list pending candidates, show the three columns
 Persistence: appends decisions to ``HUMAN_REVIEW_LOG.jsonl`` in the
 loop state root. The format is one JSON object per line.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -17,7 +18,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
-
 
 LOG_FILENAME = "HUMAN_REVIEW_LOG.jsonl"
 
@@ -36,10 +36,7 @@ class HumanReviewDecision:
 
     def __post_init__(self) -> None:
         if self.decision not in self.VALID_DECISIONS:
-            raise ValueError(
-                f"decision must be one of {self.VALID_DECISIONS}; "
-                f"got {self.decision!r}"
-            )
+            raise ValueError(f"decision must be one of {self.VALID_DECISIONS}; " f"got {self.decision!r}")
         if not self.candidate_id:
             raise ValueError("candidate_id is required")
         if not self.reviewer:
@@ -59,9 +56,7 @@ def _log_path(state_root: Path) -> Path:
     return state_root / LOG_FILENAME
 
 
-def append_decision(
-    state_root: Path, decision: HumanReviewDecision
-) -> None:
+def append_decision(state_root: Path, decision: HumanReviewDecision) -> None:
     """Append ``decision`` to the human review log (atomic per line)."""
     state_root.mkdir(parents=True, exist_ok=True)
     path = _log_path(state_root)
@@ -112,7 +107,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     p_list = sub.add_parser("list", help="List recorded decisions.")
     p_list.add_argument(
-        "--limit", type=int, default=20,
+        "--limit",
+        type=int,
+        default=20,
         help="Maximum number of recent entries to show.",
     )
 
@@ -137,15 +134,12 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.cmd == "list":
         entries = load_pending(args.state_root)
-        entries = entries[-args.limit:]
+        entries = entries[-args.limit :]
         if not entries:
             print("(no decisions recorded yet)")
             return 0
         for entry in entries:
-            print(
-                f"{entry['timestamp']}  {entry['reviewer']:<10}  "
-                f"{entry['decision']:<10}  {entry['candidate_id']}"
-            )
+            print(f"{entry['timestamp']}  {entry['reviewer']:<10}  " f"{entry['decision']:<10}  {entry['candidate_id']}")
             if entry.get("notes"):
                 print(f"    notes: {entry['notes']}")
         return 0
@@ -159,10 +153,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             notes=args.notes,
         )
         append_decision(args.state_root, decision)
-        print(
-            f"recorded: {decision.candidate_id} -> {decision.decision} "
-            f"by {decision.reviewer}"
-        )
+        print(f"recorded: {decision.candidate_id} -> {decision.decision} " f"by {decision.reviewer}")
         return 0
 
     parser.print_help()  # pragma: no cover  # argparse with required=True already exits 2

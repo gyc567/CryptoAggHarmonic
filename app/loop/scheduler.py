@@ -1,3 +1,13 @@
+from __future__ import annotations
+
+import datetime as _dt
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+from app.loop.state import DEFAULT_ROOT
+
 """Adaptive heartbeat scheduler.
 
 The loop runs in the background on a developer's machine (or a cron-like
@@ -24,15 +34,8 @@ Decision logic (simplified):
 This is intentionally simple. Real-world deployments will refine the
 heuristics based on observed throughput.
 """
-from __future__ import annotations
 
-import datetime as _dt
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
-
-from app.loop.state import DEFAULT_ROOT
-
+logger = logging.getLogger(__name__)
 
 # --- Configuration -----------------------------------------------------------
 
@@ -75,8 +78,10 @@ def plateau_count_from_history(history_path: Path) -> int:
                 continue
             try:
                 import json
+
                 rec = json.loads(line)
-            except Exception:
+            except Exception as exc:
+                logger.debug("skip corrupt JSONL line: %s", exc)
                 continue
             gen = rec.get("gen")
             fit = rec.get("fitness") or 0.0
@@ -130,7 +135,7 @@ class WakeDecision:
 
 def next_wake_at(
     *,
-    now: Optional[_dt.datetime] = None,
+    now: _dt.datetime | None = None,
     cfg: Optional[SchedulerConfig] = None,
     history_path: Optional[Path] = None,
     pending_operator_action: bool = False,
@@ -172,10 +177,7 @@ def next_wake_at(
         wake = _next_active_window(now, cfg)
         return WakeDecision(
             wake_at=wake,
-            reason=(
-                f"plateau reached {plateau} gens ≥ {cfg.plateau_backoff_gens} "
-                f"threshold — anti-plateau back-off"
-            ),
+            reason=(f"plateau reached {plateau} gens ≥ {cfg.plateau_backoff_gens} " f"threshold — anti-plateau back-off"),
             plateau_count=plateau,
             last_improvement_age_hours=None,
         )
@@ -213,8 +215,10 @@ def _next_active_window(now: _dt.datetime, cfg: SchedulerConfig) -> _dt.datetime
 
 
 def _last_improvement_age_hours(
-    history_path: Path, *, now: _dt.datetime,
-) -> Optional[float]:
+    history_path: Path,
+    *,
+    now: _dt.datetime,
+) -> float | None:
     """Find the most recent Pareto-growth event in HISTORY.jsonl and
     return the age in hours. ``None`` means never improved or no file.
     """
@@ -223,6 +227,7 @@ def _last_improvement_age_hours(
     best_per_gen: dict[int, float] = {}
     last_ts_per_gen: dict[int, float] = {}
     import json
+
     with open(history_path) as f:
         for line in f:
             line = line.strip()
@@ -230,7 +235,8 @@ def _last_improvement_age_hours(
                 continue
             try:
                 rec = json.loads(line)
-            except Exception:
+            except Exception as exc:
+                logger.debug("skip corrupt JSONL line: %s", exc)
                 continue
             gen = rec.get("gen")
             fit = rec.get("fitness") or 0.0

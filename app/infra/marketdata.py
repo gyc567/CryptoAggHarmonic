@@ -4,6 +4,7 @@ These adapters call public REST endpoints directly so the analysis pipeline can
 keep working when the upstream `pyharmonics` connectors fail (e.g. due to
 network, library or rate-limit issues).
 """
+
 import logging
 import os
 from typing import Optional
@@ -49,7 +50,7 @@ class DirectBinanceCandleData(CandleData):
     def __init__(
         self,
         schema: Optional[list] = None,
-        time_zone: str = "UTC",
+        time_zone: str = "timezone.utc",
         df_index: str = CandleData.DTS,
     ):
         if schema is None:
@@ -88,9 +89,7 @@ class DirectBinanceCandleData(CandleData):
         if interval not in self.INTERVALS:
             from pyharmonics.marketdata.candle_base import InvalidTimeframe
 
-            raise InvalidTimeframe(
-                f"Binance intervals must be one of {list(self.INTERVALS.values())}"
-            )
+            raise InvalidTimeframe(f"Binance intervals must be one of {list(self.INTERVALS.values())}")
 
         self.symbol = symbol
         self.interval = interval
@@ -110,7 +109,7 @@ class DirectBinanceCandleData(CandleData):
         if not rows:
             raise RuntimeError(f"Binance returned no data for {symbol}")
 
-        rows = rows[-self.num_candles:]
+        rows = rows[-self.num_candles :]
 
         self.df = self._to_dataframe(rows)
         self.reset_index()
@@ -175,7 +174,5 @@ class DirectBinanceCandleData(CandleData):
 
         # Binance returns milliseconds
         df[self.CLOSE_TIME] = (df[self.CLOSE_TIME] // 1000).astype("int64")
-        df[self.DTS] = pd.to_datetime(df[self.CLOSE_TIME], unit="s", utc=True).dt.tz_convert(
-            self.time_zone
-        )
+        df[self.DTS] = pd.to_datetime(df[self.CLOSE_TIME], unit="s", utc=True).dt.tz_convert(self.time_zone)
         return df[self.COLUMNS]

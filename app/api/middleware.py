@@ -1,10 +1,12 @@
 """Flask middleware for error handling and request logging."""
+
 import logging
 import time
 import uuid
-from functools import wraps
-from flask import request, jsonify
-from app.api.errors import AppError, map_exception_to_error, ErrorCode
+
+from flask import jsonify, request
+
+from app.api.errors import AppError, ErrorCode, map_exception_to_error
 
 logger = logging.getLogger(__name__)
 
@@ -32,33 +34,39 @@ def register_error_handlers(app):
         """Handle Flask 400 errors."""
         req_id = str(uuid.uuid4())[:8]
         logger.warning("BadRequest: %s request_id=%s", error.description, req_id)
-        return jsonify(
-            {
-                "success": False,
-                "error": {
-                    "code": ErrorCode.INVALID_PARAMS.value,
-                    "message": "Invalid request format.",
-                    "retryable": False,
-                    "request_id": req_id,
-                },
-            }
-        ), 400
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": ErrorCode.INVALID_PARAMS.value,
+                        "message": "Invalid request format.",
+                        "retryable": False,
+                        "request_id": req_id,
+                    },
+                }
+            ),
+            400,
+        )
 
     @app.errorhandler(404)
     def handle_not_found(error):
         """Handle Flask 404 errors."""
         req_id = str(uuid.uuid4())[:8]
-        return jsonify(
-            {
-                "success": False,
-                "error": {
-                    "code": ErrorCode.NOT_IMPLEMENTED.value,
-                    "message": "Endpoint not found.",
-                    "retryable": False,
-                    "request_id": req_id,
-                },
-            }
-        ), 404
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": ErrorCode.NOT_IMPLEMENTED.value,
+                        "message": "Endpoint not found.",
+                        "retryable": False,
+                        "request_id": req_id,
+                    },
+                }
+            ),
+            404,
+        )
 
     @app.errorhandler(Exception)
     def handle_unexpected_error(error):

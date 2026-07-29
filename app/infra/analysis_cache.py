@@ -19,6 +19,7 @@ Redis 会被 Redis 的单 key 体积限制 (512 MB 但慢) 拖累、占满内存
 - ANALYSIS_CACHE_TTL_SECONDS: 兜底 TTL（默认 21600 = 6 小时）
 - REDIS_URL: 未配置或连接失败时退化为进程内内存缓存
 """
+
 import hashlib
 import json
 import logging
@@ -52,9 +53,7 @@ class AnalysisCache:
 
     def __init__(self, redis_url: Optional[str] = None, ttl_seconds: Optional[int] = None):
         self.enabled = os.getenv("ANALYSIS_CACHE_ENABLED", "true").lower() not in ("0", "false", "no")
-        self.ttl_seconds = ttl_seconds or int(
-            os.getenv("ANALYSIS_CACHE_TTL_SECONDS", str(_DEFAULT_TTL_SECONDS))
-        )
+        self.ttl_seconds = ttl_seconds or int(os.getenv("ANALYSIS_CACHE_TTL_SECONDS", str(_DEFAULT_TTL_SECONDS)))
         self.redis_url = redis_url if redis_url is not None else os.getenv("REDIS_URL", "")
         self._redis: Optional[Any] = None
         # Bounded in-memory fallback: 256 entries, same TTL as Redis.
@@ -84,16 +83,16 @@ class AnalysisCache:
         if not isinstance(df, pd.DataFrame):
             # 非真实 DataFrame（如测试 Mock）：用 repr（含对象 id）散列，
             # 避免不同对象被误判为同一份数据导致跨调用缓存碰撞
-            return hashlib.sha1(repr(df).encode()).hexdigest()[:16]
+            return hashlib.sha1(repr(df).encode(), usedforsecurity=False).hexdigest()[:16]
         if len(df) == 0:
             # 空数据无法取指纹：退化为固定值，宁可 miss，不可错 hit 或抛异常
-            return hashlib.sha1(b"empty").hexdigest()[:16]
+            return hashlib.sha1(b"empty", usedforsecurity=False).hexdigest()[:16]
         try:
             raw = "{}|{}|{}".format(str(df["dts"].iloc[-1]), len(df), str(df["close"].iloc[-1]))
         except Exception:
             # 列名不符预期时退化为末行哈希：宁可 miss，不可错 hit
             raw = str(df.iloc[-1].to_dict())
-        return hashlib.sha1(raw.encode()).hexdigest()[:16]
+        return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:16]
 
     def make_key(
         self,
@@ -120,9 +119,9 @@ class AnalysisCache:
                 fingerprint,
             )
         )
-        return _KEY_PREFIX + hashlib.sha1(raw.encode()).hexdigest()
+        return _KEY_PREFIX + hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()
 
-    def get(self, key: str) -> Optional[dict]:
+    def get(self, key: str) -> dict | None:
         """Return ``{"analysis_json": str, "chart_url": str|None, "chart_path": str|None}`` or ``None``.
 
         The chart view refs are intentionally tiny strings so a hit doesn't
@@ -174,7 +173,7 @@ class AnalysisCache:
         except Exception as e:
             logger.warning("Analysis cache set failed: %s", e)
 
-    def _get_raw(self, key: str) -> Optional[str]:
+    def _get_raw(self, key: str) -> str | None:
         if self._redis is not None:
             return self._redis.get(key)
         return self._memory.get(key)

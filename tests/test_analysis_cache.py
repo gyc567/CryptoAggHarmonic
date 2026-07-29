@@ -1,4 +1,5 @@
 """Tests for app.infra.analysis_cache and orchestrator cache integration."""
+
 import base64
 import json
 import time
@@ -78,15 +79,27 @@ class TestFingerprint:
 class TestMakeKey:
     def test_same_inputs_same_key(self, cache):
         kwargs = dict(
-            market="binance", symbol="BTCUSDT", interval="1d", analysis_type="forming",
-            limit_to=10, percent_complete=0.8, candles=1000, fingerprint="abc",
+            market="binance",
+            symbol="BTCUSDT",
+            interval="1d",
+            analysis_type="forming",
+            limit_to=10,
+            percent_complete=0.8,
+            candles=1000,
+            fingerprint="abc",
         )
         assert cache.make_key(**kwargs) == cache.make_key(**kwargs)
 
     def test_differs_on_params_and_fingerprint(self, cache):
         base = dict(
-            market="binance", symbol="BTCUSDT", interval="1d", analysis_type="forming",
-            limit_to=10, percent_complete=0.8, candles=1000, fingerprint="abc",
+            market="binance",
+            symbol="BTCUSDT",
+            interval="1d",
+            analysis_type="forming",
+            limit_to=10,
+            percent_complete=0.8,
+            candles=1000,
+            fingerprint="abc",
         )
         key = cache.make_key(**base)
         assert cache.make_key(**{**base, "symbol": "ETHUSDT"}) != key
@@ -97,7 +110,8 @@ class TestMakeKey:
 class TestSetGet:
     def test_roundtrip_with_chart_url(self, cache):
         cache.set(
-            "k1", '{"a": 1}',
+            "k1",
+            '{"a": 1}',
             chart_url="/api/charts/abc.png",
             chart_path="charts/abc.png",
         )
@@ -137,10 +151,12 @@ class TestSetGet:
         """Cache entries written by the previous version stored chart_png_b64;
         on read we must not crash and must surface both refs as None.
         """
-        legacy_payload = json.dumps({
-            "analysis_json": '{"a": "legacy"}',
-            "chart_png_b64": base64.b64encode(b"old-bytes").decode(),
-        })
+        legacy_payload = json.dumps(
+            {
+                "analysis_json": '{"a": "legacy"}',
+                "chart_png_b64": base64.b64encode(b"old-bytes").decode(),
+            }
+        )
         # Bypass set() so we can write the legacy shape.
         cache._memory.set("legacy", legacy_payload)
         entry = cache.get("legacy")
@@ -206,7 +222,7 @@ class TestOrchestratorCacheIntegration:
         first = orchestrator.analyze(_make_request())
         second = orchestrator.analyze(_make_request())
 
-        assert calls["n"] == 1   # 检测只跑一次
+        assert calls["n"] == 1  # 检测只跑一次
         assert render_calls["n"] == 1  # 图表只渲染一次
         assert first.status == Status.COMPLETED
         assert second.status == Status.COMPLETED
@@ -224,8 +240,7 @@ class TestOrchestratorCacheIntegration:
 class _Pattern:
     """Stand-in for a pyharmonics pattern (extract_candidates reads .y/.x/etc)."""
 
-    def __init__(self, name, y, completion_min, completion_max, bullish=True,
-                 x=None):
+    def __init__(self, name, y, completion_min, completion_max, bullish=True, x=None):
         self.name = name
         self.y = y
         self.completion_min_price = completion_min
@@ -250,15 +265,19 @@ class TestFormingCacheIntegration:
 
         monkeypatch.setattr("app.services.analysis.detect_patterns", fake_detect)
         monkeypatch.setattr(
-            AnalysisOrchestrator, "_build_trade_signal",
+            AnalysisOrchestrator,
+            "_build_trade_signal",
             staticmethod(lambda *a, **k: None),
         )
         return detect_calls
 
     def test_forming_candidates_cached_on_second_call(self, monkeypatch):
         forming = _Pattern(
-            "gartley-382-0", [95.0, 110.0, 100.0, 107.0, 103.0],
-            221.0, 222.0, bullish=True,
+            "gartley-382-0",
+            [95.0, 110.0, 100.0, 107.0, 103.0],
+            221.0,
+            222.0,
+            bullish=True,
         )
         detection = {
             "position": SimpleNamespace(side="long"),
@@ -282,10 +301,15 @@ class TestFormingCacheIntegration:
         cache = AnalysisCache(redis_url="")
         orch = AnalysisOrchestrator(cache=cache)
         from app.domain.enums import AnalysisType
+
         req = AnalyzeRequest(
-            market=Market.BINANCE, symbol="BTCUSDT", interval=Interval.H4,
-            analysis_type=AnalysisType.FORMING, limit_to=5,
-            percent_complete=0.8, candles=600,
+            market=Market.BINANCE,
+            symbol="BTCUSDT",
+            interval=Interval.H4,
+            analysis_type=AnalysisType.FORMING,
+            limit_to=5,
+            percent_complete=0.8,
+            candles=600,
         )
         first = orch.analyze(req)
         second = orch.analyze(req)

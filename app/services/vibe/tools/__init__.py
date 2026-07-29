@@ -1,11 +1,12 @@
 """Vibe tool registry and built-in tools."""
+
 from app.services.analysis import AnalysisOrchestrator
-from app.services.vibe.tools.registry import ToolRegistry
 from app.services.vibe.tools.analyze_harmonic import AnalyzeHarmonicTool
-from app.services.vibe.tools.build_trade_signal import BuildTradeSignalTool
-from app.services.vibe.tools.position_check import PositionCheckTool
 from app.services.vibe.tools.backtest_signal import BacktestSignalTool
+from app.services.vibe.tools.build_trade_signal import BuildTradeSignalTool
 from app.services.vibe.tools.explain_market import ExplainMarketTool
+from app.services.vibe.tools.position_check import PositionCheckTool
+from app.services.vibe.tools.registry import ToolRegistry
 from app.services.vibe.tools.save_to_journal import SaveToJournalTool
 
 

@@ -4,6 +4,7 @@ Charts are stored under ``instance/charts/`` (already gitignored) so the
 dashboard can render them without Supabase Storage. The module is deliberately
 tiny: one directory, three functions, no state.
 """
+
 import logging
 import re
 import time
@@ -29,7 +30,7 @@ def save_chart_locally(
     image_bytes: bytes,
     chart_dir: Optional[Path] = None,
     ttl_seconds: int = CHART_TTL_SECONDS,
-) -> Optional[str]:
+) -> str | None:
     """Persist PNG bytes and return the relative serving path.
 
     Also garbage-collects files older than ``ttl_seconds`` so the directory
@@ -52,7 +53,7 @@ def save_chart_locally(
         return None
 
 
-def chart_file_path(name: str, chart_dir: Optional[Path] = None) -> Optional[Path]:
+def chart_file_path(name: str, chart_dir: Optional[Path] = None) -> Path | None:
     """Resolve a chart name to an existing file path, or None."""
     if not is_valid_chart_name(name):
         return None

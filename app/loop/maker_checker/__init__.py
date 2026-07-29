@@ -39,14 +39,15 @@ Design constraints (audit §2.3):
 All public functions in this package should be importable without any
 LLM credentials; the default backend is deterministic.
 """
+
 from __future__ import annotations
 
 from app.loop.maker_checker.schemas import (
-    Proposal,
-    Verdict,
+    CalibrationParams,
     MakerSelfScore,
     MergeResult,
-    CalibrationParams,
+    Proposal,
+    Verdict,
 )
 
 __all__ = [

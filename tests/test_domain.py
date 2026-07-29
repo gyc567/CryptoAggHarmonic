@@ -1,31 +1,32 @@
 """Tests for domain layer: enums, schemas, validators."""
+
 import pytest
 from pydantic import ValidationError
 
-from app.domain.enums import Market, Interval, AnalysisType, Status, ErrorCode
+from app.api.errors import AppError
+from app.api.errors import ErrorCode as AppErrorCode
+from app.domain.enums import AnalysisType, ErrorCode, Interval, Market, Status
 from app.domain.schemas import (
+    AnalysisData,
     AnalyzeRequest,
     ChartMeta,
-    TimingInfo,
-    TechnicalResult,
-    Interpretation,
-    AnalysisData,
-    SuccessResponse,
     ErrorResponse,
     HealthResponse,
+    Interpretation,
     MarketsResponse,
+    SuccessResponse,
+    TechnicalResult,
 )
 from app.domain.validators import (
-    validate_symbol,
-    validate_interval,
-    validate_market,
     validate_analysis_type,
     validate_bounds,
+    validate_interval,
+    validate_market,
+    validate_symbol,
 )
-from app.api.errors import AppError, ErrorCode as AppErrorCode
-
 
 # ---- Enum Tests ----
+
 
 class TestEnums:
     def test_market_values(self):
@@ -54,6 +55,7 @@ class TestEnums:
 
 
 # ---- Schema Tests ----
+
 
 class TestAnalyzeRequest:
     def test_valid_request(self):
@@ -262,6 +264,7 @@ class TestResponseSchemas:
 
     def test_error_response(self):
         from app.domain.schemas import ErrorDetail
+
         resp = ErrorResponse(
             error=ErrorDetail(
                 code=ErrorCode.INVALID_PARAMS,
@@ -288,6 +291,7 @@ class TestResponseSchemas:
 
 
 # ---- Validator Tests ----
+
 
 class TestValidateSymbol:
     def test_valid_symbol(self):

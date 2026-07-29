@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Flask 2.x test_client references werkzeug.__version__, which was removed in
 # Werkzeug 3.x. Provide a fallback so the test suite can run with the current

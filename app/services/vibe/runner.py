@@ -1,7 +1,11 @@
 """RQ job runner for vibe agent."""
+
 import logging
 from typing import Optional
 
+from app.infra.vibe_event_store import VibeEventStore
+from app.infra.vibe_session_store import VibeSessionStore
+from app.infra.vibe_trace_store import VibeTraceStore
 from app.services.analysis import AnalysisOrchestrator
 from app.services.vibe.cancellation import (
     CancellationToken,
@@ -11,9 +15,6 @@ from app.services.vibe.cancellation import (
 from app.services.vibe.llm import create_llm_provider
 from app.services.vibe.orchestrator import VibeOrchestrator
 from app.services.vibe.tools import create_default_registry
-from app.infra.vibe_event_store import VibeEventStore
-from app.infra.vibe_session_store import VibeSessionStore
-from app.infra.vibe_trace_store import VibeTraceStore
 
 logger = logging.getLogger(__name__)
 

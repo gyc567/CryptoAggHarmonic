@@ -1,15 +1,22 @@
 """Input validators for domain models."""
-import re
-from app.domain.enums import Market, Interval, AnalysisType
-from app.api.errors import AppError, ErrorCode
 
+import re
+
+from app.api.errors import AppError, ErrorCode
+from app.domain.enums import AnalysisType, Interval, Market
 
 # Symbol format: uppercase letters and numbers only, no special chars
 _SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,20}$")
 
 # Known invalid / dangerous symbols
 _SYMBOL_BLACKLIST = {
-    "", "NULL", "NONE", "TEST", "EXAMPLE", "ADMIN", "ROOT",
+    "",
+    "NULL",
+    "NONE",
+    "TEST",
+    "EXAMPLE",
+    "ADMIN",
+    "ROOT",
 }
 
 
@@ -58,12 +65,11 @@ def validate_interval(interval: str) -> Interval:
     """
     try:
         return Interval(interval)
-    except ValueError:
+    except ValueError as exc:
         raise AppError(
             ErrorCode.INVALID_PARAMS,
-            f"Interval '{interval}' is not supported. "
-            f"Supported: {[i.value for i in Interval]}",
-        )
+            f"Interval '{interval}' is not supported. " f"Supported: {[i.value for i in Interval]}",
+        ) from exc
 
 
 def validate_market(market: str) -> Market:
@@ -80,12 +86,11 @@ def validate_market(market: str) -> Market:
     """
     try:
         return Market(market)
-    except ValueError:
+    except ValueError as exc:
         raise AppError(
             ErrorCode.INVALID_PARAMS,
-            f"Market '{market}' is not supported. "
-            f"Supported: {[m.value for m in Market]}",
-        )
+            f"Market '{market}' is not supported. " f"Supported: {[m.value for m in Market]}",
+        ) from exc
 
 
 def validate_analysis_type(analysis_type: str) -> AnalysisType:
@@ -102,12 +107,11 @@ def validate_analysis_type(analysis_type: str) -> AnalysisType:
     """
     try:
         return AnalysisType(analysis_type)
-    except ValueError:
+    except ValueError as exc:
         raise AppError(
             ErrorCode.INVALID_PARAMS,
-            f"Analysis type '{analysis_type}' is not supported. "
-            f"Supported: {[a.value for a in AnalysisType]}",
-        )
+            f"Analysis type '{analysis_type}' is not supported. " f"Supported: {[a.value for a in AnalysisType]}",
+        ) from exc
 
 
 def validate_bounds(limit_to: int, percent_complete: float, candles: int) -> None:

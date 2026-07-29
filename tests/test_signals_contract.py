@@ -9,6 +9,7 @@ These tests are pure (no I/O, no fixtures, no monkey-patching) so they run
 in <50ms and can be the first thing CI executes when investigating a
 signal-engine regression.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -20,12 +21,6 @@ from app.domain.signals import (
     grade,
     net_rr,
 )
-from app.domain.enums import Market, Interval, AnalysisType
-from app.domain.signals import (
-    FEE_RATE,
-    SLIPPAGE_RATE,
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers — keep the candidate-construction boilerplate in one place
@@ -206,8 +201,9 @@ class TestSignalPipelineContractPath:
     """
 
     def test_realistic_gartley_signal_passes_all_contracts(self):
-        from app.services.signal_engine import build_signal
         import pandas as pd
+
+        from app.services.signal_engine import build_signal
 
         # Synthetic 200-bar 1h candle frame: monotonic up trend with a
         # shallow pullback at bar 150 so the engine has room to compute.
@@ -217,13 +213,15 @@ class TestSignalPipelineContractPath:
         # Inject a small pullback around bar 150 so PRZ has structure.
         for i in range(145, 160):
             closes[i] = closes[i] - 1.5
-        df = pd.DataFrame({
-            "open": closes,
-            "high": [c + 0.5 for c in closes],
-            "low": [c - 0.5 for c in closes],
-            "close": closes,
-            "volume": [1000.0] * n,
-        })
+        df = pd.DataFrame(
+            {
+                "open": closes,
+                "high": [c + 0.5 for c in closes],
+                "low": [c - 0.5 for c in closes],
+                "close": closes,
+                "volume": [1000.0] * n,
+            }
+        )
 
         cand = _candidate(
             bullish=True,

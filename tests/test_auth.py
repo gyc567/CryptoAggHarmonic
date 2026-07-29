@@ -1,10 +1,17 @@
 """Tests for API auth helpers and main.py endpoints."""
+
 import os
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, patch
 from flask import Flask
 
-from app.api.auth import get_auth_token, require_auth, check_quota, LOCAL_DEV_USER, is_local_dev_mode
+from app.api.auth import (
+    LOCAL_DEV_USER,
+    check_quota,
+    get_auth_token,
+    require_auth,
+)
 from app.domain.enums import ErrorCode
 
 
@@ -136,6 +143,7 @@ class TestRequireAuthBypass:
 
     def test_no_auto_dev_bypass_when_debug_and_no_supabase_url(self, app, client):
         """Auto bypass based on FLASK_DEBUG + missing SUPABASE_URL is removed."""
+
         @app.route("/test-auth")
         @require_auth
         def handler(user=None):

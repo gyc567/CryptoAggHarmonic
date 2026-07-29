@@ -1,19 +1,20 @@
 """Pyharmonics adapter: wraps all pyharmonics calls and converts exceptions."""
+
 import logging
 from typing import Any, Optional
 
 # Import pyharmonics classes at module level for testability
 from pyharmonics.marketdata import YahooCandleData
-from app.infra.marketdata import DirectBinanceCandleData
-from app.infra import tradingview_adapter as tv
-from pyharmonics.technicals import OHLCTechnicals
-from pyharmonics.search import HarmonicSearch, DivergenceSearch
 from pyharmonics.plotter import HarmonicPlotter, PositionPlotter
 from pyharmonics.positions import Position
+from pyharmonics.search import DivergenceSearch, HarmonicSearch
+from pyharmonics.technicals import OHLCTechnicals
 
 from app.api.errors import AppError, ErrorCode
-from app.domain.enums import Market, Interval, Status
-from app.domain.schemas import TechnicalResult, ChartMeta
+from app.domain.enums import Interval, Market
+from app.domain.schemas import TechnicalResult
+from app.infra import tradingview_adapter as tv
+from app.infra.marketdata import DirectBinanceCandleData
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def fetch_market_data(
             f"暂时无法获取 {symbol} 的行情数据，请稍后重试。",
             retryable=True,
             original_error=e,
-        )
+        ) from e
 
 
 def detect_patterns(
@@ -140,10 +141,7 @@ def detect_patterns(
             "patterns": hs.get_patterns(),
         }
 
-        divergences = {
-            family: [pa.to_dict() for pa in found[-1:]]
-            for family, found in d.get_patterns().items()
-        }
+        divergences = {family: [pa.to_dict() for pa in found[-1:]] for family, found in d.get_patterns().items()}
 
         result = {
             "divergences": divergences,
@@ -207,7 +205,7 @@ def detect_patterns(
             "形态检测过程中发生错误。",
             retryable=True,
             original_error=e,
-        )
+        ) from e
 
 
 def render_chart(
@@ -261,7 +259,7 @@ def render_chart(
             "图表生成失败，结构化结果仍可查看。",
             retryable=True,
             original_error=e,
-        )
+        ) from e
 
 
 def technical_result_to_schema(

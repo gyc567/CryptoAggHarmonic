@@ -26,11 +26,13 @@ Design constraints (audit §2.5):
   ``accept=False`` with ``confidence=0.0`` so the Arbiter can degrade
   gracefully.
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Optional
 
 from app.loop.maker_checker.calibration import calibrate
 from app.loop.maker_checker.isolation import (
@@ -45,7 +47,6 @@ from app.loop.maker_checker.schemas import (
     Verdict,
     make_verdict,
 )
-
 
 logger = logging.getLogger("app.loop.maker_checker.checker_agent")
 
@@ -74,26 +75,17 @@ class CheckerConfig:
     """
 
     isolation_level: str = STRICT
-    calibration_params: CalibrationParams | None = None
+    calibration_params: Optional[CalibrationParams] = None
     rejection_threshold: float = 0.3
     min_confidence: float = 0.0
 
     def __post_init__(self) -> None:
         if self.isolation_level not in VALID_ISOLATION_LEVELS:
-            raise ValueError(
-                f"isolation_level must be one of {VALID_ISOLATION_LEVELS}; "
-                f"got {self.isolation_level!r}"
-            )
+            raise ValueError(f"isolation_level must be one of {VALID_ISOLATION_LEVELS}; " f"got {self.isolation_level!r}")
         if not 0.0 <= self.rejection_threshold <= 1.0:
-            raise ValueError(
-                f"rejection_threshold must be in [0, 1]; got "
-                f"{self.rejection_threshold}"
-            )
+            raise ValueError(f"rejection_threshold must be in [0, 1]; got " f"{self.rejection_threshold}")
         if not 0.0 <= self.min_confidence <= 1.0:
-            raise ValueError(
-                f"min_confidence must be in [0, 1]; got "
-                f"{self.min_confidence}"
-            )
+            raise ValueError(f"min_confidence must be in [0, 1]; got " f"{self.min_confidence}")
 
 
 # ---- Agent ---------------------------------------------------------------
@@ -124,6 +116,7 @@ class CheckerAgent:
         isolation property survives end-to-end tests.
         """
         import hashlib
+
         h = hashlib.sha256(
             (self.salt + candidate_id).encode("utf-8"),
         ).digest()
@@ -175,9 +168,7 @@ class CheckerAgent:
 
         # 6. Threshold.
         accept = (
-            verdict.accept
-            and calibrated >= self.config.rejection_threshold
-            and verdict.confidence >= self.config.min_confidence
+            verdict.accept and calibrated >= self.config.rejection_threshold and verdict.confidence >= self.config.min_confidence
         )
 
         # 7. Re-emit with calibrated score.
@@ -213,9 +204,7 @@ def _build_prompt(isolated: dict[str, Any]) -> str:
     )
 
 
-def _parse_verdict(
-    candidate_id: str, raw: dict[str, Any]
-) -> Verdict | None:
+def _parse_verdict(candidate_id: str, raw: dict[str, Any]) -> Verdict | None:
     """Build a :class:`Verdict` from an LLM JSON output, or return None."""
     if not isinstance(raw, dict):
         return None
@@ -226,11 +215,11 @@ def _parse_verdict(
     flags = raw.get("flags") or []
     accept = raw.get("accept")
     feedback = raw.get("feedback", "")
-    if not isinstance(score, (int, float)):
+    if not isinstance(score, int | float):
         return None
-    if not isinstance(confidence, (int, float)):
+    if not isinstance(confidence, int | float):
         return None
-    if not isinstance(raw_score, (int, float)):
+    if not isinstance(raw_score, int | float):
         raw_score = score
     if not isinstance(components, dict):
         return None
@@ -242,12 +231,7 @@ def _parse_verdict(
         return None
     cleaned_flags = []
     for f in flags:
-        if (
-            isinstance(f, dict)
-            and "severity" in f
-            and "issue" in f
-            and f["severity"] in ("high", "medium", "low")
-        ):
+        if isinstance(f, dict) and "severity" in f and "issue" in f and f["severity"] in ("high", "medium", "low"):
             cleaned_flags.append(f)
     try:
         return make_verdict(
@@ -282,8 +266,8 @@ def verify(
     candidate_id: str,
     results: dict[str, Any],
     *,
-    config: CheckerConfig | None = None,
-    backend: LLMBackend | None = None,
+    config: Optional[CheckerConfig] = None,
+    backend: Optional[LLMBackend] = None,
     salt: str = "",
 ) -> Verdict:
     """Convenience wrapper that constructs a default :class:`CheckerAgent`."""

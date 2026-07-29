@@ -1,5 +1,4 @@
 """backtest_signal tool for vibe agent (Phase 3)."""
-from datetime import datetime, timezone
 
 import pandas as pd
 

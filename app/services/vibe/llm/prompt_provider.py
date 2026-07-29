@@ -3,13 +3,14 @@
 The provider injects tool descriptions into the system prompt and parses the
 model's response for JSON-like tool calls.
 """
+
 import json
 import logging
 import re
 from typing import Optional
 
-from app.services.vibe.llm.provider import LLMProvider, LLMResponse, LLMUsage, ToolCall
 from app.services.vibe.llm.openai_provider import OpenAIProvider
+from app.services.vibe.llm.provider import LLMProvider, LLMResponse, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +61,7 @@ class PromptProvider(LLMProvider):
     def approximate_tokens(self, text: str) -> int:
         return self.base_provider.approximate_tokens(text)
 
-    def _inject_tool_prompt(
-        self, messages: list[dict], tools: list[dict]
-    ) -> list[dict]:
+    def _inject_tool_prompt(self, messages: list[dict], tools: list[dict]) -> list[dict]:
         """Append tool descriptions to the system message."""
         tool_text = self._format_tools(tools)
         injection = (
@@ -78,9 +77,7 @@ class PromptProvider(LLMProvider):
         system_injected = False
         for msg in messages:
             if msg.get("role") == "system" and not system_injected:
-                new_messages.append(
-                    {"role": "system", "content": msg.get("content", "") + injection}
-                )
+                new_messages.append({"role": "system", "content": msg.get("content", "") + injection})
                 system_injected = True
             else:
                 new_messages.append(msg)
@@ -98,7 +95,7 @@ class PromptProvider(LLMProvider):
             lines.append(f"  参数：{json.dumps(fn.get('parameters', {}), ensure_ascii=False)}")
         return "\n".join(lines)
 
-    def _parse_response(self, text: str) -> tuple[Optional[str], list[ToolCall]]:
+    def _parse_response(self, text: str) -> tuple[str | None, list[ToolCall]]:
         """Extract tool calls from the response text.
 
         Returns remaining content and a list of parsed ToolCall objects.

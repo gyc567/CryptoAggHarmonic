@@ -13,10 +13,10 @@ Input DataFrame contract (same as the rest of the app):
 columns ``open``, ``high``, ``low``, ``close`` and optionally ``dts``
 (a datetime-like column used for signal timestamps).
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Optional
 
 import pandas as pd
 
@@ -60,7 +60,6 @@ class StrategySignal:
 
     def to_dict(self) -> dict:
         return asdict(self)
-
 
 
 def ema_series(closes: pd.Series, span: int) -> pd.Series:
@@ -218,8 +217,14 @@ def detect_signals(
             if risk <= 0:
                 continue
             quality = _signal_quality(
-                LONG, close, float(row["ema200"]), float(row["ema50"]),
-                float(rsi_now), float(rsi_prev), atr, float(row["open"]),
+                LONG,
+                close,
+                float(row["ema200"]),
+                float(row["ema50"]),
+                float(rsi_now),
+                float(rsi_prev),
+                atr,
+                float(row["open"]),
             )
             signals.append(
                 StrategySignal(
@@ -245,8 +250,14 @@ def detect_signals(
             if risk <= 0:
                 continue
             quality = _signal_quality(
-                SHORT, close, float(row["ema200"]), float(row["ema50"]),
-                float(rsi_now), float(rsi_prev), atr, float(row["open"]),
+                SHORT,
+                close,
+                float(row["ema200"]),
+                float(row["ema50"]),
+                float(rsi_now),
+                float(rsi_prev),
+                atr,
+                float(row["open"]),
             )
             signals.append(
                 StrategySignal(
@@ -264,7 +275,7 @@ def detect_signals(
     return [s for s in signals if s.quality_score >= min_quality_score]
 
 
-def current_state(df: pd.DataFrame) -> Optional[dict]:
+def current_state(df: pd.DataFrame) -> dict | None:
     """Latest trend/momentum snapshot for the scan endpoint."""
     if len(df) <= WARMUP_BARS:
         return None

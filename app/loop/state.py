@@ -21,9 +21,9 @@ The state is replay-safe: ``HISTORY.jsonl`` is the source of truth and
 ``PARETO.json`` / ``STATE.md`` can be rebuilt from it via
 :func:`replay_from_history`.
 """
+
 from __future__ import annotations
 
-import dataclasses
 import fcntl
 import gzip
 import hashlib
@@ -33,11 +33,11 @@ import shutil
 import tempfile
 import time
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
-from app.config.tuning import TUNING, TuningConstants, to_dict
-
+from app.config.tuning import TuningConstants, to_dict
 
 # --- Paths --------------------------------------------------------------------
 
@@ -113,7 +113,9 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     """Write ``payload`` to ``path`` via temp + rename (POSIX atomic)."""
     path = Path(path)
     fd, tmp_path = tempfile.mkstemp(
-        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp",
+        dir=str(path.parent),
+        prefix=path.name + ".",
+        suffix=".tmp",
     )
     try:
         with os.fdopen(fd, "w") as f:
@@ -138,7 +140,9 @@ def make_run_dir(root: Optional[Path] = None) -> Path:
 
 
 def write_tuning_snapshot(
-    t: TuningConstants, label: str, root: Optional[Path] = None,
+    t: TuningConstants,
+    label: str,
+    root: Optional[Path] = None,
 ) -> Path:
     """Persist ``t`` as ``tuning_snapshots/<label>-<sha>.yaml``."""
     root = ensure_root(root)
@@ -151,8 +155,6 @@ def write_tuning_snapshot(
     lines = []
     for k, v in payload.items():
         lines.append(f"{k}: {_yaml_scalar(v)}")
-    atomic_write_json = atomic_write_json  # keep linter happy
-    _ = atomic_write_json
     path.write_text("\n".join(lines) + "\n")
     return path
 
@@ -160,9 +162,9 @@ def write_tuning_snapshot(
 def _yaml_scalar(v: Any) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return str(v)
-    if isinstance(v, (list, tuple)):
+    if isinstance(v, list | tuple):
         return "[" + ", ".join(_yaml_scalar(x) for x in v) + "]"
     if isinstance(v, dict):
         return "{" + ", ".join(f"{k}: {_yaml_scalar(val)}" for k, val in v.items()) + "}"
@@ -185,7 +187,7 @@ def render_state_md(
 ) -> str:
     """Build the human-readable STATE.md body."""
     lines = [
-        f"# Loop state @ {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}",
+        f"# Loop state @ {time.strftime('%Y-%m-%d %H:%M timezone.utc', time.gmtime())}",
         "",
         f"Plateau count: **{plateau_count} / 5**",
         f"Last decision: **{last_decision}**",

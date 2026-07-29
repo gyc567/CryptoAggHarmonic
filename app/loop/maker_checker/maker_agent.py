@@ -24,22 +24,22 @@ Public API:
 * The :class:`MakerConfig` dataclass carries the configuration so tests
   can construct it without parsing YAML.
 """
+
 from __future__ import annotations
 
 import logging
 import random
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Optional
 
 from app.config.tuning import TuningConstants, from_dict, to_dict
 from app.loop.maker_checker.llm_backend import LLMBackend, MockLLMBackend
 from app.loop.maker_checker.schemas import (
-    MakerSelfScore,
     Proposal,
     make_proposal,
 )
 from app.loop.mutation import DEFAULT_CLUSTER_MAP, mutate_field
-
 
 logger = logging.getLogger("app.loop.maker_checker.maker_agent")
 
@@ -75,18 +75,11 @@ class MakerConfig:
 
     def __post_init__(self) -> None:
         if self.run_mode not in VALID_RUN_MODES:
-            raise ValueError(
-                f"run_mode must be one of {VALID_RUN_MODES}; got "
-                f"{self.run_mode!r}"
-            )
+            raise ValueError(f"run_mode must be one of {VALID_RUN_MODES}; got " f"{self.run_mode!r}")
         if not 0.0 <= self.llm_ratio <= 1.0:
-            raise ValueError(
-                f"llm_ratio must be in [0, 1]; got {self.llm_ratio}"
-            )
+            raise ValueError(f"llm_ratio must be in [0, 1]; got {self.llm_ratio}")
         if self.max_diff_pct <= 0 or self.max_diff_pct > 50.0:
-            raise ValueError(
-                f"max_diff_pct must be in (0, 50]; got {self.max_diff_pct}"
-            )
+            raise ValueError(f"max_diff_pct must be in (0, 50]; got {self.max_diff_pct}")
 
 
 # ---- Traditional (math-only) mutation ------------------------------------
@@ -118,14 +111,8 @@ def traditional_proposals(
     """
     cluster_specs = DEFAULT_CLUSTER_MAP.get(cluster)
     if not cluster_specs:
-        raise ValueError(
-            f"unknown cluster {cluster!r}; known: "
-            f"{list(DEFAULT_CLUSTER_MAP)}"
-        )
-    parent_tuning = (
-        parent if isinstance(parent, TuningConstants)
-        else from_dict(parent)
-    )
+        raise ValueError(f"unknown cluster {cluster!r}; known: " f"{list(DEFAULT_CLUSTER_MAP)}")
+    parent_tuning = parent if isinstance(parent, TuningConstants) else from_dict(parent)
     out: list[Proposal] = []
     for i in range(n):
         # Round-robin across the cluster's fields for diversity.
@@ -135,12 +122,14 @@ def traditional_proposals(
         rng = random.Random(sub_seed)
         try:
             mutated = mutate_field(
-                field_name, kind, kwargs, parent_tuning, rng,
+                field_name,
+                kind,
+                kwargs,
+                parent_tuning,
+                rng,
             )
         except Exception as exc:  # noqa: BLE001 — constraint violation etc.
-            logger.debug(
-                "traditional mutation failed for %s: %s", field_name, exc
-            )
+            logger.debug("traditional mutation failed for %s: %s", field_name, exc)
             continue
         old_val = getattr(parent_tuning, field_name, None)
         new_val = getattr(mutated, field_name, None)
@@ -149,13 +138,11 @@ def traditional_proposals(
         if old_val == new_val:
             # No effective change; skip.
             continue
-        if isinstance(old_val, (int, float)) and isinstance(new_val, (int, float)):
+        if isinstance(old_val, int | float) and isinstance(new_val, int | float):
             if old_val == 0:
                 magnitude = 0.0
             else:
-                magnitude = round(
-                    (new_val - old_val) / abs(old_val) * 100.0, 2
-                )
+                magnitude = round((new_val - old_val) / abs(old_val) * 100.0, 2)
             # Clamp to ±50 to satisfy Proposal.MAX_DIFF_PCT.
             magnitude = max(min(magnitude, 50.0), -50.0)
         else:
@@ -209,15 +196,10 @@ class MakerAgent:
         if n <= 0:
             raise ValueError(f"n must be positive; got {n}")
         if cluster not in DEFAULT_CLUSTER_MAP:
-            raise ValueError(
-                f"unknown cluster {cluster!r}; known: "
-                f"{list(DEFAULT_CLUSTER_MAP)}"
-            )
+            raise ValueError(f"unknown cluster {cluster!r}; known: " f"{list(DEFAULT_CLUSTER_MAP)}")
 
         if self.config.run_mode == "trad_only":
-            return traditional_proposals(
-                parent, n=n, cluster=cluster, seed=self.config.seed
-            )
+            return traditional_proposals(parent, n=n, cluster=cluster, seed=self.config.seed)
 
         llm_n, trad_n = _split_count(n, self.config.llm_ratio)
         out: list[Proposal] = []
@@ -240,7 +222,9 @@ class MakerAgent:
             if shortfall > 0:
                 out.extend(
                     traditional_proposals(
-                        parent, n=shortfall, cluster=cluster,
+                        parent,
+                        n=shortfall,
+                        cluster=cluster,
                         seed=self.config.seed,
                     )
                 )
@@ -248,7 +232,9 @@ class MakerAgent:
         if self.config.run_mode == "mix" and trad_n > 0:
             out.extend(
                 traditional_proposals(
-                    parent, n=trad_n, cluster=cluster,
+                    parent,
+                    n=trad_n,
+                    cluster=cluster,
                     seed=self.config.seed,
                 )
             )
@@ -267,12 +253,17 @@ class MakerAgent:
         pareto_front: Sequence[Any],
     ) -> list[Proposal]:
         prompt = _build_prompt(
-            parent, n=n, cluster=cluster,
-            history=history, pareto_front=pareto_front,
+            parent,
+            n=n,
+            cluster=cluster,
+            history=history,
+            pareto_front=pareto_front,
         )
         try:
             raw = self.backend.complete_proposals(
-                prompt, n_proposals=n, seed=self.config.seed,
+                prompt,
+                n_proposals=n,
+                seed=self.config.seed,
                 cluster=cluster,
             )
         except Exception as exc:  # noqa: BLE001 — any backend error
@@ -329,7 +320,7 @@ def _parse_proposal(raw: dict, *, cluster: str) -> Proposal | None:
     reasoning = raw.get("reasoning")
     self_score = raw.get("self_score")
     proposal_id = raw.get("proposal_id", "")
-    if not isinstance(touched, (list, tuple)) or not touched:
+    if not isinstance(touched, list | tuple) or not touched:
         return None
     if not isinstance(diff, dict) or not diff:
         return None
@@ -337,7 +328,7 @@ def _parse_proposal(raw: dict, *, cluster: str) -> Proposal | None:
         return None
     if not isinstance(reasoning, str):
         return None
-    if not isinstance(self_score, (int, float)):
+    if not isinstance(self_score, int | float):
         return None
     # Enforce: the Maker may only touch the cluster it was asked about.
     # If it returned other clusters, fall back to None.
@@ -364,8 +355,8 @@ def propose_batch(
     *,
     n: int,
     cluster: str,
-    config: MakerConfig | None = None,
-    backend: LLMBackend | None = None,
+    config: Optional[MakerConfig] = None,
+    backend: Optional[LLMBackend] = None,
     history: Sequence[Any] = (),
     pareto_front: Sequence[Any] = (),
 ) -> list[Proposal]:
@@ -375,8 +366,11 @@ def propose_batch(
         config=config or MakerConfig(),
     )
     return agent.propose_batch(
-        parent, n=n, cluster=cluster,
-        history=history, pareto_front=pareto_front,
+        parent,
+        n=n,
+        cluster=cluster,
+        history=history,
+        pareto_front=pareto_front,
     )
 
 

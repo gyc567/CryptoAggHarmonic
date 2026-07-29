@@ -2,16 +2,14 @@
 mocked :func:`subprocess.run` so we don't need the real backtest harness
 to validate the wiring.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import tempfile
 from pathlib import Path
 from unittest import mock
-
-import pytest
 
 from app.config.tuning import TUNING
 from app.loop.worker import run_candidate
@@ -21,8 +19,10 @@ def _write_metrics(run_dir: Path, *, trades: int = 35, sharpe: float = 0.4) -> N
     metrics = {
         "__aggregate__": {
             "experimental": {
-                "trades_count": trades, "sharpe": sharpe,
-                "calmar": 1.0, "profit_factor": 2.0,
+                "trades_count": trades,
+                "sharpe": sharpe,
+                "calmar": 1.0,
+                "profit_factor": 2.0,
             },
         },
         "__meta__": {"fitness": {"experimental": 1.5}},
@@ -44,9 +44,12 @@ class TestRunCandidate:
 
         with mock.patch("app.loop.worker.subprocess.run", side_effect=fake_run):
             r = run_candidate(
-                candidate_id="c1", tuning=TUNING,
-                symbol_set="BTCUSD", quarter=None,
-                run_dir=run_dir, timeout_seconds=60,
+                candidate_id="c1",
+                tuning=TUNING,
+                symbol_set="BTCUSD",
+                quarter=None,
+                run_dir=run_dir,
+                timeout_seconds=60,
             )
 
         assert r.decision == "accepted"
@@ -65,8 +68,11 @@ class TestRunCandidate:
 
         with mock.patch("app.loop.worker.subprocess.run", side_effect=fake_run):
             r = run_candidate(
-                candidate_id="c1", tuning=TUNING,
-                symbol_set="BTCUSD", quarter=None, run_dir=run_dir,
+                candidate_id="c1",
+                tuning=TUNING,
+                symbol_set="BTCUSD",
+                quarter=None,
+                run_dir=run_dir,
             )
 
         assert r.decision == "rejected"
@@ -81,8 +87,11 @@ class TestRunCandidate:
 
         with mock.patch("app.loop.worker.subprocess.run", side_effect=fake_run):
             r = run_candidate(
-                candidate_id="c1", tuning=TUNING,
-                symbol_set="BTCUSD", quarter=None, run_dir=run_dir,
+                candidate_id="c1",
+                tuning=TUNING,
+                symbol_set="BTCUSD",
+                quarter=None,
+                run_dir=run_dir,
             )
 
         assert r.decision == "error"
@@ -96,8 +105,11 @@ class TestRunCandidate:
 
         with mock.patch("app.loop.worker.subprocess.run", side_effect=fake_run):
             r = run_candidate(
-                candidate_id="c1", tuning=TUNING,
-                symbol_set="BTCUSD", quarter=None, run_dir=run_dir,
+                candidate_id="c1",
+                tuning=TUNING,
+                symbol_set="BTCUSD",
+                quarter=None,
+                run_dir=run_dir,
                 timeout_seconds=5,
             )
 
@@ -114,7 +126,10 @@ class TestRunCandidate:
 
         with mock.patch("app.loop.worker.subprocess.run", side_effect=fake_run):
             r = run_candidate(
-                candidate_id="c1", tuning=d,
-                symbol_set="BTCUSD", quarter=None, run_dir=run_dir,
+                candidate_id="c1",
+                tuning=d,
+                symbol_set="BTCUSD",
+                quarter=None,
+                run_dir=run_dir,
             )
         assert r.decision == "accepted"

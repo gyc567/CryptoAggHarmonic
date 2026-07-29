@@ -1,11 +1,12 @@
 """OpenAI-compatible LLM provider with native tool-calling support."""
+
 import json
 import logging
 import os
 from typing import Optional
 
-from app.services.vibe.llm.provider import LLMProvider, LLMResponse, LLMUsage, ToolCall
 from app.openai_handler import _get_client
+from app.services.vibe.llm.provider import LLMProvider, LLMResponse, LLMUsage, ToolCall
 
 logger = logging.getLogger(__name__)
 

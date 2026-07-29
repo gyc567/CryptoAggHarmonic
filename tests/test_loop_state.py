@@ -5,27 +5,28 @@ backtest (that takes ~3 minutes and is integration-tested separately).
 The driver and worker modules have their own subprocess boundary so we
 mock the subprocess invocation.
 """
+
 from __future__ import annotations
 
 import json
-import os
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from app.config.tuning import TUNING, from_dict, to_dict, TuningConstants
+from app.config.tuning import TUNING
 from app.loop import state
 from app.loop.pareto import (
     ParetoPoint,
     ParetoSet,
     dominates,
     from_metrics,
-    load as pareto_load,
-    save as pareto_save,
     worst_regime_sharpe,
 )
-
+from app.loop.pareto import (
+    load as pareto_load,
+)
+from app.loop.pareto import (
+    save as pareto_save,
+)
 
 # --- state.py ----------------------------------------------------------------
 
@@ -47,14 +48,14 @@ class TestParamsSha:
 
     def test_perturbed_instance_different_sha(self):
         from dataclasses import replace
+
         t2 = replace(TUNING, a_grade_min=80)
         assert state.params_sha(t2) != state.params_sha(TUNING)
 
 
 class TestHistoryAppend:
     def test_append_creates_file(self, tmp_path):
-        state.append_history({"ts": 1, "gen": 1, "candidate_id": "x"},
-                             root=tmp_path)
+        state.append_history({"ts": 1, "gen": 1, "candidate_id": "x"}, root=tmp_path)
         path = tmp_path / "HISTORY.jsonl"
         assert path.exists()
         with open(path) as f:
@@ -67,8 +68,7 @@ class TestHistoryAppend:
         import threading
 
         def worker(i):
-            state.append_history({"ts": i, "gen": 1, "candidate_id": f"c{i}"},
-                                 root=tmp_path)
+            state.append_history({"ts": i, "gen": 1, "candidate_id": f"c{i}"}, root=tmp_path)
 
         threads = [threading.Thread(target=worker, args=(i,)) for i in range(20)]
         for t in threads:
@@ -84,12 +84,14 @@ class TestHistoryAppend:
     def test_rotation(self, tmp_path):
         # Inject a tiny rotation threshold for the test.
         state.append_history(
-            {"big": "x" * 100, "ts": 1}, root=tmp_path,
+            {"big": "x" * 100, "ts": 1},
+            root=tmp_path,
             rotate_bytes=200,
         )
         # Second call should rotate.
         state.append_history(
-            {"big": "y" * 200, "ts": 2}, root=tmp_path,
+            {"big": "y" * 200, "ts": 2},
+            root=tmp_path,
             rotate_bytes=200,
         )
         rotated = list(tmp_path.glob("HISTORY-*.jsonl.gz"))
@@ -114,8 +116,7 @@ class TestAtomicWriteJson:
 class TestReplay:
     def test_replay_roundtrip(self, tmp_path):
         for i in range(3):
-            state.append_history({"ts": i, "gen": 1, "id": f"c{i}"},
-                                 root=tmp_path)
+            state.append_history({"ts": i, "gen": 1, "id": f"c{i}"}, root=tmp_path)
         recs = state.replay_from_history(tmp_path)
         assert [r["id"] for r in recs] == ["c0", "c1", "c2"]
 
@@ -128,10 +129,18 @@ class TestStateMd:
 
     def test_render_with_best(self):
         body = state.render_state_md(
-            best={"params_sha": "abc123", "gen": 2, "fitness": 1.5,
-                  "sharpe": 0.4, "calmar": 1.0, "profit_factor": 2.0,
-                  "trade_count": 30},
-            pareto_size=3, plateau_count=1, next_queue_size=5,
+            best={
+                "params_sha": "abc123",
+                "gen": 2,
+                "fitness": 1.5,
+                "sharpe": 0.4,
+                "calmar": 1.0,
+                "profit_factor": 2.0,
+                "trade_count": 30,
+            },
+            pareto_size=3,
+            plateau_count=1,
+            next_queue_size=5,
             last_decision="accepted=2 rejected=1",
             notes=["cluster: C3"],
         )
@@ -151,9 +160,16 @@ class TestStateMd:
 
 def _mkpoint(sha, sharpe=0.3, calmar=1.0, pf=2.0, wreg=0.0, tc=30, **kw):
     return ParetoPoint(
-        params_sha=sha, gen=1, cluster="C3", run_dir=f"runs/{sha}",
-        sharpe=sharpe, calmar=calmar, profit_factor=pf,
-        worst_regime_sharpe=wreg, trade_count=tc, fitness=0.0,
+        params_sha=sha,
+        gen=1,
+        cluster="C3",
+        run_dir=f"runs/{sha}",
+        sharpe=sharpe,
+        calmar=calmar,
+        profit_factor=pf,
+        worst_regime_sharpe=wreg,
+        trade_count=tc,
+        fitness=0.0,
         **kw,
     )
 
@@ -236,25 +252,32 @@ class TestWorstRegimeSharpe:
         assert worst_regime_sharpe(m) is None
 
     def test_picks_minimum(self):
-        m = {"by_regime": {
-            "bull": {"n": 10, "sharpe": 0.5},
-            "bear": {"n": 8, "sharpe": -0.3},
-            "range": {"n": 5, "sharpe": 0.2},
-        }}
+        m = {
+            "by_regime": {
+                "bull": {"n": 10, "sharpe": 0.5},
+                "bear": {"n": 8, "sharpe": -0.3},
+                "range": {"n": 5, "sharpe": 0.2},
+            }
+        }
         assert worst_regime_sharpe(m) == pytest.approx(-0.3)
 
 
 class TestFromMetrics:
     def test_full_metrics(self):
         m = {
-            "trades_count": 35, "sharpe": 0.4, "calmar": 1.5,
+            "trades_count": 35,
+            "sharpe": 0.4,
+            "calmar": 1.5,
             "profit_factor": 2.0,
-            "by_regime": {"bull": {"n": 20, "sharpe": 0.6},
-                          "range": {"n": 5, "sharpe": -0.1}},
+            "by_regime": {"bull": {"n": 20, "sharpe": 0.6}, "range": {"n": 5, "sharpe": -0.1}},
         }
         p = from_metrics(
-            metrics=m, params_sha="xyz", gen=2, cluster="C3",
-            run_dir="runs/xyz", fitness=1.0,
+            metrics=m,
+            params_sha="xyz",
+            gen=2,
+            cluster="C3",
+            run_dir="runs/xyz",
+            fitness=1.0,
         )
         assert p.params_sha == "xyz"
         assert p.sharpe == 0.4

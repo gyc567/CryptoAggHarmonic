@@ -16,9 +16,8 @@ Three-layer defense: this module is **L2-bound** — :func:`compute` has a
 ``@require`` on ``signal_dir ∈ {-1, 0, 1}`` so callers can't silently pass a
 bogus direction and get a fake ``MacroOverlay`` back.
 """
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 import pandas as pd
 from icontract import require
@@ -46,7 +45,7 @@ _MIN_DAILY_BARS = TUNING.min_daily_bars
 
 
 def compute(
-    daily_close: Optional[pd.Series],
+    daily_close: pd.Series | None,
     signal_dir: int,
 ) -> MacroOverlay:
     """Return a :class:`MacroOverlay` for the given daily series + signal direction.
@@ -61,8 +60,8 @@ def compute(
         A :class:`MacroOverlay` instance. Never raises: a missing/short
         series returns the conservative 0.8 multiplier.
     """
-    @require(lambda signal_dir: signal_dir in (-1, 0, 1),
-             "signal_dir must be -1, 0, or +1")
+
+    @require(lambda signal_dir: signal_dir in (-1, 0, 1), "signal_dir must be -1, 0, or +1")
     def _check(**_kwargs) -> None:
         return None
 
@@ -89,11 +88,10 @@ def compute(
         )
 
     ema200 = daily_close.ewm(span=200, adjust=False).mean()
-    ema50 = daily_close.ewm(span=50, adjust=False).mean()
+    daily_close.ewm(span=50, adjust=False).mean()
 
     price = float(daily_close.iloc[-1])
     v200 = float(ema200.iloc[-1])
-    v50 = float(ema50.iloc[-1])
     deviation_pct = (price / v200 - 1) * 100 if v200 > 0 else 0.0
 
     # 20-day slope on EMA200 (used to distinguish trending vs ranging).
@@ -123,10 +121,7 @@ def compute(
     if extreme and not aligned:
         # 极端乖离 + 逆势 → 反转概率最高 (回测 84% 胜率区)
         size_mult = _MULT_EXTREME_INVERSE
-        advice = (
-            "极端位逆势信号:反转概率高(回测84%胜率区),"
-            f"可正常/加仓 {_MULT_EXTREME_INVERSE:.1f}x 但 TP 必须分批走"
-        )
+        advice = "极端位逆势信号:反转概率高(回测84%胜率区)," f"可正常/加仓 {_MULT_EXTREME_INVERSE:.1f}x 但 TP 必须分批走"
         vs_macro = "逆势+极端"
     elif aligned and not ranging:
         size_mult = _MULT_TRENDING_ALIGNED

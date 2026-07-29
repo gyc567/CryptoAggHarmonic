@@ -1,4 +1,5 @@
 """100% coverage tests for app.domain.validation (pure functions)."""
+
 import math
 
 import pandas as pd
@@ -30,9 +31,13 @@ def flat_df(n=60, price=100.0, volume=100.0):
 
 def make_candidate(**overrides):
     base = dict(
-        family="XABCD", name="gartley", bullish=True, formed=True,
+        family="XABCD",
+        name="gartley",
+        bullish=True,
+        formed=True,
         points=(100.0, 150.0, 120.0, 140.0, 110.0),
-        completion_min=108.0, completion_max=112.0,
+        completion_min=108.0,
+        completion_max=112.0,
     )
     base.update(overrides)
     return Candidate(**base)
@@ -90,7 +95,8 @@ class TestRejectionReason:
         cand = make_candidate(
             bullish=False,
             points=(150.0, 100.0, 130.0, 110.0, 140.0),
-            completion_min=138.0, completion_max=142.0,
+            completion_min=138.0,
+            completion_max=142.0,
         )
         # stop = max(150, 142) + 0.5*10 = 155; price 156 > 155 -> violated
         assert rejection_reason(cand, price=156.0, atr=10.0) == "violated"
@@ -104,7 +110,8 @@ class TestRejectionReason:
         cand = make_candidate(
             bullish=False,
             points=(150.0, 100.0, 130.0, 110.0, 140.0),
-            completion_min=138.0, completion_max=142.0,
+            completion_min=138.0,
+            completion_max=142.0,
         )
         # A=100, PRZ mid=140 -> TP2 = 140 - 0.618*40 = 115.28; price 110 < TP2 -> completed
         assert rejection_reason(cand, price=110.0, atr=10.0) == "completed"
@@ -210,8 +217,8 @@ class TestQuantTrapRisk:
 
     def test_stop_hunt(self):
         baseline = (100.0, 100.5, 99.5, 100.0, 100.0)
-        hunt_a = (100.0, 100.2, 97.5, 99.0, 100.0)   # new 3-bar low
-        hunt_b = (99.0, 101.0, 98.5, 100.8, 100.0)   # next bar recovers above its high
+        hunt_a = (100.0, 100.2, 97.5, 99.0, 100.0)  # new 3-bar low
+        hunt_b = (99.0, 101.0, 98.5, 100.8, 100.0)  # next bar recovers above its high
         rows = [baseline] * 10
         for _ in range(8):
             # 3 baseline bars between hunts so each hunt's low is a fresh 3-bar low
@@ -311,17 +318,20 @@ class TestVolumeAuthenticity:
 # --- Stability verdict -------------------------------------------------------------
 
 
-@pytest.mark.parametrize("full,sub1,sub2,expected_score,expected_suspect", [
-    ("gartley", "gartley", "gartley", 85, False),
-    ("gartley", "gartley", "bat", 55, False),
-    ("gartley", "bat", "gartley", 55, False),
-    ("gartley", "bat", "crab", 25, False),
-    ("gartley", "bat", None, 40, False),
-    ("gartley", None, "bat", 40, False),
-    ("gartley", None, None, 20, True),
-    (None, "bat", "crab", 60, False),
-    (None, None, None, 60, False),
-])
+@pytest.mark.parametrize(
+    "full,sub1,sub2,expected_score,expected_suspect",
+    [
+        ("gartley", "gartley", "gartley", 85, False),
+        ("gartley", "gartley", "bat", 55, False),
+        ("gartley", "bat", "gartley", 55, False),
+        ("gartley", "bat", "crab", 25, False),
+        ("gartley", "bat", None, 40, False),
+        ("gartley", None, "bat", 40, False),
+        ("gartley", None, None, 20, True),
+        (None, "bat", "crab", 60, False),
+        (None, None, None, 60, False),
+    ],
+)
 def test_stability_verdict(full, sub1, sub2, expected_score, expected_suspect):
     score, suspect = stability_verdict(full, sub1, sub2)
     assert score == expected_score
@@ -359,8 +369,10 @@ class TestQuantRegime:
             vol = 100.0 if i % 2 == 0 else 1000.0
             rows.append((price, price + 0.5, price - 0.5, price, vol))
         score, regime = quant_regime(make_df(rows))
-        assert score >= REGIME_MODERATE if False else True  # score is int
+        # Score is bounded by quant_regime's clamp; regime must be one of the
+        # defined buckets (regression check).
         assert isinstance(score, int)
+        assert regime in ("normal", "moderate_quant", "high_quant")
 
     def test_zero_mean_volume(self):
         df = flat_df(100, volume=0.0)
@@ -407,12 +419,12 @@ class TestPerBarSharpe:
 
     def test_uptrend_positive(self):
         # constant +1% returns -> zero variance, positive mean -> +inf
-        closes = pd.Series([100.0 * 1.01 ** i for i in range(30)])
+        closes = pd.Series([100.0 * 1.01**i for i in range(30)])
         assert per_bar_sharpe(closes) == math.inf
 
     def test_downtrend_negative_inf(self):
         # constant -1% returns -> zero variance, negative mean -> -inf
-        closes = pd.Series([100.0 * 0.99 ** i for i in range(30)])
+        closes = pd.Series([100.0 * 0.99**i for i in range(30)])
         assert per_bar_sharpe(closes) == -math.inf
 
     def test_volatile_series(self):

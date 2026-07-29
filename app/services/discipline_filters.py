@@ -1,3 +1,15 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+import pandas as pd
+from icontract import require
+
+from app.config.tuning import TUNING
+from app.domain.forming_schemas import CandidateMetrics
+from app.domain.signals import Candidate, compute_targets
+
 """Discipline filters for forming harmonic candidates.
 
 Three live-trading checks the upstream ``HarmonicSearch`` does NOT enforce:
@@ -23,18 +35,6 @@ preconditions so invalid inputs fail fast with a ``ViolationError`` instead
 of silently producing wrong ``DisciplineResult``s that downstream graders
 trust.
 """
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Optional
-
-import pandas as pd
-from icontract import require
-
-from app.config.tuning import TUNING
-from app.domain.forming_schemas import CandidateMetrics
-from app.domain.signals import Candidate, compute_targets
-
 
 # --- Default TTL --------------------------------------------------------------
 #
@@ -68,9 +68,7 @@ def _bars_since(c_idx: Optional[int], total_bars: int) -> int:
     return max(0, total_bars - 1 - c_idx)
 
 
-def _prz_was_touched(
-    after: pd.DataFrame, prz_low: float, prz_high: float, bullish: bool
-) -> bool:
+def _prz_was_touched(after: pd.DataFrame, prz_low: float, prz_high: float, bullish: bool) -> bool:
     """True iff price pierced the PRZ band on any bar after the C pivot.
 
     For a long candidate, "touched" means the bar's ``low`` is at or below the
@@ -98,9 +96,7 @@ def _prz_was_touched(
     return bool(touched.any())
 
 
-def _past_tp2(
-    current_price: float, candidate: Candidate, bullish: bool
-) -> bool:
+def _past_tp2(current_price: float, candidate: Candidate, bullish: bool) -> bool:
     """True iff current price has already crossed the second take-profit."""
     prz_mid = (candidate.prz_low + candidate.prz_high) / 2
     if prz_mid <= 0:
@@ -134,17 +130,15 @@ def evaluate(
         switch; ``metrics`` always carries the per-check outcomes so the
         frontend can render diagnostics.
     """
+
     @require(lambda df: len(df) > 0, "df must not be empty")
-    @require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0,
-             "candidate PRZ bounds must be positive")
-    @require(lambda current_price: current_price > 0,
-             "current_price must be positive")
+    @require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0, "candidate PRZ bounds must be positive")
+    @require(lambda current_price: current_price > 0, "current_price must be positive")
     @require(lambda max_ttl: max_ttl >= 0, "max_ttl must be non-negative")
     def _check_inputs(**_kwargs) -> None:
         return None
 
-    _check_inputs(df=df, candidate=candidate, current_price=current_price,
-                  max_ttl=max_ttl)
+    _check_inputs(df=df, candidate=candidate, current_price=current_price, max_ttl=max_ttl)
 
     n = len(df)
     if c_idx is None:
@@ -164,7 +158,7 @@ def evaluate(
 
     # Gate 1: path integrity. The slice after C is what determines whether
     # the PRZ was ever touched (= pattern finished or dead).
-    after = df.iloc[c_idx + 1:] if c_idx + 1 < n else df.iloc[0:0]
+    after = df.iloc[c_idx + 1 :] if c_idx + 1 < n else df.iloc[0:0]
     breached = _prz_was_touched(after, candidate.prz_low, candidate.prz_high, bullish)
 
     # Gate 2: TTL.
@@ -190,9 +184,7 @@ def evaluate(
     return DisciplineResult(passed=passed, metrics=metrics)
 
 
-def _dist_pct(
-    current_price: float, candidate: Candidate, bullish: bool
-) -> float:
+def _dist_pct(current_price: float, candidate: Candidate, bullish: bool) -> float:
     """% distance from current price to the nearest PRZ edge.
 
     Always non-negative. ``0.0`` when price is inside the PRZ.

@@ -3,6 +3,7 @@
 Covers: Platt fitting on a known-logit signal, ECE on a perfectly
 calibrated set vs a miscalibrated one, edge cases.
 """
+
 from __future__ import annotations
 
 import math
@@ -15,7 +16,6 @@ from app.loop.maker_checker.calibration import (
     reliability_diagram,
 )
 from app.loop.maker_checker.schemas import CalibrationParams, make_calibration
-
 
 # ---- Helpers --------------------------------------------------------------
 
@@ -33,6 +33,7 @@ def _gen_signal(
     Bernoulli(true_p). The fit should recover (a, b) approximately.
     """
     import random
+
     rng = random.Random(seed)
     out = []
     for _ in range(n):
@@ -88,6 +89,7 @@ class TestECE:
         # Generate samples where label is sampled with probability = raw.
         # Then empirical_freq in each bin ≈ mean_pred → low ECE.
         import random
+
         rng = random.Random(0)
         pairs = []
         for _ in range(2000):
@@ -110,8 +112,16 @@ class TestECE:
         # Calibration that maps 0.5 → 0.5 (a=0, b=0 → sigmoid(0)=0.5).
         params = make_calibration(a=0.0, b=0.0, ece=0.05, n_samples=10)
         pairs = [
-            (0.5, 1), (0.5, 1), (0.5, 1), (0.5, 1), (0.5, 1),
-            (0.5, 0), (0.5, 0), (0.5, 0), (0.5, 0), (0.5, 0),
+            (0.5, 1),
+            (0.5, 1),
+            (0.5, 1),
+            (0.5, 1),
+            (0.5, 1),
+            (0.5, 0),
+            (0.5, 0),
+            (0.5, 0),
+            (0.5, 0),
+            (0.5, 0),
         ]
         # All pairs in same bin (pred=0.5), empirical freq=0.5, gap=0 → ECE=0
         ece = expected_calibration_error(pairs, params=params)

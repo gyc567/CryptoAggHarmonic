@@ -1,9 +1,11 @@
 """Tool registry for vibe agent tools."""
+
 import logging
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Optional
 
-from app.services.vibe.tools.base import Tool, ToolRuntime, ToolOutput
+from app.services.vibe.tools.base import Tool, ToolOutput, ToolRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class ToolRegistry:
         logger.info("Registered vibe tool: %s", tool.name)
         return self
 
-    def get(self, name: str) -> Optional[Tool]:
+    def get(self, name: str) -> Tool | None:
         """Get a tool by name."""
         return self._tools.get(name)
 

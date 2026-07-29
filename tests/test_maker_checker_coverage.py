@@ -3,17 +3,15 @@
 These exercise error / edge branches not covered by the main test
 suites, so the package hits 100 % line coverage for the new code.
 """
+
 from __future__ import annotations
 
 import math
-import os
-from typing import Any
 
 import pytest
 
 from app.config.tuning import TuningConstants
 from app.loop.maker_checker.calibration import (
-    CalibrationParams,
     calibrate,
     expected_calibration_error,
     reliability_diagram,
@@ -34,17 +32,10 @@ from app.loop.maker_checker.llm_backend import (
     MockLLMBackend,
 )
 from app.loop.maker_checker.maker_agent import (
-    MakerAgent,
-    MakerConfig,
     _parse_proposal,
 )
-from app.loop.maker_checker.review import (
-    HumanReviewDecision,
-    main,
-)
 from app.loop.maker_checker.runner import RunnerConfig, feature_enabled
-from app.loop.maker_checker.schemas import MergeResult, make_merge_result
-
+from app.loop.maker_checker.schemas import make_merge_result
 
 # ---- calibration.py edge branches ----------------------------------------
 
@@ -97,12 +88,14 @@ class TestCalibrationEdges:
     def test_ece_with_params_no_pairs(self) -> None:
         # With explicit params but empty pairs → 0.0 short-circuit.
         from app.loop.maker_checker.schemas import make_calibration
+
         params = make_calibration(a=1.0, b=0.0, ece=0.0, n_samples=0)
         assert expected_calibration_error([], params=params) == 0.0
 
     def test_bin_predictions_empty(self) -> None:
         # Direct call to exercise the empty-input branch.
         from app.loop.maker_checker.calibration import _bin_predictions
+
         assert _bin_predictions([]) == []
         assert _bin_predictions([], n_bins=5) == []
 
@@ -169,60 +162,116 @@ class TestCheckerAgentEdges:
         assert _parse_verdict("c", {"checker_score": 0.5, "accept": True}) is None
 
     def test_parse_verdict_raw_score_missing(self) -> None:
-        v = _parse_verdict("c", {
-            "checker_score": 0.5, "confidence": 0.6,
-            "components": {}, "flags": [], "accept": True, "feedback": "ok",
-        })
+        v = _parse_verdict(
+            "c",
+            {
+                "checker_score": 0.5,
+                "confidence": 0.6,
+                "components": {},
+                "flags": [],
+                "accept": True,
+                "feedback": "ok",
+            },
+        )
         assert v is not None
         # raw_score falls back to score when missing/non-numeric.
         assert v.raw_score == v.checker_score
 
     def test_parse_verdict_components_not_dict(self) -> None:
-        assert _parse_verdict("c", {
-            "checker_score": 0.5, "confidence": 0.6,
-            "components": "not a dict", "accept": True,
-        }) is None
+        assert (
+            _parse_verdict(
+                "c",
+                {
+                    "checker_score": 0.5,
+                    "confidence": 0.6,
+                    "components": "not a dict",
+                    "accept": True,
+                },
+            )
+            is None
+        )
 
     def test_parse_verdict_flags_not_list(self) -> None:
-        assert _parse_verdict("c", {
-            "checker_score": 0.5, "confidence": 0.6,
-            "components": {}, "flags": "no", "accept": True,
-        }) is None
+        assert (
+            _parse_verdict(
+                "c",
+                {
+                    "checker_score": 0.5,
+                    "confidence": 0.6,
+                    "components": {},
+                    "flags": "no",
+                    "accept": True,
+                },
+            )
+            is None
+        )
 
     def test_parse_verdict_accept_not_bool(self) -> None:
-        assert _parse_verdict("c", {
-            "checker_score": 0.5, "confidence": 0.6,
-            "components": {}, "flags": [], "accept": "yes",
-        }) is None
+        assert (
+            _parse_verdict(
+                "c",
+                {
+                    "checker_score": 0.5,
+                    "confidence": 0.6,
+                    "components": {},
+                    "flags": [],
+                    "accept": "yes",
+                },
+            )
+            is None
+        )
 
     def test_parse_verdict_feedback_not_string(self) -> None:
-        assert _parse_verdict("c", {
-            "checker_score": 0.5, "confidence": 0.6,
-            "components": {}, "flags": [], "accept": True, "feedback": 123,
-        }) is None
+        assert (
+            _parse_verdict(
+                "c",
+                {
+                    "checker_score": 0.5,
+                    "confidence": 0.6,
+                    "components": {},
+                    "flags": [],
+                    "accept": True,
+                    "feedback": 123,
+                },
+            )
+            is None
+        )
 
     def test_parse_verdict_invalid_severity_dropped(self) -> None:
-        v = _parse_verdict("c", {
-            "checker_score": 0.5, "confidence": 0.6,
-            "components": {}, "flags": [
-                {"severity": "weird", "issue": "x"},  # no severity/issue
-                {"severity": "high"},  # no issue
-                {"issue": "y"},  # no severity
-                {"severity": "low", "issue": "ok"},  # kept
-            ],
-            "accept": True, "feedback": "ok",
-        })
+        v = _parse_verdict(
+            "c",
+            {
+                "checker_score": 0.5,
+                "confidence": 0.6,
+                "components": {},
+                "flags": [
+                    {"severity": "weird", "issue": "x"},  # no severity/issue
+                    {"severity": "high"},  # no issue
+                    {"issue": "y"},  # no severity
+                    {"severity": "low", "issue": "ok"},  # kept
+                ],
+                "accept": True,
+                "feedback": "ok",
+            },
+        )
         assert v is not None
         assert len(v.flags) == 1
         assert v.flags[0]["issue"] == "ok"
 
     def test_parse_verdict_truncates_feedback(self) -> None:
         from app.loop.maker_checker.schemas import Verdict
-        v = _parse_verdict("c", {
-            "checker_score": 0.5, "confidence": 0.6,
-            "components": {}, "flags": [], "accept": True,
-            "feedback": "x" * (Verdict.MAX_FEEDBACK_LEN + 100),
-        })
+
+        v = _parse_verdict(
+            "c",
+            {
+                "checker_score": 0.5,
+                "confidence": 0.6,
+                "components": {},
+                "flags": [],
+                "accept": True,
+                "feedback": "x" * (Verdict.MAX_FEEDBACK_LEN + 100),
+            },
+        )
         assert v is not None
         assert len(v.feedback) == Verdict.MAX_FEEDBACK_LEN
 
@@ -255,21 +304,38 @@ class TestCheckerAgentEdges:
 
     def test_parse_verdict_non_numeric_raw_score_falls_back(self) -> None:
         # raw_score="oops" → falls back to score.
-        v = _parse_verdict("c", {
-            "checker_score": 0.5, "confidence": 0.6,
-            "raw_score": "oops",
-            "components": {}, "flags": [], "accept": True, "feedback": "ok",
-        })
+        v = _parse_verdict(
+            "c",
+            {
+                "checker_score": 0.5,
+                "confidence": 0.6,
+                "raw_score": "oops",
+                "components": {},
+                "flags": [],
+                "accept": True,
+                "feedback": "ok",
+            },
+        )
         assert v is not None
         assert v.raw_score == v.checker_score
 
     def test_parse_verdict_make_verdict_raises(self) -> None:
         # Pass a value that triggers make_verdict's validator to raise.
         # checker_score=1.5 is out of [0,1] → raises.
-        assert _parse_verdict("c", {
-            "checker_score": 1.5, "confidence": 0.6,
-            "components": {}, "flags": [], "accept": True, "feedback": "ok",
-        }) is None
+        assert (
+            _parse_verdict(
+                "c",
+                {
+                    "checker_score": 1.5,
+                    "confidence": 0.6,
+                    "components": {},
+                    "flags": [],
+                    "accept": True,
+                    "feedback": "ok",
+                },
+            )
+            is None
+        )
 
     def test_fit_calibration_value_error_caught(self) -> None:
         # All-positive labels → calibrate raises ValueError → None.
@@ -279,6 +345,7 @@ class TestCheckerAgentEdges:
 
     def test_seed_for_differs_by_candidate_id(self) -> None:
         from app.loop.maker_checker.checker_agent import CheckerAgent
+
         agent = CheckerAgent(
             backend=MockLLMBackend(seed=0),
             config=CheckerConfig(),
@@ -293,6 +360,7 @@ class TestCheckerAgentEdges:
 
     def test_seed_for_salted(self) -> None:
         from app.loop.maker_checker.checker_agent import CheckerAgent
+
         agent_a = CheckerAgent(
             backend=MockLLMBackend(seed=0),
             config=CheckerConfig(),
@@ -309,9 +377,12 @@ class TestCheckerAgentEdges:
     def test_verify_uses_candidate_seed(self) -> None:
         # Confirm verify() actually uses the per-candidate seed.
         from app.loop.maker_checker.checker_agent import CheckerAgent
+
         backend = MockLLMBackend(seed=0)
         agent = CheckerAgent(
-            backend=backend, config=CheckerConfig(), salt="z",
+            backend=backend,
+            config=CheckerConfig(),
+            salt="z",
         )
         v1 = agent.verify("cand-X", {"metrics": {"sharpe": 1.0, "trades_count": 50}})
         v2 = agent.verify("cand-Y", {"metrics": {"sharpe": 1.0, "trades_count": 50}})
@@ -363,57 +434,78 @@ class TestMakerAgentEdges:
         assert _parse_proposal({"diff": {"x": 1}}, cluster="C1") is None
 
     def test_parse_proposal_empty_clusters(self) -> None:
-        assert _parse_proposal(
-            {"clusters_touched": [], "diff": {"x": 1}}, cluster="C1",
-        ) is None
+        assert (
+            _parse_proposal(
+                {"clusters_touched": [], "diff": {"x": 1}},
+                cluster="C1",
+            )
+            is None
+        )
 
     def test_parse_proposal_no_diff(self) -> None:
-        assert _parse_proposal(
-            {"clusters_touched": ("C1",), "diff": {}}, cluster="C1",
-        ) is None
+        assert (
+            _parse_proposal(
+                {"clusters_touched": ("C1",), "diff": {}},
+                cluster="C1",
+            )
+            is None
+        )
 
     def test_parse_proposal_intent_not_string(self) -> None:
-        assert _parse_proposal(
-            {"clusters_touched": ("C1",), "diff": {"x": 1},
-             "maker_intent": 123, "reasoning": "r", "self_score": 0.5},
-            cluster="C1",
-        ) is None
+        assert (
+            _parse_proposal(
+                {"clusters_touched": ("C1",), "diff": {"x": 1}, "maker_intent": 123, "reasoning": "r", "self_score": 0.5},
+                cluster="C1",
+            )
+            is None
+        )
 
     def test_parse_proposal_reasoning_not_string(self) -> None:
-        assert _parse_proposal(
-            {"clusters_touched": ("C1",), "diff": {"x": 1},
-             "maker_intent": "i", "reasoning": [], "self_score": 0.5},
-            cluster="C1",
-        ) is None
+        assert (
+            _parse_proposal(
+                {"clusters_touched": ("C1",), "diff": {"x": 1}, "maker_intent": "i", "reasoning": [], "self_score": 0.5},
+                cluster="C1",
+            )
+            is None
+        )
 
     def test_parse_proposal_score_not_number(self) -> None:
-        assert _parse_proposal(
-            {"clusters_touched": ("C1",), "diff": {"x": 1},
-             "maker_intent": "i", "reasoning": "r", "self_score": "x"},
-            cluster="C1",
-        ) is None
+        assert (
+            _parse_proposal(
+                {"clusters_touched": ("C1",), "diff": {"x": 1}, "maker_intent": "i", "reasoning": "r", "self_score": "x"},
+                cluster="C1",
+            )
+            is None
+        )
 
     def test_parse_proposal_wrong_cluster(self) -> None:
-        assert _parse_proposal(
-            {"clusters_touched": ("OTHER",), "diff": {"x": 1},
-             "maker_intent": "i", "reasoning": "r", "self_score": 0.5},
-            cluster="C1",
-        ) is None
+        assert (
+            _parse_proposal(
+                {"clusters_touched": ("OTHER",), "diff": {"x": 1}, "maker_intent": "i", "reasoning": "r", "self_score": 0.5},
+                cluster="C1",
+            )
+            is None
+        )
 
     def test_parse_proposal_construct_failure(self) -> None:
         # self_score outside [0,1] triggers make_proposal ValueError.
-        assert _parse_proposal(
-            {"clusters_touched": ("C1",), "diff": {"x": 1},
-             "maker_intent": "i", "reasoning": "r", "self_score": 2.0},
-            cluster="C1",
-        ) is None
+        assert (
+            _parse_proposal(
+                {"clusters_touched": ("C1",), "diff": {"x": 1}, "maker_intent": "i", "reasoning": "r", "self_score": 2.0},
+                cluster="C1",
+            )
+            is None
+        )
 
     def test_traditional_mutation_skips_no_change(self) -> None:
         # Force mutate_field to return same value by manipulating kwargs.
         from app.loop.maker_checker.maker_agent import traditional_proposals
 
         proposals = traditional_proposals(
-            TuningConstants(), n=1, cluster="C1 Geometry", seed=0,
+            TuningConstants(),
+            n=1,
+            cluster="C1 Geometry",
+            seed=0,
         )
         # Just exercise the path; outputs may be 0 or more proposals.
         assert isinstance(proposals, list)
@@ -424,7 +516,10 @@ class TestMakerAgentEdges:
 
         with pytest.raises(ValueError, match="unknown cluster"):
             traditional_proposals(
-                TuningConstants(), n=2, cluster="Unknown Cluster", seed=0,
+                TuningConstants(),
+                n=2,
+                cluster="Unknown Cluster",
+                seed=0,
             )
 
     def test_traditional_skips_exception_in_mutate(self, monkeypatch) -> None:
@@ -438,7 +533,10 @@ class TestMakerAgentEdges:
         monkeypatch.setattr(maker_agent, "mutate_field", boom)
 
         proposals = traditional_proposals(
-            TuningConstants(), n=2, cluster="C1 Geometry", seed=0,
+            TuningConstants(),
+            n=2,
+            cluster="C1 Geometry",
+            seed=0,
         )
         # All mutations failed → no proposals.
         assert proposals == []
@@ -449,17 +547,22 @@ class TestMakerAgentEdges:
         from app.loop.maker_checker.maker_agent import traditional_proposals
 
         monkeypatch.setattr(
-            maker_agent, "mutate_field",
+            maker_agent,
+            "mutate_field",
             lambda *args, **kwargs: args[3],  # return parent t
         )
         proposals = traditional_proposals(
-            TuningConstants(), n=2, cluster="C1 Geometry", seed=0,
+            TuningConstants(),
+            n=2,
+            cluster="C1 Geometry",
+            seed=0,
         )
         assert proposals == []
 
     def test_traditional_zero_old_value(self, monkeypatch) -> None:
         # Force old_val to be 0 → magnitude=0.0 branch.
         from dataclasses import replace as dc_replace
+
         from app.loop.maker_checker import maker_agent
         from app.loop.maker_checker.maker_agent import traditional_proposals
 
@@ -483,12 +586,15 @@ class TestMakerAgentEdges:
         # Construct a parent where the field is 0.
         parent = dc_replace(TuningConstants(), **{name: 0.0})
         proposals = traditional_proposals(
-            parent, n=2, cluster="C1 Geometry", seed=0,
+            parent,
+            n=2,
+            cluster="C1 Geometry",
+            seed=0,
         )
         # Some proposals should have been generated with magnitude=0.0.
-        assert any(
-            abs(p.diff.get(name, 99)) < 0.01 for p in proposals
-        ) or proposals == []  # may be empty if cluster spec doesn't include numeric
+        assert (
+            any(abs(p.diff.get(name, 99)) < 0.01 for p in proposals) or proposals == []
+        )  # may be empty if cluster spec doesn't include numeric
 
     def test_traditional_nonnumeric_old_skipped(self, monkeypatch) -> None:
         # Force old_val to be a string → triggers non-numeric branch.
@@ -497,11 +603,15 @@ class TestMakerAgentEdges:
 
         def nonnumeric_mutate(name, kind, kwargs, t, rng, **skw):
             from dataclasses import replace as dc_replace
+
             return dc_replace(t, **{name: "not_a_number"})
 
         monkeypatch.setattr(maker_agent, "mutate_field", nonnumeric_mutate)
         proposals = traditional_proposals(
-            TuningConstants(), n=2, cluster="C1 Geometry", seed=0,
+            TuningConstants(),
+            n=2,
+            cluster="C1 Geometry",
+            seed=0,
         )
         assert proposals == []
 

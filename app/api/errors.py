@@ -1,6 +1,8 @@
 """API error definitions and formatting."""
+
 import uuid
 from typing import Optional
+
 from app.domain.enums import ErrorCode
 
 
@@ -15,9 +17,7 @@ class SupabaseError(Exception):
     ):
         super().__init__(message)
         self.message = message
-        self.transient = (
-            transient  # True for network/timeout errors, False for validation/data errors
-        )
+        self.transient = transient  # True for network/timeout errors, False for validation/data errors
         self.original_error = original_error
 
     def __repr__(self) -> str:

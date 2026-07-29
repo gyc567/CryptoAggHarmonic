@@ -1,3 +1,14 @@
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from typing import Optional
+
+from app.loop.maker_checker.schemas import CalibrationParams, make_calibration
+
+# ---- Numerical helpers ----------------------------------------------------
+
+
 """Calibration — Platt scaling for Checker raw scores.
 
 The LLM Checker emits a raw score in ``[0, 1]`` that is *not* a
@@ -15,16 +26,6 @@ gap between predicted probability and empirical accuracy, averaged over
 bins. A good calibration has ``ECE < 0.05``; the
 :class:`CalibrationParams` constructor rejects ``ECE >= 0.10``.
 """
-from __future__ import annotations
-
-import math
-from dataclasses import dataclass
-from typing import Sequence
-
-from app.loop.maker_checker.schemas import CalibrationParams, make_calibration
-
-
-# ---- Numerical helpers ----------------------------------------------------
 
 
 def _sigmoid(z: float) -> float:
@@ -120,7 +121,7 @@ def _bin_predictions(
         if not b:
             continue
         preds = [r for r, _ in b]
-        labels = [l for _, l in b]
+        labels = [label for _, label in b]
         out.append((sum(preds) / len(b), sum(labels) / len(b), len(b)))
     out.sort(key=lambda x: x[0])
     return out
@@ -129,7 +130,7 @@ def _bin_predictions(
 def expected_calibration_error(
     pairs: Sequence[tuple[float, int]],
     *,
-    params: CalibrationParams | None = None,
+    params: Optional[CalibrationParams] = None,
     n_bins: int = 10,
 ) -> float:
     """Compute ECE on ``pairs``.
@@ -142,7 +143,7 @@ def expected_calibration_error(
     if params is None:
         transformed: list[tuple[float, int]] = list(pairs)
     else:
-        transformed = [(params.apply(r), l) for r, l in pairs]
+        transformed = [(params.apply(r), label) for r, label in pairs]
     bins = _bin_predictions(transformed, n_bins=n_bins)
     if not bins:
         return 0.0  # pragma: no cover  # defensive: only hit if _bin returns []
@@ -177,13 +178,10 @@ def calibrate(
     """
     if not pairs:
         raise ValueError("calibrate() requires at least one (raw, label) pair")
-    n_pos = sum(1 for _, l in pairs if l == 1)
-    n_neg = sum(1 for _, l in pairs if l == 0)
+    n_pos = sum(1 for _, label in pairs if label == 1)
+    n_neg = sum(1 for _, label in pairs if label == 0)
     if n_pos == 0 or n_neg == 0:
-        raise ValueError(
-            "calibration set must contain both positive and negative "
-            "examples (got pos={}, neg={})".format(n_pos, n_neg)
-        )
+        raise ValueError("calibration set must contain both positive and negative " f"examples (got pos={n_pos}, neg={n_neg})")
 
     a, b = _fit_platt(pairs, max_iter=max_iter)
     ece = expected_calibration_error(pairs, params=CalibrationParams(a=a, b=b, ece=0.0, n_samples=len(pairs)))
@@ -193,7 +191,7 @@ def calibrate(
 def reliability_diagram(
     pairs: Sequence[tuple[float, int]],
     *,
-    params: CalibrationParams | None = None,
+    params: Optional[CalibrationParams] = None,
     n_bins: int = 10,
 ) -> list[tuple[float, float, int]]:
     """Return per-bin ``(mean_pred, empirical_freq, count)``.
@@ -205,7 +203,7 @@ def reliability_diagram(
     if params is None:
         transformed = list(pairs)
     else:
-        transformed = [(params.apply(r), l) for r, l in pairs]
+        transformed = [(params.apply(r), label) for r, label in pairs]
     return _bin_predictions(transformed, n_bins=n_bins)
 
 

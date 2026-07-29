@@ -12,13 +12,12 @@ The interface is intentionally tiny — just two methods:
 :func:`complete_json` returns parsed JSON. Callers are responsible for
 validating the output against :mod:`app.loop.maker_checker.schemas`.
 """
+
 from __future__ import annotations
 
 import hashlib
-import json
 import os
-from typing import Any, Protocol, runtime_checkable
-
+from typing import Any, Optional, Protocol, runtime_checkable
 
 # ---- Interface ------------------------------------------------------------
 
@@ -43,7 +42,7 @@ class LLMBackend(Protocol):
         system: str = "",
         temperature: float = 0.0,
         max_tokens: int = 1000,
-        seed: int | None = None,
+        seed: Optional[int] = None,
     ) -> Any:  # pragma: no cover  # Protocol body — never executed at runtime
         ...
 
@@ -79,9 +78,7 @@ class MockLLMBackend:
         seed: int = 0,
     ) -> None:
         if not 0.0 <= accept_rate <= 1.0:
-            raise ValueError(
-                f"accept_rate must be in [0, 1]; got {accept_rate}"
-            )
+            raise ValueError(f"accept_rate must be in [0, 1]; got {accept_rate}")
         self.accept_rate = accept_rate
         self.seed = seed
         self.call_count = 0
@@ -94,7 +91,7 @@ class MockLLMBackend:
         system: str = "",
         temperature: float = 0.0,
         max_tokens: int = 1000,
-        seed: int | None = None,
+        seed: Optional[int] = None,
     ) -> Any:
         self.call_count += 1
         # Use a stable hash to pick a "verdict"-shaped blob.
@@ -113,8 +110,8 @@ class MockLLMBackend:
         prompt: str,
         *,
         n_proposals: int,
-        seed: int | None = None,
-        cluster: str | None = None,
+        seed: Optional[int] = None,
+        cluster: Optional[str] = None,
     ) -> dict[str, Any]:
         """Return a JSON shape mimicking the Maker LLM output.
 
@@ -130,10 +127,14 @@ class MockLLMBackend:
         """
         self.call_count += 1
         clusters = (
-            [cluster] if cluster is not None
+            [cluster]
+            if cluster is not None
             else [
-                "C1 Geometry", "C2 Discipline", "C3 Confluence",
-                "C4 Macro", "C5 Windows",
+                "C1 Geometry",
+                "C2 Discipline",
+                "C3 Confluence",
+                "C4 Macro",
+                "C5 Windows",
             ]
         )
         fields = [
@@ -144,9 +145,7 @@ class MockLLMBackend:
             ("trend_alignment_min", 1.0, 5.0),
         ]
         seed_eff = seed if seed is not None else self.seed
-        h = hashlib.sha256(
-            f"{seed_eff}|{prompt}|{n_proposals}|{cluster}".encode()
-        ).digest()
+        h = hashlib.sha256(f"{seed_eff}|{prompt}|{n_proposals}|{cluster}".encode()).digest()
         proposals = []
         for i in range(n_proposals):
             c_idx = h[(2 * i) % len(h)] % len(clusters)
@@ -154,19 +153,21 @@ class MockLLMBackend:
             field_name, lo, hi = fields[f_idx]
             mag_raw = h[(3 * i) % len(h)] / 255.0
             magnitude = round((mag_raw * 2 - 1) * 30.0, 2)  # in [-30, +30]
-            score = (h[(4 * i) % len(h)] / 255.0)
-            proposals.append({
-                "clusters_touched": [clusters[c_idx]],
-                "diff": {field_name: magnitude},
-                "maker_intent": f"mock_intent_{i}",
-                "reasoning": f"mock reasoning for proposal {i}",
-                "expected_impact": {
-                    "sharpe": f"+{magnitude / 100:.2f}",
-                    "calmar": "neutral",
-                    "worst_regime": "neutral",
-                },
-                "self_score": round(score, 3),
-            })
+            score = h[(4 * i) % len(h)] / 255.0
+            proposals.append(
+                {
+                    "clusters_touched": [clusters[c_idx]],
+                    "diff": {field_name: magnitude},
+                    "maker_intent": f"mock_intent_{i}",
+                    "reasoning": f"mock reasoning for proposal {i}",
+                    "expected_impact": {
+                        "sharpe": f"+{magnitude / 100:.2f}",
+                        "calmar": "neutral",
+                        "worst_regime": "neutral",
+                    },
+                    "self_score": round(score, 3),
+                }
+            )
         return {"proposals": proposals}
 
     # Checker-specific helper used by checker_agent.
@@ -174,7 +175,7 @@ class MockLLMBackend:
         self,
         prompt: str,
         *,
-        seed: int | None = None,
+        seed: Optional[int] = None,
     ) -> dict[str, Any]:
         """Return a JSON shape mimicking the Checker LLM output."""
         self.call_count += 1
@@ -185,10 +186,12 @@ class MockLLMBackend:
         confidence = max(0.5, h[2] / 255.0)
         flags = []
         if h[3] % 5 == 0:
-            flags.append({
-                "severity": "low",
-                "issue": "mock flag for testing",
-            })
+            flags.append(
+                {
+                    "severity": "low",
+                    "issue": "mock flag for testing",
+                }
+            )
         return {
             "checker_score": round(score, 3),
             "confidence": round(confidence, 3),
@@ -222,8 +225,7 @@ def default_backend() -> LLMBackend:
     # Real providers intentionally raise loudly if requested but not
     # wired — the user must explicitly extend this module.
     raise LLMBackendError(
-        f"LLM backend {name!r} is not configured; only 'mock' is "
-        f"available out of the box. See audit §2.9 for rollback."
+        f"LLM backend {name!r} is not configured; only 'mock' is " f"available out of the box. See audit §2.9 for rollback."
     )
 
 

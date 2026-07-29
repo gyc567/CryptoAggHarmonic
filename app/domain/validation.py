@@ -1,3 +1,18 @@
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Optional
+
+import pandas as pd
+
+from app.config.tuning import TUNING
+from app.domain.signals import Candidate, compute_stop, compute_targets
+
+# --- Backwards-compat aliases (read from TUNING singleton) -----------------
+# See app/domain/signals.py for the rationale.
+
 """Signal validity verification (P4 pillar): pure, I/O-free functions.
 
 Four independent verifiers plus statistical gates, per
@@ -12,25 +27,12 @@ Plus: quant regime scoring, per-bar momentum Sharpe gate, volatility targeting.
 Everything is a pure function of plain values or pandas frames, so the module
 can be unit-tested to 100% coverage.
 """
-from __future__ import annotations
-
-import math
-from dataclasses import dataclass
-from typing import Optional, Sequence
-
-import pandas as pd
-
-from app.config.tuning import TUNING
-from app.domain.signals import Candidate, compute_stop, compute_targets
-
-# --- Backwards-compat aliases (read from TUNING singleton) -----------------
-# See app/domain/signals.py for the rationale.
 
 MAX_PRZ_DISTANCE_ATR = TUNING.max_prz_distance_atr
 MAX_D_AGE_BARS = TUNING.max_d_age_bars
 MAX_FORMING_PRZ_WIDTH_ATR = TUNING.max_forming_prz_width_atr
 
-FALSE_BREAK_VETO = 0.25          # false-breakout rate above this => veto
+FALSE_BREAK_VETO = 0.25  # false-breakout rate above this => veto
 FALSE_BREAK_PENALTY = 0.15
 FALSE_BREAK_WARN = 0.08
 STOP_HUNT_PENALTY = 0.10
@@ -61,7 +63,7 @@ def rejection_reason(
     price: float,
     atr: float,
     close_times: Optional[Sequence] = None,
-) -> Optional[str]:
+) -> str | None:
     """Return the rejection reason for a candidate, or None when it is valid."""
     prz_mid = (candidate.prz_low + candidate.prz_high) / 2
     if atr > 0 and abs(price - prz_mid) > MAX_PRZ_DISTANCE_ATR * atr:
@@ -162,11 +164,9 @@ def quant_trap_risk(
     # False breakouts: pierce a 5-bar extreme by >1% then close back inside.
     false_breaks = 0
     for i in range(5, n):
-        prev_high = highs[i - 5:i].max()
-        prev_low = lows[i - 5:i].min()
-        if (highs[i] > prev_high * 1.01 and closes[i] < prev_high) or (
-            lows[i] < prev_low * 0.99 and closes[i] > prev_low
-        ):
+        prev_high = highs[i - 5 : i].max()
+        prev_low = lows[i - 5 : i].min()
+        if (highs[i] > prev_high * 1.01 and closes[i] < prev_high) or (lows[i] < prev_low * 0.99 and closes[i] > prev_low):
             false_breaks += 1
     fb_rate = false_breaks / (n - 5)
     if fb_rate > FALSE_BREAK_VETO:
@@ -182,7 +182,7 @@ def quant_trap_risk(
     # Stop hunts: new 3-bar low followed by a full recovery next bar.
     stop_hunts = 0
     for i in range(3, n - 1):
-        recent_low = lows[i - 3:i].min()
+        recent_low = lows[i - 3 : i].min()
         if lows[i] < recent_low * 0.995 and closes[i + 1] > highs[i]:
             stop_hunts += 1
     sh_rate = stop_hunts / (n - 4)

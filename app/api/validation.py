@@ -23,10 +23,11 @@ Status code is **422** (Unprocessable Entity) — the request is
 syntactically valid JSON, semantically rejected by the schema. 400 is
 reserved for "couldn't even parse JSON" so the two cases stay distinct.
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any, Optional, Type, Union
+from typing import Any
 
 from flask import jsonify
 from pydantic import BaseModel, ValidationError
@@ -54,7 +55,7 @@ def _coerce_json(raw: Any) -> dict:
         return {}
     if isinstance(raw, dict):
         return raw
-    if isinstance(raw, (str, bytes, bytearray)):
+    if isinstance(raw, str | bytes | bytearray):
         try:
             decoded = json.loads(raw)
         except (json.JSONDecodeError, TypeError) as exc:
@@ -62,8 +63,7 @@ def _coerce_json(raw: Any) -> dict:
         if not isinstance(decoded, dict):
             # JSON arrays / scalars at the root aren't valid request bodies.
             raise _InvalidJSONError(
-                "Request body must be a JSON object, got "
-                f"{type(decoded).__name__}",
+                "Request body must be a JSON object, got " f"{type(decoded).__name__}",
             )
         return decoded
     raise _InvalidJSONError(
@@ -72,9 +72,9 @@ def _coerce_json(raw: Any) -> dict:
 
 
 def parse_request(
-    model_cls: Type[BaseModel],
+    model_cls: type[BaseModel],
     payload: Any,
-) -> tuple[Optional[BaseModel], Optional[tuple[Any, int]]]:
+) -> tuple[BaseModel | None, tuple[Any, int] | None]:
     """Validate ``payload`` against ``model_cls``.
 
     Returns ``(model_instance, None)`` on success and ``(None, error_response)``
@@ -129,7 +129,7 @@ def _invalid_json_response(detail: str) -> tuple[Any, int]:
 
 
 def _validation_error_response(
-    model_cls: Type[BaseModel],
+    model_cls: type[BaseModel],
     exc: ValidationError,
 ) -> tuple[Any, int]:
     """422 — body is JSON but the schema rejects it.

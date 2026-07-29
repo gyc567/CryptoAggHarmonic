@@ -1,3 +1,13 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+from app.loop.worker import CandidateResult
+
+# --- Public types ------------------------------------------------------------
+
+
 """Checker — second-opinion review of each candidate.
 
 Plan §4 says the checker is "the same model with a different prompt" — it
@@ -11,15 +21,6 @@ follow; we expose them as plain Python so they're testable in CI. When
 the operator enables an LLM checker (out of scope for M4) it should
 implement the same :class:`Checker` interface so callers don't change.
 """
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Optional
-
-from app.loop.worker import CandidateResult
-
-
-# --- Public types ------------------------------------------------------------
 
 
 @dataclass
@@ -36,7 +37,7 @@ class CheckerVerdict:
 # --- Heuristic rules ---------------------------------------------------------
 
 
-def _flag_regime_imbalance(metrics: dict) -> Optional[str]:
+def _flag_regime_imbalance(metrics: dict) -> str | None:
     """Return a flag string if trades are heavily skewed to one regime."""
     regimes = metrics.get("by_regime", {})
     counts = {k: v.get("n", 0) for k, v in regimes.items() if v.get("n", 0)}
@@ -49,14 +50,14 @@ def _flag_regime_imbalance(metrics: dict) -> Optional[str]:
     return None
 
 
-def _flag_low_sample(metrics: dict) -> Optional[str]:
+def _flag_low_sample(metrics: dict) -> str | None:
     tc = metrics.get("trades_count", 0)
     if tc < 30:
         return f"low_sample:{tc}_trades"
     return None
 
 
-def _flag_bear_regime_sharpe(metrics: dict) -> Optional[str]:
+def _flag_bear_regime_sharpe(metrics: dict) -> str | None:
     regimes = metrics.get("by_regime", {})
     bear = regimes.get("bear") or regimes.get("range", {})
     if bear.get("n", 0) < 3:
@@ -112,10 +113,7 @@ def check_candidate(
         tc_old = parent_metrics.get("trades_count", 0)
         if f_new > 2 * f_old and tc_new < max(15, tc_old * 0.5):
             flags.append("fitness_gain_trade_drop")
-            reasons.append(
-                f"fitness {f_old:.2f}→{f_new:.2f} but trades {tc_old}→{tc_new} "
-                f"(likely overfit / cherry-picked)"
-            )
+            reasons.append(f"fitness {f_old:.2f}→{f_new:.2f} but trades {tc_old}→{tc_new} " f"(likely overfit / cherry-picked)")
 
     # Decision roll-up.
     if result.decision != "accepted":

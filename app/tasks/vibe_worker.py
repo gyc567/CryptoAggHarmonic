@@ -1,4 +1,5 @@
 """RQ worker entry point for vibe agent tasks."""
+
 import logging
 import os
 import sys
@@ -8,10 +9,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from redis import Redis
-from rq import Worker, Queue, Connection
-
-from app.services.vibe.runner import run_vibe_agent
+from redis import Redis  # noqa: E402  — sys.path must be patched before imports
+from rq import Connection, Queue, Worker  # noqa: E402  — sys.path must be patched before imports
 
 logger = logging.getLogger(__name__)
 

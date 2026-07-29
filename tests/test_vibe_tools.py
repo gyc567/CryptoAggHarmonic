@@ -1,11 +1,13 @@
 """Tests for vibe agent tools."""
-import pytest
+
 from unittest.mock import MagicMock
 
+import pytest
+
+from app.domain.schemas import AnalysisData, AnalysisType, Interval, Market, Status, TechnicalResult
 from app.services.vibe.tools import create_default_registry
-from app.services.vibe.tools.base import ToolRuntime
 from app.services.vibe.tools.analyze_harmonic import AnalyzeHarmonicTool
-from app.domain.schemas import AnalysisData, TechnicalResult, Status, Market, Interval, AnalysisType
+from app.services.vibe.tools.base import ToolRuntime
 
 
 @pytest.fixture
@@ -75,14 +77,15 @@ def test_backtest_signal_with_mocked_data(monkeypatch):
     runtime = ToolRuntime(user_id="u1", session_id="s1", run_id="r1")
 
     import pandas as pd
-    from app.infra import historical_data
 
-    df = pd.DataFrame([
-        {"dts": "2026-01-01 00:00", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0},
-        {"dts": "2026-01-01 01:00", "open": 100.0, "high": 105.0, "low": 99.0, "close": 104.0},
-        {"dts": "2026-01-01 02:00", "open": 104.0, "high": 105.0, "low": 100.0, "close": 102.0},
-        {"dts": "2026-01-01 03:00", "open": 102.0, "high": 103.0, "low": 98.0, "close": 99.0},
-    ])
+    df = pd.DataFrame(
+        [
+            {"dts": "2026-01-01 00:00", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0},
+            {"dts": "2026-01-01 01:00", "open": 100.0, "high": 105.0, "low": 99.0, "close": 104.0},
+            {"dts": "2026-01-01 02:00", "open": 104.0, "high": 105.0, "low": 100.0, "close": 102.0},
+            {"dts": "2026-01-01 03:00", "open": 102.0, "high": 103.0, "low": 98.0, "close": 99.0},
+        ]
+    )
     df["dts"] = pd.to_datetime(df["dts"])
     df = df.set_index("dts")
 
@@ -90,6 +93,7 @@ def test_backtest_signal_with_mocked_data(monkeypatch):
         return df
 
     from app.services.vibe.tools import backtest_signal as backtest_signal_module
+
     monkeypatch.setattr(backtest_signal_module, "fetch_historical_data", mock_fetch)
 
     output = tool.run(

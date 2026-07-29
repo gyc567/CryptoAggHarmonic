@@ -1,27 +1,23 @@
 """Authentication helpers for API endpoints."""
+
 import logging
 import os
+from collections.abc import Callable
 from functools import wraps
-from typing import Optional, Dict, Any, Callable
-from flask import request, jsonify, current_app
+from typing import Any
 
-from app.api.errors import AppError
+from flask import jsonify, request
+
 from app.domain.enums import ErrorCode
 from app.infra.supabase_client import (
-    verify_user_token,
     reserve_user_quota,
-    release_ledger_quota,
-    create_analysis_record,
-    update_analysis_record,
-    upload_chart,
-    get_chart_url,
-    log_audit_event,
+    verify_user_token,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def get_auth_token() -> Optional[str]:
+def get_auth_token() -> str | None:
     """Extract Bearer token from Authorization header or query param.
 
     Query-param fallback supports EventSource which cannot set headers.
@@ -35,7 +31,7 @@ def get_auth_token() -> Optional[str]:
     return request.args.get("token")
 
 
-LOCAL_DEV_USER: Dict[str, Any] = {
+LOCAL_DEV_USER: dict[str, Any] = {
     "id": "local-dev-user",
     "email": "dev@localhost",
     "role": "admin",
@@ -65,6 +61,7 @@ def require_auth(f: Callable) -> Callable:
       Set DISABLE_AUTH=1 in the environment to skip token verification.
       This is ONLY for local dev/testing and must never be enabled in production.
     """
+
     @wraps(f)
     def wrapper(*args, **kwargs):
         if is_local_dev_mode():
@@ -73,42 +70,58 @@ def require_auth(f: Callable) -> Callable:
 
         token = get_auth_token()
         if not token:
-            return jsonify({
-                "success": False,
-                "error": {
-                    "code": ErrorCode.UNAUTHORIZED.value,
-                    "message": "Authorization header required.",
-                    "retryable": False,
-                }
-            }), 401
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": ErrorCode.UNAUTHORIZED.value,
+                            "message": "Authorization header required.",
+                            "retryable": False,
+                        },
+                    }
+                ),
+                401,
+            )
 
         user = verify_user_token(token)
         if not user:
-            return jsonify({
-                "success": False,
-                "error": {
-                    "code": ErrorCode.UNAUTHORIZED.value,
-                    "message": "Invalid or expired token.",
-                    "retryable": False,
-                }
-            }), 401
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": ErrorCode.UNAUTHORIZED.value,
+                            "message": "Invalid or expired token.",
+                            "retryable": False,
+                        },
+                    }
+                ),
+                401,
+            )
 
         if user.get("status") != "active":
-            return jsonify({
-                "success": False,
-                "error": {
-                    "code": ErrorCode.UNAUTHORIZED.value,
-                    "message": "Account suspended.",
-                    "retryable": False,
-                }
-            }), 403
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": ErrorCode.UNAUTHORIZED.value,
+                            "message": "Account suspended.",
+                            "retryable": False,
+                        },
+                    }
+                ),
+                403,
+            )
 
         kwargs["user"] = user
         return f(*args, **kwargs)
+
     return wrapper
 
 
-def check_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[bool, int, Optional[str]]:
+def check_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[bool, int, str | None]:
     """Reserve quota for analysis.
 
     Args:

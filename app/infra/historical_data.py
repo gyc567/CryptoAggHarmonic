@@ -4,6 +4,7 @@ This module exposes a unified way to fetch OHLCV data over a date range.
 It reuses the existing Binance direct fetcher and can be extended for other
 markets (Yahoo, etc.).
 """
+
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -11,9 +12,9 @@ from typing import Optional
 import pandas as pd
 
 from app.domain.enums import Interval, Market
+from app.infra import tradingview_adapter as tv
 from app.infra.marketdata import DirectBinanceCandleData
 from app.infra.pyharmonics_adapter import fetch_market_data
-from app.infra import tradingview_adapter as tv
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,6 @@ _INTERVAL_MS = {
 
 def _to_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
-
-
-
 
 
 def _fetch_tradingview_range(
@@ -91,7 +89,7 @@ def fetch_historical_data(
         symbol: Trading pair / ticker.
         interval: Candle interval (15m, 1h, 4h, 1d, 1w).
         lookback_days: Number of calendar days to look back (max 365).
-        end: Optional end datetime (UTC). Defaults to now.
+        end: Optional end datetime (timezone.utc). Defaults to now.
 
     Returns:
         DataFrame with columns open, high, low, close, volume, dts, close_time.

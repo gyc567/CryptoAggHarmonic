@@ -26,6 +26,7 @@ carry ``checker_confidence = None`` and are treated as ``-inf`` in
 ``dominates()`` so they never dominate a new point but can be dominated
 (back-compat audit §2.6).
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,7 +40,6 @@ from app.loop.maker_checker.schemas import (
     Verdict,
     make_merge_result,
 )
-
 
 logger = logging.getLogger("app.loop.maker_checker.arbiter")
 
@@ -69,24 +69,13 @@ class ArbiterConfig:
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.maker_weight <= 1.0:
-            raise ValueError(
-                f"maker_weight must be in [0, 1]; got {self.maker_weight}"
-            )
+            raise ValueError(f"maker_weight must be in [0, 1]; got {self.maker_weight}")
         if not 0.0 <= self.checker_weight <= 1.0:
-            raise ValueError(
-                f"checker_weight must be in [0, 1]; got "
-                f"{self.checker_weight}"
-            )
+            raise ValueError(f"checker_weight must be in [0, 1]; got " f"{self.checker_weight}")
         if abs(self.maker_weight + self.checker_weight - 1.0) > 0.01:
-            raise ValueError(
-                f"maker_weight + checker_weight must equal 1.0; got "
-                f"{self.maker_weight + self.checker_weight}"
-            )
+            raise ValueError(f"maker_weight + checker_weight must equal 1.0; got " f"{self.maker_weight + self.checker_weight}")
         if not 0.0 <= self.maker_checker_gap_threshold <= 1.0:
-            raise ValueError(
-                "maker_checker_gap_threshold must be in [0, 1]; "
-                f"got {self.maker_checker_gap_threshold}"
-            )
+            raise ValueError("maker_checker_gap_threshold must be in [0, 1]; " f"got {self.maker_checker_gap_threshold}")
 
 
 # ---- Arbiter --------------------------------------------------------------
@@ -116,27 +105,21 @@ class Arbiter:
         accepted for symmetry with the per-candidate audit trail.
         """
         if m4.decision not in VALID_M4:
-            raise ValueError(
-                f"unknown m4 decision {m4.decision!r}; expected one of "
-                f"{VALID_M4}"
-            )
+            raise ValueError(f"unknown m4 decision {m4.decision!r}; expected one of " f"{VALID_M4}")
 
-        maker_score = (
-            maker.self_score.self_score if maker is not None else 0.5
-        )
+        maker_score = maker.self_score.self_score if maker is not None else 0.5
         checker_score = llm.checker_score
         gap = abs(maker_score - checker_score)
-        final_score = (
-            self.config.maker_weight * maker_score
-            + self.config.checker_weight * checker_score
-        )
+        final_score = self.config.maker_weight * maker_score + self.config.checker_weight * checker_score
 
         triggers: list[str] = [f"m4_{m4.decision}"]
 
         # 1. M4 hard constraint.
         if m4.decision == "rejected":
             return _merge(
-                "rejected", final_score, m4.decision,
+                "rejected",
+                final_score,
+                m4.decision,
                 triggers + ["m4_rejected_hard_constraint"],
                 checker_confidence=llm.confidence,
                 checker_flags=llm.flags,
@@ -150,19 +133,25 @@ class Arbiter:
                 # 6. Gap trigger before accepting.
                 if gap > self.config.maker_checker_gap_threshold:
                     return _merge(
-                        "suspicious_to_human", final_score, m4.decision,
+                        "suspicious_to_human",
+                        final_score,
+                        m4.decision,
                         triggers + ["llm_accept", "maker_checker_gap"],
                         checker_confidence=llm.confidence,
-                checker_flags=llm.flags,
+                        checker_flags=llm.flags,
                     )
                 return _merge(
-                    "accepted", final_score, m4.decision,
+                    "accepted",
+                    final_score,
+                    m4.decision,
                     triggers + ["llm_accept"],
                     checker_confidence=llm.confidence,
-                checker_flags=llm.flags,
+                    checker_flags=llm.flags,
                 )
             return _merge(
-                "rejected", final_score, m4.decision,
+                "rejected",
+                final_score,
+                m4.decision,
                 triggers + ["llm_reject_overrides"],
                 checker_confidence=llm.confidence,
                 checker_flags=llm.flags,
@@ -171,16 +160,20 @@ class Arbiter:
         # 4 + 5. M4 suspicious.
         if llm_accept:
             return _merge(
-                "suspicious_to_human", final_score, m4.decision,
+                "suspicious_to_human",
+                final_score,
+                m4.decision,
                 triggers + ["m4_suspicious", "llm_accept"],
                 checker_confidence=llm.confidence,
                 checker_flags=llm.flags,
             )
         return _merge(
-            "rejected", final_score, m4.decision,
+            "rejected",
+            final_score,
+            m4.decision,
             triggers + ["m4_suspicious", "llm_reject"],
             checker_confidence=llm.confidence,
-                checker_flags=llm.flags,
+            checker_flags=llm.flags,
         )
 
 
@@ -190,7 +183,7 @@ def _merge(
     m4_verdict: str,
     trigger_reasons: list[str],
     *,
-    checker_confidence: float | None,
+    checker_confidence: Optional[float],
     checker_flags: tuple[dict, ...] = (),
 ) -> MergeResult:
     """Build a :class:`MergeResult` with validation."""
@@ -224,12 +217,8 @@ def pareto_score(
     return {
         "sharpe": float(base_metrics.get("sharpe", 0.0) or 0.0),
         "calmar": float(base_metrics.get("calmar", 0.0) or 0.0),
-        "profit_factor": float(
-            base_metrics.get("profit_factor", 0.0) or 0.0
-        ),
-        "worst_regime_sharpe": float(
-            base_metrics.get("worst_regime_sharpe", 0.0) or 0.0
-        ),
+        "profit_factor": float(base_metrics.get("profit_factor", 0.0) or 0.0),
+        "worst_regime_sharpe": float(base_metrics.get("worst_regime_sharpe", 0.0) or 0.0),
         "checker_confidence": merge.checker_confidence,
     }
 
@@ -253,7 +242,7 @@ def resolve(
     m4: CheckerVerdict,
     llm: Verdict,
     maker: Optional[Proposal] = None,
-    config: ArbiterConfig | None = None,
+    config: Optional[ArbiterConfig] = None,
 ) -> MergeResult:
     """Convenience wrapper that constructs a default :class:`Arbiter`."""
     arbiter = Arbiter(config=config or ArbiterConfig())

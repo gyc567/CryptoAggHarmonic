@@ -5,10 +5,10 @@ dist-pct helper. Tests use synthetic 100-bar DataFrames with hand-crafted
 PRZ and price action so the verdicts are deterministic without standing up
 real market data.
 """
+
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from app.domain.signals import Candidate
 from app.services.discipline_filters import (
@@ -27,17 +27,18 @@ def _make_df(closes, lows=None, highs=None) -> pd.DataFrame:
     lows = lows if lows is not None else [c - 0.5 for c in closes]
     highs = highs if highs is not None else [c + 0.5 for c in closes]
     opens = [closes[0]] + list(closes[:-1])
-    return pd.DataFrame({
-        "open": opens,
-        "high": highs,
-        "low": lows,
-        "close": closes,
-        "volume": [100.0] * n,
-    })
+    return pd.DataFrame(
+        {
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": [100.0] * n,
+        }
+    )
 
 
-def _bullish_candidate(prz_low=100.0, prz_high=102.0, c_idx=50,
-                      a=110.0, d=102.0) -> Candidate:
+def _bullish_candidate(prz_low=100.0, prz_high=102.0, c_idx=50, a=110.0, d=102.0) -> Candidate:
     """A bullish gartley with X=95, A=110, B=100, C=107, D=102.
 
     R/R targets for a bullish gartley:
@@ -56,8 +57,7 @@ def _bullish_candidate(prz_low=100.0, prz_high=102.0, c_idx=50,
     )
 
 
-def _bearish_candidate(prz_low=98.0, prz_high=100.0, c_idx=50,
-                      a=90.0, d=98.0) -> Candidate:
+def _bearish_candidate(prz_low=98.0, prz_high=100.0, c_idx=50, a=90.0, d=98.0) -> Candidate:
     """A bearish gartley with X=105, A=90, B=100, C=95, D=98.
 
     R/R targets for a bearish gartley:
@@ -102,7 +102,7 @@ class TestPathIntegrity:
     def test_bullish_wick_into_prz_marks_breached(self):
         # 60 bars: first 50 at 100 (C at 50), then 10 bars at 110 with bar 59
         # wicking down to low=99 (touches PRZ [100, 102]).
-        closes = [100.0] * 50 + [110.0] * 10   # 60 bars
+        closes = [100.0] * 50 + [110.0] * 10  # 60 bars
         highs = [100.5] * 50 + [101.0] * 10
         lows = [99.5] * 50 + [99.0] * 10
         df = _make_df(closes, highs=highs, lows=lows)

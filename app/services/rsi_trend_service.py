@@ -4,6 +4,7 @@ Thin layer between the API blueprint and the pure domain logic in
 ``app.domain.rsi_trend`` / ``app.domain.rsi_trend_backtest``. All market
 data access happens here, reusing the existing infra adapters unchanged.
 """
+
 from __future__ import annotations
 
 import logging
@@ -88,9 +89,9 @@ def backtest(req: RsiTrendBacktestRequest) -> dict:
             lookback_days=req.lookback_days,
         )
     except ValueError as e:
-        raise AppError(ErrorCode.INVALID_PARAMS, str(e))
+        raise AppError(ErrorCode.INVALID_PARAMS, str(e)) from e
     except RuntimeError as e:
-        raise AppError(ErrorCode.MARKET_DATA_UNAVAILABLE, str(e), retryable=True)
+        raise AppError(ErrorCode.MARKET_DATA_UNAVAILABLE, str(e), retryable=True) from e
     if df is None or df.empty:
         raise AppError(
             ErrorCode.MARKET_DATA_UNAVAILABLE,

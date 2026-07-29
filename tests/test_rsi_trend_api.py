@@ -1,10 +1,12 @@
 """API tests for the trend-RSI strategy blueprint (/api/rsi-trend/*)."""
+
 from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 from flask import Flask
-from unittest.mock import MagicMock, patch
 
 from app.api.middleware import register_error_handlers
 from app.api.rsi_trend_routes import rsi_trend_bp
@@ -37,12 +39,14 @@ def no_audit():
 
 def make_df(closes: list[float]) -> pd.DataFrame:
     opens = [closes[0]] + closes[:-1]
-    return pd.DataFrame({
-        "open": opens,
-        "close": closes,
-        "high": [max(o, c) + 0.5 for o, c in zip(opens, closes)],
-        "low": [min(o, c) - 0.5 for o, c in zip(opens, closes)],
-    })
+    return pd.DataFrame(
+        {
+            "open": opens,
+            "close": closes,
+            "high": [max(o, c) + 0.5 for o, c in zip(opens, closes, strict=False)],
+            "low": [min(o, c) - 0.5 for o, c in zip(opens, closes, strict=False)],
+        }
+    )
 
 
 def uptrend_dip_df() -> pd.DataFrame:

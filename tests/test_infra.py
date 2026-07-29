@@ -1,16 +1,18 @@
 """Tests for infrastructure layer: pyharmonics adapter."""
-import pytest
+
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from app.api.errors import AppError
+from app.domain.enums import ErrorCode, Interval, Market
+from app.domain.schemas import TechnicalResult
 from app.infra.pyharmonics_adapter import (
-    fetch_market_data,
     detect_patterns,
+    fetch_market_data,
     render_chart,
     technical_result_to_schema,
 )
-from app.domain.enums import Market, Interval, ErrorCode
-from app.domain.schemas import TechnicalResult, ChartMeta
-from app.api.errors import AppError
 
 
 class TestFetchMarketData:
@@ -69,10 +71,12 @@ class TestFetchMarketData:
 
 class TestDetectPatterns:
     def test_detect_no_patterns(self):
-        with patch("app.infra.pyharmonics_adapter.OHLCTechnicals") as mock_tech_cls, \
-             patch("app.infra.pyharmonics_adapter.HarmonicSearch") as mock_hs_cls, \
-             patch("app.infra.pyharmonics_adapter.DivergenceSearch") as mock_div_cls, \
-             patch("app.infra.pyharmonics_adapter.HarmonicPlotter") as mock_plotter_cls:
+        with (
+            patch("app.infra.pyharmonics_adapter.OHLCTechnicals") as mock_tech_cls,
+            patch("app.infra.pyharmonics_adapter.HarmonicSearch") as mock_hs_cls,
+            patch("app.infra.pyharmonics_adapter.DivergenceSearch") as mock_div_cls,
+            patch("app.infra.pyharmonics_adapter.HarmonicPlotter") as mock_plotter_cls,
+        ):
             mock_candle = MagicMock()
             mock_candle.df = MagicMock()
             mock_candle.symbol = "BTCUSDT"
@@ -106,12 +110,14 @@ class TestDetectPatterns:
             assert result["divergences"] == {}
 
     def test_detect_with_pattern(self):
-        with patch("app.infra.pyharmonics_adapter.OHLCTechnicals") as mock_tech_cls, \
-             patch("app.infra.pyharmonics_adapter.HarmonicSearch") as mock_hs_cls, \
-             patch("app.infra.pyharmonics_adapter.DivergenceSearch") as mock_div_cls, \
-             patch("app.infra.pyharmonics_adapter.HarmonicPlotter") as mock_plotter_cls, \
-             patch("app.infra.pyharmonics_adapter.Position") as mock_pos_cls, \
-             patch("app.infra.pyharmonics_adapter.PositionPlotter") as mock_pos_plot_cls:
+        with (
+            patch("app.infra.pyharmonics_adapter.OHLCTechnicals") as mock_tech_cls,
+            patch("app.infra.pyharmonics_adapter.HarmonicSearch") as mock_hs_cls,
+            patch("app.infra.pyharmonics_adapter.DivergenceSearch") as mock_div_cls,
+            patch("app.infra.pyharmonics_adapter.HarmonicPlotter") as mock_plotter_cls,
+            patch("app.infra.pyharmonics_adapter.Position") as mock_pos_cls,
+            patch("app.infra.pyharmonics_adapter.PositionPlotter") as mock_pos_plot_cls,
+        ):
             mock_candle = MagicMock()
             mock_candle.df = MagicMock()
             mock_candle.symbol = "BTCUSDT"
@@ -129,15 +135,19 @@ class TestDetectPatterns:
             mock_hs.XABCD = "XABCD"
             mock_hs.ABCD = "ABCD"
             mock_hs.ABC = "ABC"
-            mock_hs.get_patterns.side_effect = lambda formed=None, family=None: {
-                "XABCD": [mock_pattern] if family == "XABCD" else [],
-                "ABCD": [],
-                "ABC": [],
-            } if family else {
-                "XABCD": [mock_pattern],
-                "ABCD": [],
-                "ABC": [],
-            }
+            mock_hs.get_patterns.side_effect = lambda formed=None, family=None: (
+                {
+                    "XABCD": [mock_pattern] if family == "XABCD" else [],
+                    "ABCD": [],
+                    "ABC": [],
+                }
+                if family
+                else {
+                    "XABCD": [mock_pattern],
+                    "ABCD": [],
+                    "ABC": [],
+                }
+            )
             mock_hs_cls.return_value = mock_hs
 
             mock_div = MagicMock()
@@ -179,9 +189,11 @@ class TestGenerateChart:
 
     def test_generate_with_plot(self):
         mock_plot = MagicMock()
-        with patch("plotly.io.to_json", return_value="{}"), \
-             patch("plotly.io.from_json", return_value=MagicMock()), \
-             patch("plotly.io.to_image", return_value=self._PNG):
+        with (
+            patch("plotly.io.to_json", return_value="{}"),
+            patch("plotly.io.from_json", return_value=MagicMock()),
+            patch("plotly.io.to_image", return_value=self._PNG),
+        ):
             image_bytes, meta = render_chart({"plot": mock_plot})
         assert meta.format == "png"
         assert meta.width is not None
@@ -190,9 +202,11 @@ class TestGenerateChart:
 
     def test_generate_with_fallback(self):
         mock_plot = MagicMock()
-        with patch("plotly.io.to_json", return_value="{}"), \
-             patch("plotly.io.from_json", return_value=MagicMock()), \
-             patch("plotly.io.to_image", return_value=self._PNG):
+        with (
+            patch("plotly.io.to_json", return_value="{}"),
+            patch("plotly.io.from_json", return_value=MagicMock()),
+            patch("plotly.io.to_image", return_value=self._PNG),
+        ):
             _, meta = render_chart({"plot_fallback": mock_plot})
         assert meta.format == "png"
 
@@ -203,9 +217,11 @@ class TestGenerateChart:
 
     def test_generate_empty_image(self):
         mock_plot = MagicMock()
-        with patch("plotly.io.to_json", return_value="{}"), \
-             patch("plotly.io.from_json", return_value=MagicMock()), \
-             patch("plotly.io.to_image", return_value=b""):
+        with (
+            patch("plotly.io.to_json", return_value="{}"),
+            patch("plotly.io.from_json", return_value=MagicMock()),
+            patch("plotly.io.to_image", return_value=b""),
+        ):
             with pytest.raises(AppError) as exc_info:
                 render_chart({"plot": mock_plot})
         assert exc_info.value.code == ErrorCode.CHART_ERROR
@@ -227,19 +243,23 @@ class TestTechnicalResultToSchema:
         assert result.pattern_family is None
 
     def test_with_pattern_no_position(self):
-        result = technical_result_to_schema({
-            "patterns": {"family": "ABCD"},
-            "divergences": {},
-        })
+        result = technical_result_to_schema(
+            {
+                "patterns": {"family": "ABCD"},
+                "divergences": {},
+            }
+        )
         assert result.pattern_family == "ABCD"
         assert result.pattern_type == "formed"
         assert result.entry_price is None
 
     def test_with_forming_pattern(self):
-        result = technical_result_to_schema({
-            "patterns": {"family": "XABCD", "forming": True},
-            "divergences": {},
-        })
+        result = technical_result_to_schema(
+            {
+                "patterns": {"family": "XABCD", "forming": True},
+                "divergences": {},
+            }
+        )
         assert result.pattern_family == "XABCD"
         assert result.pattern_type == "forming"
 
@@ -252,11 +272,13 @@ class TestTechnicalResultToSchema:
         mock_position.stop = 95.0
         mock_position.targets = [110.0, 120.0]
 
-        result = technical_result_to_schema({
-            "patterns": {"family": "XABCD"},
-            "position": mock_position,
-            "divergences": {},
-        })
+        result = technical_result_to_schema(
+            {
+                "patterns": {"family": "XABCD"},
+                "position": mock_position,
+                "divergences": {},
+            }
+        )
         assert result.entry_price == 100.0
         assert result.stop_loss == 95.0
         assert result.target_price == 110.0
@@ -266,9 +288,14 @@ class TestTechnicalResultToSchema:
     @staticmethod
     def _signal_dict(**overrides):
         base = {
-            "status": "confirmed", "grade": "A", "direction": "long",
-            "pattern_name": "gartley", "family": "XABCD", "formed": True,
-            "entry_zone": [95.0, 105.0], "entry_reference": 100.0,
+            "status": "confirmed",
+            "grade": "A",
+            "direction": "long",
+            "pattern_name": "gartley",
+            "family": "XABCD",
+            "formed": True,
+            "entry_zone": [95.0, 105.0],
+            "entry_reference": 100.0,
             "stop_loss": 95.0,
             "targets": [{"label": "TP1", "price": 110.0}, {"label": "TP2", "price": 120.0}],
             "net_rr_tp2": 2.0,
@@ -298,8 +325,10 @@ class TestTechnicalResultToSchema:
         assert result.risk_reward_ratio is None
 
     def test_with_divergences(self):
-        result = technical_result_to_schema({
-            "patterns": {},
-            "divergences": {"macd": [{"type": "bullish"}]},
-        })
+        result = technical_result_to_schema(
+            {
+                "patterns": {},
+                "divergences": {"macd": [{"type": "bullish"}]},
+            }
+        )
         assert result.divergences == {"macd": [{"type": "bullish"}]}

@@ -1,7 +1,8 @@
 """analyze_harmonic tool for vibe agent."""
+
 import logging
 
-from app.domain.enums import Market, Interval, AnalysisType
+from app.domain.enums import AnalysisType, Interval, Market
 from app.domain.schemas import AnalyzeRequest
 from app.services.analysis import AnalysisOrchestrator
 from app.services.vibe.tools.base import Tool, ToolOutput, ToolRuntime
@@ -119,9 +120,7 @@ class AnalyzeHarmonicTool(Tool):
             "risk_reward_ratio": tech.risk_reward_ratio,
             "signal": signal_dict,
             "chart_url": result.chart.url if result.chart else None,
-            "interpretation_summary": (
-                result.interpretation.summary if result.interpretation else None
-            ),
+            "interpretation_summary": (result.interpretation.summary if result.interpretation else None),
         }
 
         summary = self._build_summary(data)

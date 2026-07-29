@@ -5,6 +5,7 @@ These cover the 5-second sliding-window cache on
 to ``_probe_bridge_health`` so tests can patch it without standing up a
 real HTTP server.
 """
+
 from __future__ import annotations
 
 from unittest import mock
@@ -25,13 +26,17 @@ def _reset_cache():
 def test_first_call_probes_bridge_and_caches_true(monkeypatch):
     monkeypatch.setattr(adapter, "HEALTH_CACHE_TTL", 5.0)
     monkeypatch.setattr(
-        adapter, "_probe_bridge_health", lambda: True,
+        adapter,
+        "_probe_bridge_health",
+        lambda: True,
     )
     assert adapter.is_bridge_healthy() is True
 
     # A second probe inside the TTL should not be called again.
     with mock.patch.object(
-        adapter, "_probe_bridge_health", side_effect=AssertionError("called"),
+        adapter,
+        "_probe_bridge_health",
+        side_effect=AssertionError("called"),
     ):
         assert adapter.is_bridge_healthy() is True
 
@@ -39,16 +44,22 @@ def test_first_call_probes_bridge_and_caches_true(monkeypatch):
 def test_probe_failure_caches_false_until_ttl_expires(monkeypatch):
     monkeypatch.setattr(adapter, "HEALTH_CACHE_TTL", 5.0)
     monkeypatch.setattr(
-        adapter, "_probe_bridge_health", lambda: False,
+        adapter,
+        "_probe_bridge_health",
+        lambda: False,
     )
     assert adapter.is_bridge_healthy() is False
 
     # Flip the underlying truth; the stale cache still wins.
     monkeypatch.setattr(
-        adapter, "_probe_bridge_health", lambda: True,
+        adapter,
+        "_probe_bridge_health",
+        lambda: True,
     )
     with mock.patch.object(
-        adapter, "_probe_bridge_health", side_effect=AssertionError("called"),
+        adapter,
+        "_probe_bridge_health",
+        side_effect=AssertionError("called"),
     ):
         assert adapter.is_bridge_healthy() is False
 
