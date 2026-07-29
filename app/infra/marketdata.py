@@ -7,6 +7,7 @@ network, library or rate-limit issues).
 
 import logging
 import os
+from datetime import timezone
 from typing import Optional
 
 import pandas as pd
@@ -50,7 +51,7 @@ class DirectBinanceCandleData(CandleData):
     def __init__(
         self,
         schema: Optional[list] = None,
-        time_zone: str = "timezone.utc",
+        time_zone=timezone.utc,
         df_index: str = CandleData.DTS,
     ):
         if schema is None:

@@ -2,11 +2,18 @@ import logging
 import os
 import uuid
 
-import yaml
-from flask import Flask, jsonify, render_template, request
+# Load .env before any app.* modules read env vars at import time.
+# (Some modules evaluate os.getenv(...) at module load — for example
+# ``app.infra.marketdata.BASE_URL`` — so the env must be populated first.)
+from dotenv import load_dotenv  # noqa: E402
 
-from app.api.auth import check_quota, is_local_dev_mode, require_auth
-from app.api.errors import AppError
+load_dotenv()
+
+import yaml  # noqa: E402
+from flask import Flask, jsonify, render_template, request  # noqa: E402
+
+from app.api.auth import check_quota, is_local_dev_mode, require_auth  # noqa: E402
+from app.api.errors import AppError  # noqa: E402
 
 # New SaaS API imports
 from app.api.middleware import log_request_middleware, register_error_handlers
