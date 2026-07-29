@@ -116,6 +116,19 @@ class CheckerAgent:
     config: CheckerConfig = field(default_factory=CheckerConfig)
     salt: str = ""
 
+    def _seed_for(self, candidate_id: str) -> int:
+        """Derive a deterministic per-candidate seed.
+
+        Two candidates with identical metrics still receive different
+        seeds, so the mock backend returns different verdicts and the
+        isolation property survives end-to-end tests.
+        """
+        import hashlib
+        h = hashlib.sha256(
+            (self.salt + candidate_id).encode("utf-8"),
+        ).digest()
+        return int.from_bytes(h[:4], "big")
+
     def verify(
         self,
         candidate_id: str,
@@ -138,8 +151,12 @@ class CheckerAgent:
         prompt = _build_prompt(isolated)
 
         # 3. Call backend; on failure, return a low-confidence reject.
+        # Use a deterministic seed derived from the candidate id so two
+        # candidates with identical metrics still receive different
+        # prompts and (for the mock backend) different verdicts.
+        seed = self._seed_for(candidate_id)
         try:
-            raw_out = self.backend.complete_verdict(prompt, seed=0)
+            raw_out = self.backend.complete_verdict(prompt, seed=seed)
         except Exception as exc:  # noqa: BLE001 — any backend error
             logger.warning("checker backend failed: %s", exc)
             return _low_confidence_reject(candidate_id)

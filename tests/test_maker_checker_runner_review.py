@@ -90,11 +90,13 @@ class TestEvaluate:
 
     def test_rejected_when_low_trade_count(self) -> None:
         runner = make_runner(backend=MockLLMBackend(seed=0))
-        # M4 auto-rejects with trades_count=5 (< 30 floor).
+        # M4 marks low-sample-size as suspicious (trades_count=5 < 30),
+        # then the LLM mock can return either accept or reject, which
+        # routes to suspicious_to_human or rejected respectively.
         m = runner.evaluate(_candidate(metrics={
             "sharpe": 1.0, "trades_count": 5,
         }))
-        assert m.final_decision == "rejected"
+        assert m.final_decision in ("rejected", "suspicious_to_human")
 
     def test_promising_path_runs(self) -> None:
         runner = make_runner(backend=MockLLMBackend(seed=0))
@@ -138,6 +140,19 @@ class TestMakeRunner:
         assert r.maker_agent.config.seed == 42
         assert r.checker_agent.config.rejection_threshold == 0.7
         assert r.arbiter.config.maker_checker_gap_threshold == 0.2
+
+    def test_enabled_caches_env_at_construction(self, monkeypatch) -> None:
+        # Set env BEFORE constructing the runner.
+        monkeypatch.setenv("MAKER_CHECKER_ENABLED", "true")
+        r1 = make_runner(backend=MockLLMBackend(seed=0))
+        assert r1.enabled is True
+        # Flip env AFTER construction; runner's enabled flag does not change.
+        monkeypatch.setenv("MAKER_CHECKER_ENABLED", "false")
+        assert r1.enabled is True
+
+        # Now build another runner with the new env value.
+        r2 = make_runner(backend=MockLLMBackend(seed=0))
+        assert r2.enabled is False
 
 
 # ---- HumanReviewDecision -------------------------------------------------

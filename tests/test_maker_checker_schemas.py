@@ -275,6 +275,36 @@ class TestMergeResult:
         )
         assert m.checker_confidence is None
 
+    def test_checker_flags_default_empty(self) -> None:
+        m = make_merge_result(
+            final_decision="accepted",
+            final_score=0.5,
+            m4_verdict="promising",
+            trigger_reasons=(),
+        )
+        assert m.checker_flags == ()
+
+    def test_checker_flags_propagated(self) -> None:
+        flags = [{"severity": "high", "issue": "x"}]
+        m = make_merge_result(
+            final_decision="rejected",
+            final_score=0.5,
+            m4_verdict="rejected",
+            trigger_reasons=(),
+            checker_flags=flags,
+        )
+        assert m.checker_flags == ({"severity": "high", "issue": "x"},)
+
+    def test_checker_flags_coerced_to_tuple(self) -> None:
+        m = make_merge_result(
+            final_decision="rejected",
+            final_score=0.5,
+            m4_verdict="rejected",
+            trigger_reasons=(),
+            checker_flags=[{"severity": "low", "issue": "y"}],
+        )
+        assert isinstance(m.checker_flags, tuple)
+
 
 # ---- CalibrationParams ----------------------------------------------------
 

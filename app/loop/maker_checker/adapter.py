@@ -40,7 +40,7 @@ def evaluate_candidate(
     can narrow on :class:`MergeResult`.
     """
     m4 = check_candidate(candidate, parent_metrics=parent_metrics)
-    if runner is None or not feature_enabled():
+    if runner is None or not runner.enabled:
         return m4
 
     merged = runner.evaluate(candidate, parent_metrics=parent_metrics)
@@ -55,7 +55,7 @@ def evaluate_candidate(
         decision=merged.final_decision,
         confidence=merged.final_score,
         reasons=list(merged.trigger_reasons),
-        flags=[],
+        flags=list(merged.checker_flags),
     )
 
 

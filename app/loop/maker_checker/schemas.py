@@ -186,6 +186,7 @@ class MergeResult:
     m4_verdict: str
     trigger_reasons: tuple[str, ...]
     checker_confidence: Optional[float] = None
+    checker_flags: tuple[dict, ...] = ()
 
     VALID_DECISIONS = ("accepted", "rejected", "suspicious_to_human")
 
@@ -322,6 +323,7 @@ def make_merge_result(
     m4_verdict: str,
     trigger_reasons: list[str] | tuple[str, ...],
     checker_confidence: float | None = None,
+    checker_flags: list[dict] | tuple[dict, ...] = (),
 ) -> MergeResult:
     """Build a :class:`MergeResult` from keyword args."""
     return MergeResult(
@@ -330,6 +332,7 @@ def make_merge_result(
         m4_verdict=m4_verdict,
         trigger_reasons=tuple(trigger_reasons),
         checker_confidence=checker_confidence,
+        checker_flags=tuple(checker_flags),
     )
 
 

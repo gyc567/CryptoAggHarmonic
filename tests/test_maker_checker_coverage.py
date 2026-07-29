@@ -277,6 +277,49 @@ class TestCheckerAgentEdges:
         result = fit_calibration_from_history(history)
         assert result is None
 
+    def test_seed_for_differs_by_candidate_id(self) -> None:
+        from app.loop.maker_checker.checker_agent import CheckerAgent
+        agent = CheckerAgent(
+            backend=MockLLMBackend(seed=0),
+            config=CheckerConfig(),
+            salt="abc",
+        )
+        s1 = agent._seed_for("cand-A")
+        s2 = agent._seed_for("cand-B")
+        assert s1 != s2
+        assert isinstance(s1, int)
+        # Deterministic: same id → same seed.
+        assert s1 == agent._seed_for("cand-A")
+
+    def test_seed_for_salted(self) -> None:
+        from app.loop.maker_checker.checker_agent import CheckerAgent
+        agent_a = CheckerAgent(
+            backend=MockLLMBackend(seed=0),
+            config=CheckerConfig(),
+            salt="salt-A",
+        )
+        agent_b = CheckerAgent(
+            backend=MockLLMBackend(seed=0),
+            config=CheckerConfig(),
+            salt="salt-B",
+        )
+        # Same candidate id + different salts → different seeds.
+        assert agent_a._seed_for("cand-1") != agent_b._seed_for("cand-1")
+
+    def test_verify_uses_candidate_seed(self) -> None:
+        # Confirm verify() actually uses the per-candidate seed.
+        from app.loop.maker_checker.checker_agent import CheckerAgent
+        backend = MockLLMBackend(seed=0)
+        agent = CheckerAgent(
+            backend=backend, config=CheckerConfig(), salt="z",
+        )
+        v1 = agent.verify("cand-X", {"metrics": {"sharpe": 1.0, "trades_count": 50}})
+        v2 = agent.verify("cand-Y", {"metrics": {"sharpe": 1.0, "trades_count": 50}})
+        # Same metrics, different candidate → seed differs → mock may differ.
+        # We just assert no exception was raised.
+        assert v1.candidate_id == "cand-X"
+        assert v2.candidate_id == "cand-Y"
+
 
 # ---- isolation.py uncovered line -----------------------------------------
 

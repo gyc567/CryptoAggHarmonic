@@ -90,6 +90,7 @@ class MakerCheckerRunner:
     checker_agent: CheckerAgent = field(default_factory=CheckerAgent)
     arbiter: Arbiter = field(default_factory=Arbiter)
     salt: str = field(default_factory=make_salt)
+    enabled: bool = field(default_factory=feature_enabled)
 
     def evaluate(
         self,

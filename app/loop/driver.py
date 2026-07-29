@@ -129,6 +129,14 @@ def main():
 
         mc_runner = make_runner()
         logger.info("Maker-Checker runner attached")
+        if not mc_runner.enabled:
+            # Audit §2.9: env disabled the runner that the CLI asked
+            # for. Surface the inconsistency loudly so the operator
+            # either unsets the env or drops the flag.
+            logger.warning(
+                "MAKER_CHECKER_ENABLED=false but --use-maker-checker was "
+                "passed; runner will short-circuit to M4-only verdicts",
+            )
 
     # Fan out.
     results: list[CandidateResult] = []

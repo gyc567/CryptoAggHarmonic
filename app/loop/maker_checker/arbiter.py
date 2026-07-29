@@ -139,6 +139,7 @@ class Arbiter:
                 "rejected", final_score, m4.decision,
                 triggers + ["m4_rejected_hard_constraint"],
                 checker_confidence=llm.confidence,
+                checker_flags=llm.flags,
             )
 
         llm_accept = llm.accept
@@ -152,16 +153,19 @@ class Arbiter:
                         "suspicious_to_human", final_score, m4.decision,
                         triggers + ["llm_accept", "maker_checker_gap"],
                         checker_confidence=llm.confidence,
+                checker_flags=llm.flags,
                     )
                 return _merge(
                     "accepted", final_score, m4.decision,
                     triggers + ["llm_accept"],
                     checker_confidence=llm.confidence,
+                checker_flags=llm.flags,
                 )
             return _merge(
                 "rejected", final_score, m4.decision,
                 triggers + ["llm_reject_overrides"],
                 checker_confidence=llm.confidence,
+                checker_flags=llm.flags,
             )
 
         # 4 + 5. M4 suspicious.
@@ -170,11 +174,13 @@ class Arbiter:
                 "suspicious_to_human", final_score, m4.decision,
                 triggers + ["m4_suspicious", "llm_accept"],
                 checker_confidence=llm.confidence,
+                checker_flags=llm.flags,
             )
         return _merge(
             "rejected", final_score, m4.decision,
             triggers + ["m4_suspicious", "llm_reject"],
             checker_confidence=llm.confidence,
+                checker_flags=llm.flags,
         )
 
 
@@ -185,6 +191,7 @@ def _merge(
     trigger_reasons: list[str],
     *,
     checker_confidence: float | None,
+    checker_flags: tuple[dict, ...] = (),
 ) -> MergeResult:
     """Build a :class:`MergeResult` with validation."""
     return make_merge_result(
@@ -193,6 +200,7 @@ def _merge(
         m4_verdict=m4_verdict,
         trigger_reasons=trigger_reasons,
         checker_confidence=checker_confidence,
+        checker_flags=checker_flags,
     )
 
 
