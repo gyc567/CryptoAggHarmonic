@@ -41,6 +41,7 @@ jobs:
           pytest -q \
             tests/test_signals_contract.py \
             tests/test_schemas_contract.py \
+            tests/test_schemas_aux_contract.py \
             tests/test_services_contract.py \
             tests/test_api_validation.py
 
