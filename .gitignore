@@ -180,6 +180,9 @@ cython_debug/
 .agents/
 .claude/
 
+# Reasonix local config (per-machine AI tool permissions)
+reasonix.toml
+
 # Vibe assistant runtime traces
 vibe_traces/
 tradingview-bridge/node_modules
