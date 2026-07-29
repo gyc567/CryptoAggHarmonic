@@ -31,13 +31,26 @@ export function ResultPanel({ result, loading, error, className }: ResultPanelPr
   }
 
   if (error) {
+    const hasDetails = Array.isArray(error.details) && error.details.length > 0;
     return (
       <section className={cn("glass-card p-5 sm:p-6", className)}>
         <div className="flex items-start gap-3 rounded-xl border border-danger/20 bg-danger/10 p-4 text-danger">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-          <div>
+          <div className="flex-1">
             <p className="font-semibold">分析失败</p>
             <p className="mt-1 text-sm opacity-90">{error.message}</p>
+            {hasDetails && (
+              <ul className="mt-3 space-y-1 text-sm" data-testid="field-error-list">
+                {error.details!.map((d, i) => (
+                  <li key={`${d.loc}:${i}`} className="flex items-start gap-2">
+                    <span className="rounded bg-danger/20 px-1.5 py-0.5 font-mono text-xs">
+                      {d.loc || "(全局)"}
+                    </span>
+                    <span className="opacity-90">{d.msg}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             {error.request_id && (
               <p className="mt-2 text-xs opacity-70">请求 ID: {error.request_id}</p>
             )}

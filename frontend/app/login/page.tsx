@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Loader2, Zap } from "lucide-react";
+import { Mail, Loader2, Zap, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { isSupabaseConfigured, getMissingSupabaseEnvMessage } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
   const router = useRouter();
   const { user, loading: authLoading, signInWithOtp } = useAuth();
+  const supabaseReady = useMemo(() => isSupabaseConfigured(), []);
+  const configError = useMemo(
+    () => (supabaseReady ? null : getMissingSupabaseEnvMessage()),
+    [supabaseReady]
+  );
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -60,6 +66,16 @@ export default function LoginPage() {
         </div>
 
         <div className="glass-elevated p-6 sm:p-8">
+          {configError && (
+            <div
+              role="alert"
+              data-testid="supabase-config-error"
+              className="mb-5 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{configError}</span>
+            </div>
+          )}
           {sent ? (
             <div className="text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
@@ -116,10 +132,10 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={sending || !email.trim()}
+                disabled={sending || !email.trim() || !supabaseReady}
                 className={cn(
                   "btn-primary w-full",
-                  (sending || !email.trim()) && "opacity-60 cursor-not-allowed"
+                  (sending || !email.trim() || !supabaseReady) && "opacity-60 cursor-not-allowed"
                 )}
               >
                 {sending ? (

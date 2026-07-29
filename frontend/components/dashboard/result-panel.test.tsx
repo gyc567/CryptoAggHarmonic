@@ -57,6 +57,48 @@ describe("ResultPanel", () => {
     expect(screen.queryByText(/请求 ID/)).not.toBeInTheDocument();
   });
 
+  it("renders 422 field-level details when present", () => {
+    render(
+      <ResultPanel
+        result={null}
+        loading={false}
+        error={{
+          code: "INVALID_PARAMS",
+          message: "请求参数不合法",
+          retryable: false,
+          status: 422,
+          details: [
+            { loc: "interval", msg: "Input should be '15m','1h','4h','1d','1w'", type: "literal_error" },
+            { loc: "candles", msg: "Input should be greater than or equal to 100", type: "greater_than_equal" },
+          ],
+        }}
+      />
+    );
+    const list = screen.getByTestId("field-error-list");
+    expect(list).toBeInTheDocument();
+    expect(screen.getByText("interval")).toBeInTheDocument();
+    expect(screen.getByText(/Input should be '15m'/)).toBeInTheDocument();
+    expect(screen.getByText("candles")).toBeInTheDocument();
+    expect(screen.getByText(/greater than or equal to 100/)).toBeInTheDocument();
+  });
+
+  it("falls back to global label when detail.loc is empty (cross-field)", () => {
+    render(
+      <ResultPanel
+        result={null}
+        loading={false}
+        error={{
+          code: "INVALID_PARAMS",
+          message: "请求参数不合法",
+          retryable: false,
+          status: 422,
+          details: [{ loc: "", msg: "candles must be >= 2*limit_to", type: "value_error" }],
+        }}
+      />
+    );
+    expect(screen.getByText("(全局)")).toBeInTheDocument();
+  });
+
   it("shows empty state with quick tags", () => {
     render(<ResultPanel result={null} loading={false} error={null} />);
     expect(screen.getByText("暂无分析结果")).toBeInTheDocument();

@@ -136,11 +136,32 @@ export interface AnalysisHistoryItem {
   chart?: ChartMeta;
 }
 
+/**
+ * One field-level error entry returned in `ErrorResponse.details` on a
+ * 422 (parseable but semantically rejected) response.
+ *
+ * Mirrors the backend's :class:`app.domain.schemas.FieldError`:
+ *   * `loc` — dot-joined path to the offending field ("interval",
+ *     "limit_to", or "" for cross-field / model-level validators).
+ *   * `msg` — human-readable explanation.
+ *   * `type` — pydantic error type ("literal_error", "greater_than_equal",
+ *     "value_error", ...).
+ */
+export interface FieldError {
+  loc: string;
+  msg: string;
+  type: string;
+}
+
 export interface ApiError {
   code: string;
   message: string;
   retryable: boolean;
   request_id?: string;
+  /** Mirrors the backend ErrorResponse.details field; populated on 422. */
+  details?: FieldError[];
+  /** HTTP status code, included so the UI can branch on 4xx vs 5xx. */
+  status?: number;
 }
 
 export interface ApiSuccess<T> {

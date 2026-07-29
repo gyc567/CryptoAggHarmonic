@@ -37,6 +37,6 @@ Object.defineProperty(window, "localStorage", {
   value: localStorageMock,
 });
 
-// Mock Supabase env vars
-process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost";
-process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
+// Mock Supabase env vars (must satisfy isSupabaseConfigured: real-looking URL + key length >= 20)
+process.env.NEXT_PUBLIC_SUPABASE_URL = "https://e2e-test.supabase.co";
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "e2e-test-anon-key-padded";

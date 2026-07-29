@@ -40,6 +40,11 @@ export default defineConfig({
       env: {
         NEXT_PUBLIC_API_BASE: "",
         BACKEND_API_BASE: "http://127.0.0.1:5050",
+        // Required by isSupabaseConfigured() in lib/supabase/client.ts so the
+        // login page doesn't render the "Supabase 未配置" banner. The OTP
+        // endpoint is mocked per-test via mockSupabaseOtp().
+        NEXT_PUBLIC_SUPABASE_URL: "https://e2e-test.supabase.co",
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: "e2e-test-anon-key-padded",
       },
       url: "http://127.0.0.1:3000/login",
       reuseExistingServer: !process.env.CI,
