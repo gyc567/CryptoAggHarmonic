@@ -23,7 +23,11 @@ from app.services.macro_bias import compute as macro_compute
 from app.services.signal_engine import (
     build_signal,
     compute_atr,
+    compute_rsi,
+    confluence_score,
     extract_candidates,
+    htf_trend,
+    score_candidate,
 )
 from tests.test_signal_engine import gartley_candidate  # noqa: E402
 
@@ -34,12 +38,14 @@ from tests.test_signal_engine import gartley_candidate  # noqa: E402
 
 
 def _make_df(rows: int = 250) -> pd.DataFrame:
-    """Minimal DataFrame with high/low/close columns for compute_atr."""
+    """Minimal DataFrame with high/low/close/volume/open columns."""
     base = 100.0
     return pd.DataFrame({
-        "high": [base + i * 0.1 for i in range(rows)],
+        "open": [base + i * 0.1 for i in range(rows)],
+        "high": [base + i * 0.1 + 0.5 for i in range(rows)],
         "low": [base + i * 0.1 - 1 for i in range(rows)],
         "close": [base + i * 0.1 for i in range(rows)],
+        "volume": [1000.0 for _ in range(rows)],
     })
 
 
@@ -215,3 +221,104 @@ class TestBuildSignalRequires:
 
     def test_empty_candidates_returns_none(self, df):
         assert build_signal(df, interval="15m", candidates=[]) is None
+
+
+# ---------------------------------------------------------------------------
+# signal_engine.compute_rsi
+# ---------------------------------------------------------------------------
+
+
+class TestComputeRsiRequires:
+    def test_zero_window_rejected(self):
+        s = pd.Series([100.0, 101.0, 102.0, 103.0, 104.0])
+        with pytest.raises(ViolationError):
+            compute_rsi(s, window=0)
+
+    def test_valid_series_returns_value(self):
+        s = pd.Series([100.0 + i for i in range(30)])
+        v = compute_rsi(s)
+        assert 0.0 <= v <= 100.0
+
+
+# ---------------------------------------------------------------------------
+# signal_engine.htf_trend
+# ---------------------------------------------------------------------------
+
+
+class TestHtfTrendRequires:
+    def test_empty_interval_rejected(self):
+        with pytest.raises(ViolationError):
+            htf_trend(pd.DataFrame(), interval="")
+
+
+# ---------------------------------------------------------------------------
+# signal_engine.confluence_score
+# ---------------------------------------------------------------------------
+
+
+class TestConfluenceScoreRequires:
+    @pytest.fixture
+    def df(self):
+        return _make_df(250)
+
+    def test_negative_atr_rejected(self, df):
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError):
+            confluence_score(df, cand, atr=-1.0, rsi=50.0, trend="unknown",
+                             divergences={})
+
+    def test_rsi_above_100_rejected(self, df):
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError):
+            confluence_score(df, cand, atr=1.0, rsi=150.0, trend="unknown",
+                             divergences={})
+
+    def test_rsi_below_zero_rejected(self, df):
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError):
+            confluence_score(df, cand, atr=1.0, rsi=-5.0, trend="unknown",
+                             divergences={})
+
+    def test_unknown_trend_rejected(self, df):
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError):
+            confluence_score(df, cand, atr=1.0, rsi=50.0, trend="sideways",
+                             divergences={})
+
+    def test_pa_scale_too_high_rejected(self, df):
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError):
+            confluence_score(df, cand, atr=1.0, rsi=50.0, trend="unknown",
+                             divergences={}, pa_scale=5.0)
+
+    def test_missing_close_column_rejected(self, df):
+        no_close = df.drop(columns=["close"])
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError):
+            confluence_score(no_close, cand, atr=1.0, rsi=50.0,
+                             trend="unknown", divergences={})
+
+    def test_valid_inputs_return_score(self, df):
+        cand = gartley_candidate()
+        score, factors = confluence_score(
+            df, cand, atr=1.0, rsi=50.0, trend="unknown", divergences={},
+        )
+        assert isinstance(score, (int, float))
+        assert isinstance(factors, dict)
+
+
+# ---------------------------------------------------------------------------
+# signal_engine.score_candidate
+# ---------------------------------------------------------------------------
+
+
+class TestScoreCandidateRequires:
+    def test_invalid_stop_level_rejected(self):
+        """If a caller passes a bad stop_level it should fail fast."""
+        from app.services.signal_engine import _prepare_score_context
+        df = _make_df(250)
+        ctx = _prepare_score_context(df, "15m", None)
+        assert ctx is not None
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError):
+            score_candidate(ctx, cand, stop_level="extreme")

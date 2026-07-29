@@ -178,6 +178,74 @@ class TestSchemaErrors:
 
 
 # ---------------------------------------------------------------------------
+# 422 envelope shape — structured `details` field
+# ---------------------------------------------------------------------------
+
+
+class TestSchemaDetailsField:
+    """The 422 response must expose per-field details so the frontend can
+    highlight the offending input without parsing the human-readable message.
+    """
+
+    def test_details_populated_on_validation_error(self):
+        _, err = parse_request(_Sample, {})
+        assert err is not None
+        body, _ = err
+        data = body.get_json()
+        assert "details" in data
+        assert isinstance(data["details"], list)
+        assert len(data["details"]) >= 1
+
+    def test_each_detail_has_loc_msg_type(self):
+        _, err = parse_request(_Sample, {"count": 999})
+        assert err is not None
+        body, _ = err
+        details = body.get_json()["details"]
+        for d in details:
+            assert "loc" in d
+            assert "msg" in d
+            assert "type" in d
+
+    def test_loc_uses_dotted_path(self):
+        """``count`` (top-level) → ``"count"``; nested → ``"a.b"``."""
+        _, err = parse_request(_Sample, {"count": 999})
+        assert err is not None
+        body, _ = err
+        details = body.get_json()["details"]
+        locs = [d["loc"] for d in details]
+        assert "count" in locs
+
+    def test_type_uses_pydantic_error_class(self):
+        """``type`` is a Pydantic error class name, not a free-form string."""
+        _, err = parse_request(_Sample, {"count": 999})
+        assert err is not None
+        body, _ = err
+        details = body.get_json()["details"]
+        types = {d["type"] for d in details}
+        # Either greater_than_equal (count=999 > 10) or missing (no count).
+        assert types & {"greater_than_equal", "missing"}
+
+    def test_multiple_field_errors_each_get_entry(self):
+        """Two bad fields → two detail entries."""
+        _, err = parse_request(_Sample, {"name": "", "count": 999})
+        assert err is not None
+        body, _ = err
+        details = body.get_json()["details"]
+        locs = {d["loc"] for d in details}
+        assert "name" in locs
+        assert "count" in locs
+
+    def test_400_invalid_json_has_no_details(self):
+        """Schema-level details only fire on 422, not on 400 (not JSON)."""
+        _, err = parse_request(_Sample, "garbage")
+        assert err is not None
+        body, status = err
+        assert status == 400
+        data = body.get_json()
+        assert data.get("details") is None
+
+
+# ---------------------------------------------------------------------------
 # 400 vs 422 distinction
 # ---------------------------------------------------------------------------
 

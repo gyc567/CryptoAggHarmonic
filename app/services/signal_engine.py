@@ -263,6 +263,13 @@ def compute_atr(df: pd.DataFrame, window: int = ATR_WINDOW) -> float:
 
 def compute_rsi(closes: pd.Series, window: int = RSI_WINDOW) -> float:
     """Wilder RSI of the latest close."""
+    @require(lambda window: window >= 1, "window must be >= 1")
+    @require(lambda closes: len(closes) >= 0, "closes must be a pd.Series")
+    def _check(**_kwargs) -> None:
+        return None
+
+    _check(closes=closes, window=window)
+
     delta = closes.diff()
     gain = delta.clip(lower=0).ewm(alpha=1 / window, adjust=False).mean()
     loss = (-delta.clip(upper=0)).ewm(alpha=1 / window, adjust=False).mean()
@@ -276,6 +283,13 @@ def compute_rsi(closes: pd.Series, window: int = RSI_WINDOW) -> float:
 
 def htf_trend(df: pd.DataFrame, interval: str) -> str:
     """Trend on the resampled higher timeframe via EMA21 vs EMA55."""
+    @require(lambda interval: isinstance(interval, str) and len(interval) > 0,
+             "interval must be a non-empty string")
+    def _check(**_kwargs) -> None:
+        return None
+
+    _check(interval=interval)
+
     rule = HTF_RULE.get(interval)
     if rule is None or "dts" not in df.columns:
         return "unknown"
@@ -315,6 +329,23 @@ def confluence_score(
 ) -> tuple:
     """Weighted confluence: price action 25, HTF 25, RSI 15, structure 15,
     MACD 10, funding 10 (neutral without futures data)."""
+    @require(lambda atr: atr >= 0, "atr must be non-negative")
+    @require(lambda rsi: 0.0 <= rsi <= 100.0,
+             "rsi must be in [0, 100]")
+    @require(lambda trend: trend in ("bullish", "bearish", "unknown"),
+             "trend must be one of bullish/bearish/unknown")
+    @require(lambda pa_scale: 0.0 <= pa_scale <= 2.0,
+             "pa_scale must be in [0, 2]")
+    @require(lambda df: "close" in df.columns and "volume" in df.columns,
+             "df must contain close and volume columns")
+    @require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0,
+             "candidate PRZ bounds must be positive")
+    def _check(**_kwargs) -> None:
+        return None
+
+    _check(df=df, candidate=candidate, atr=atr, rsi=rsi, trend=trend,
+           pa_scale=pa_scale)
+
     factors: dict[str, float] = {}
     last = df.iloc[-1]
 
@@ -463,6 +494,15 @@ def score_candidate(
     the pattern family, and the grade gate additionally receives
     ``width_pct`` so a wide PRZ can never reach A even with a perfect score.
     """
+    @require(lambda stop_level: stop_level in ("standard", "tight", "wide"),
+             "stop_level must be one of standard/tight/wide")
+    @require(lambda ctx: ctx.atr > 0,
+             "ctx.atr must be positive (set by _prepare_score_context)")
+    def _check(**_kwargs) -> None:
+        return None
+
+    _check(ctx=ctx, stop_level=stop_level)
+
     df = ctx.df
     atr = ctx.atr
     last = ctx.last

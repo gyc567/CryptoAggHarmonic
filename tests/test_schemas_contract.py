@@ -237,6 +237,38 @@ class TestResponseEnvelopes:
         )
         assert e.success is False
         assert e.error.code is ErrorCode.INVALID_PARAMS
+        assert e.details is None  # default: omitted when not a 422
+
+    def test_error_response_with_details(self):
+        """When the API populates details, they round-trip through the model."""
+        from app.domain.schemas import FieldError
+
+        e = ErrorResponse(
+            error={"code": ErrorCode.INVALID_PARAMS, "message": "bad"},
+            details=[
+                FieldError(loc="interval", msg="bad enum", type="literal_error"),
+                FieldError(loc="candles", msg="too few", type="greater_than_equal"),
+            ],
+        )
+        assert e.details is not None
+        assert len(e.details) == 2
+        assert e.details[0].loc == "interval"
+        assert e.details[1].type == "greater_than_equal"
+
+    def test_field_error_required_fields(self):
+        """msg and type are required (min_length=1); loc may be empty for cross-field errors."""
+        from app.domain.schemas import FieldError
+        from pydantic import ValidationError as VE
+
+        # Empty loc is OK — Pydantic model_validators emit loc=() (empty tuple).
+        fe = FieldError(loc="", msg="x", type="y")
+        assert fe.loc == ""
+
+        # But msg and type must be non-empty.
+        with pytest.raises(VE):
+            FieldError(loc="x", msg="", type="y")
+        with pytest.raises(VE):
+            FieldError(loc="x", msg="y", type="")
 
     def test_success_response_wraps_data(self):
         data = AnalysisData(

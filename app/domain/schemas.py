@@ -268,11 +268,39 @@ class ErrorDetail(_StrictModel):
     request_id: Annotated[Optional[str], Field(default=None, max_length=64)] = None
 
 
+class FieldError(_StrictModel):
+    """One per validation failure when the body is parsed but the schema rejects it.
+
+    Mirrors Pydantic's ``ValidationError.errors()`` shape so the frontend can
+    highlight the offending field without parsing the human-readable message.
+
+    ``loc`` is the dotted field path (e.g. ``"interval"`` or
+    ``"parameters.limit_to"``); ``msg`` is the human readable string; ``type``
+    is the Pydantic error class name (``missing``, ``greater_than_equal``,
+    ``literal_error``, ...).
+
+    Note: ``loc`` is intentionally NOT required to be non-empty. Pydantic
+    model-level validators (cross-field rules) emit ``loc=()`` (empty) which
+    we represent here as ``""``. Constraining it would 500 those errors
+    instead of surfacing them as 422.
+    """
+
+    loc: Annotated[str, Field(default="", max_length=256)]
+    msg: Annotated[str, Field(..., min_length=1, max_length=1024)]
+    type: Annotated[str, Field(..., min_length=1, max_length=128)]
+
+
 class ErrorResponse(_StrictModel):
-    """Standard error response wrapper."""
+    """Standard error response wrapper.
+
+    ``details`` is populated only for 422 schema-level validation errors so
+    the frontend can show field-level diagnostics. For other error codes
+    (404, 429, 500, ...) ``details`` is ``None``.
+    """
 
     success: Annotated[bool, Field(default=False)]
     error: ErrorDetail
+    details: Annotated[Optional[list[FieldError]], Field(default=None)] = None
 
 
 class HealthResponse(_StrictModel):

@@ -32,7 +32,7 @@ from flask import jsonify
 from pydantic import BaseModel, ValidationError
 
 from app.domain.enums import ErrorCode
-from app.domain.schemas import ErrorDetail, ErrorResponse
+from app.domain.schemas import ErrorDetail, ErrorResponse, FieldError
 
 
 class _InvalidJSONError(Exception):
@@ -134,24 +134,21 @@ def _validation_error_response(
 ) -> tuple[Any, int]:
     """422 — body is JSON but the schema rejects it.
 
-    The ``details`` list carries one entry per Pydantic error: ``loc`` is the
-    field path (e.g. ``["interval"]`` or ``["parameters", "limit_to"]``),
-    ``msg`` is the human readable string, ``type`` is the Pydantic error
-    class name (e.g. ``missing``, ``greater_than_equal``).
+    Populates the top-level ``details`` list with one ``FieldError`` per
+    Pydantic error. The ``message`` is a short summary; consumers that need
+    structured field paths should read ``details``.
     """
-    details = [
-        {
-            "loc": ".".join(str(part) for part in err["loc"]),
-            "msg": err["msg"],
-            "type": err["type"],
-        }
+    field_errors = [
+        FieldError(
+            loc=".".join(str(part) for part in err["loc"]),
+            msg=err["msg"],
+            type=err["type"],
+        )
         for err in exc.errors()
     ]
-    summary = "; ".join(
-        f"{d['loc']}: {d['msg']}" for d in details[:3]
-    )
-    if len(details) > 3:
-        summary += f" (and {len(details) - 3} more)"
+    summary = "; ".join(f"{e.loc}: {e.msg}" for e in field_errors[:3])
+    if len(field_errors) > 3:
+        summary += f" (and {len(field_errors) - 3} more)"
 
     return (
         jsonify(
@@ -163,7 +160,8 @@ def _validation_error_response(
                     retryable=False,
                     request_id="",
                 ),
-            ).model_dump()
+                details=field_errors,
+            ).model_dump(exclude_none=False)
         ),
         422,
     )

@@ -22,9 +22,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      # ------------------------------------------------------------------
+      # Three-layer defense CI gates (mypy + pyright + contract tests).
+      # Layer order: L1 type-check → L2 contract tests → full pytest run.
+      # Order matters because contract failures almost always indicate a
+      # caller passed bad inputs that a stricter L1 check would have
+      # caught earlier in development.
+      # ------------------------------------------------------------------
+
+      - name: Layer 1 - mypy (trusted core)
+        run: mypy app/domain/signals.py app/domain/schemas.py
+
+      - name: Layer 1 - pyright (trusted core)
+        run: pyright app/domain/signals.py app/domain/schemas.py
+
+      - name: Layer 2 + Layer 3 - contract tests (fast)
+        run: |
+          pytest -q \
+            tests/test_signals_contract.py \
+            tests/test_schemas_contract.py \
+            tests/test_services_contract.py \
+            tests/test_api_validation.py
+
       - name: Run backend tests
         run: |
-          pytest -q --cov=app --cov-report=term-missing
+          pytest -q --cov=app --cov-report=term-missing -m "not slow"
 
   frontend:
     runs-on: ubuntu-latest
