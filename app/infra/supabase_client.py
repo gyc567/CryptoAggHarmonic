@@ -4,7 +4,9 @@ Supports both REST API (via supabase-py) and direct PostgreSQL connections.
 Handles proxy environments and connection pooling.
 """
 import os
+import time
 import logging
+import threading
 import urllib.parse
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
@@ -20,6 +22,19 @@ logger = logging.getLogger(__name__)
 # Lazy-loaded clients keyed by role to avoid anon/service_role cross-over.
 _supabase_clients: Dict[str, Any] = {}
 _db_pool: Optional[Any] = None
+
+# ---------------------------------------------------------------------------
+# Idempotency lookup cache (in-process fast path)
+# ---------------------------------------------------------------------------
+# The /api/analyze route must dedupe retries by ``(user_id, idempotency_key)``
+# without hitting Supabase on every request. We keep a small bounded dict
+# keyed by that tuple, holding the most recent row (or None for miss) for a
+# short TTL. Any error falls back to a miss so the request still succeeds.
+
+_IDEM_CACHE_TTL_SECONDS = float(os.getenv("ANALYSIS_IDEM_CACHE_TTL", "60"))
+_IDEM_CACHE_MAX_ENTRIES = int(os.getenv("ANALYSIS_IDEM_CACHE_MAX", "1024"))
+_idem_cache: Dict[tuple, tuple] = {}
+_idem_lock = threading.Lock()
 
 
 def _get_proxy_settings() -> Dict[str, str]:
@@ -374,6 +389,65 @@ def update_analysis_record(analysis_id: str, updates: Dict[str, Any]) -> bool:
     except Exception as e:
         logger.exception("Analysis update failed")
         return False
+
+
+def get_analysis_by_idem_key(user_id: str, idem_key: str) -> Optional[Dict[str, Any]]:
+    """Return the most recent analysis row matching ``(user_id, idempotency_key)``.
+
+    The route ``/api/analyze`` deduplicates retries by ``idempotency_key``:
+    when the same user re-submits the same key within ``ANALYSIS_IDEM_CACHE_TTL``
+    seconds the stored row is returned without burning an extra quota unit.
+
+    The function first checks an in-process LRU so the hot path never
+    touches Supabase; on miss it falls through to a single indexed lookup
+    and caches the result (including negative results). Errors degrade
+    gracefully to ``None`` so callers can still complete a fresh analysis.
+
+    Returns:
+        The row dict on hit, ``None`` on miss / error.
+    """
+    if not (user_id and idem_key):
+        return None
+    cache_key = (user_id, idem_key)
+    now = time.time()
+
+    with _idem_lock:
+        cached = _idem_cache.get(cache_key)
+        if cached is not None:
+            ts, rec = cached
+            if now - ts < _IDEM_CACHE_TTL_SECONDS:
+                return rec
+            _idem_cache.pop(cache_key, None)
+
+    try:
+        client = get_supabase_client(use_service_role=True)
+        result = (
+            client.table("analyses")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("idempotency_key", idem_key)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rec = result.data[0] if result.data else None
+    except Exception as e:  # noqa: BLE001 - any error = treat as miss
+        logger.warning("get_analysis_by_idem_key lookup failed: %s", e)
+        rec = None
+
+    with _idem_lock:
+        # Bounded insertion: drop the oldest entry when over capacity.
+        if len(_idem_cache) >= _IDEM_CACHE_MAX_ENTRIES:
+            oldest_key = min(_idem_cache, key=lambda k: _idem_cache[k][0])
+            _idem_cache.pop(oldest_key, None)
+        _idem_cache[cache_key] = (now, rec)
+    return rec
+
+
+def reset_idem_cache() -> None:
+    """Clear the in-process idempotency lookup cache (test-only)."""
+    with _idem_lock:
+        _idem_cache.clear()
 
 
 def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[bool, int, Optional[str]]:

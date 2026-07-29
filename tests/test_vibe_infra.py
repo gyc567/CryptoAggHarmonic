@@ -58,6 +58,39 @@ class TestVibeEventStore:
         assert len(events) == 2
         assert events[-1]["event_id"] == e3
 
+    def test_seq_assigned_sequentially_and_polling(self):
+        """Each event gets a monotonic seq, and get_events(after_seq=...) skips O(1)."""
+        store = VibeEventStore(redis_url="")
+        run_id = "run-seq"
+
+        e1 = store.publish(run_id, {"type": "delta", "content": "a"})
+        store.publish(run_id, {"type": "delta", "content": "b"})
+        e3 = store.publish(run_id, {"type": "done"})
+
+        all_events = store.get_events(run_id, offset=0, limit=10)
+        seqs = [ev["seq"] for ev in all_events]
+        # seq 0, 1, 2 in insertion order.
+        assert seqs == [0, 1, 2]
+
+        # after_seq=0 returns events 1..2.
+        nxt = store.get_events(run_id, after_seq=0, limit=10)
+        assert [ev["event_id"] for ev in nxt] == [
+            ev["event_id"] for ev in all_events if ev["seq"] > 0
+        ]
+
+        # after_seq=last returns empty.
+        empty = store.get_events(run_id, after_seq=2, limit=10)
+        assert empty == []
+
+        # clear() also resets seq.
+        store.clear(run_id)
+        e_after_clear = store.publish(run_id, {"type": "delta", "content": "fresh"})
+        after_clear = store.get_events(run_id, offset=0, limit=10)
+        assert len(after_clear) == 1
+        assert after_clear[0]["seq"] == 0
+        assert after_clear[0]["event_id"] == e_after_clear
+
+
 
 class TestVibeTraceStore:
     def test_retention_cleanup(self, tmp_path):

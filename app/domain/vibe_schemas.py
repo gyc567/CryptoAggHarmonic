@@ -1,6 +1,7 @@
 """Pydantic schemas for the AI Trading Assistant (Vibe) module."""
-from typing import Any, Optional
-from pydantic import BaseModel, Field
+from typing import Annotated, Any, Literal, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class VibeSession(BaseModel):
@@ -85,26 +86,105 @@ class SendMessageResponse(BaseModel):
     status: str
 
 
-class VibeEvent(BaseModel):
-    """A single event in the vibe event stream."""
+# ---------------------------------------------------------------------------
+# Vibe event stream (typed + discriminated)
+# ---------------------------------------------------------------------------
+#
+# Every event written to ``VibeEventStore`` must validate against one of these
+# seven typed subclasses. The discriminator is the ``type`` field, so callers
+# like the frontend stay schema-agnostic: they look at ``event.type`` and only
+# need to know which fields each type carries. ``model_config.extra="forbid"``
+# stops typos from silently leaking into the timeline.
+
+
+class _VibeEventBase(BaseModel):
+    """Common fields shared by every vibe event."""
+
+    model_config = ConfigDict(extra="forbid")
 
     event_id: str
     run_id: str
-    type: str  # run_started, tool_call_start, tool_call_end, delta, card, done, error
-    content: Optional[str] = None
-    call_id: Optional[str] = None
-    tool: Optional[str] = None
-    input: Optional[dict] = None
-    output: Optional[dict] = None
-    card_type: Optional[str] = None
-    payload: Optional[dict] = None
-    status: Optional[str] = None
+    ts: str
+    # Per-run monotonic sequence (0-indexed). Polling clients use this to
+    # resume from their last seen position without scanning by event_id.
+    seq: Optional[int] = None
+
+
+class RunStartedEvent(_VibeEventBase):
+    """Emitted exactly once when a run starts."""
+
+    type: Literal["run_started"]
+    status: str = "running"
+
+
+class ToolCallStartEvent(_VibeEventBase):
+    """A tool invocation began. ``call_id`` correlates with the matching end event."""
+
+    type: Literal["tool_call_start"]
+    call_id: str
+    tool: str
+    input: dict
+
+
+class ToolCallEndEvent(_VibeEventBase):
+    """A tool invocation finished. ``status`` follows the tool contract."""
+
+    type: Literal["tool_call_end"]
+    call_id: str
+    tool: str
+    output: dict
+
+
+class DeltaEvent(_VibeEventBase):
+    """A streamed text fragment from the assistant."""
+
+    type: Literal["delta"]
+    content: str
+
+
+class CardEvent(_VibeEventBase):
+    """A structured card (e.g. trade signal, position check) ready to render."""
+
+    type: Literal["card"]
+    card_type: str
+    payload: dict
+
+
+class DoneEvent(_VibeEventBase):
+    """Terminal success event with token accounting + wall-clock duration.
+
+    Token/latency fields are optional so the schema accepts events written
+    by short-circuited / cancelled runs where accounting was never collected.
+    """
+
+    type: Literal["done"]
+    status: Optional[str] = "completed"
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     duration_ms: Optional[int] = None
-    code: Optional[str] = None
-    message: Optional[str] = None
-    retryable: Optional[bool] = None
+
+
+class ErrorEvent(_VibeEventBase):
+    """Terminal error event. ``retryable`` lets the UI distinguish transient failures."""
+
+    type: Literal["error"]
+    code: str
+    message: str
+    retryable: bool = False
+
+
+VibeEvent = Annotated[
+    Union[
+        RunStartedEvent,
+        ToolCallStartEvent,
+        ToolCallEndEvent,
+        DeltaEvent,
+        CardEvent,
+        DoneEvent,
+        ErrorEvent,
+    ],
+    Field(discriminator="type"),
+]
 
 
 class PollEventsResponse(BaseModel):
@@ -112,7 +192,7 @@ class PollEventsResponse(BaseModel):
 
     run_id: str
     status: str
-    events: list[VibeEvent]
+    events: list[dict]
     has_more: bool
 
 

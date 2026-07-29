@@ -7,12 +7,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, request
 from redis import Redis, ConnectionError as RedisConnectionError
 from rq import Queue
 
 from app.api.auth import require_auth, is_local_dev_mode
 from app.api.errors import AppError
+from app.api.responses import success as _success, error as _error
 from app.domain.enums import ErrorCode
 from app.domain.vibe_schemas import (
     CreateSessionRequest,
@@ -60,21 +61,6 @@ def _get_event_store() -> VibeEventStore:
 
 def _get_trace_store() -> VibeTraceStore:
     return VibeTraceStore()
-
-
-def _success(data: dict) -> Response:
-    return jsonify({"success": True, "data": data}), 200
-
-
-def _error(code: str, message: str, status: int = 400, retryable: bool = False) -> Response:
-    return jsonify(
-        {
-            "success": False,
-            "error": VibeErrorDetail(
-                code=code, message=message, retryable=retryable
-            ).model_dump(),
-        }
-    ), status
 
 
 def _now() -> str:
@@ -386,8 +372,9 @@ def _stream_events(run_id: str, user_id: str):
     def generate():
         import time
 
-        # Send initial run_started if not already present.
-        yield f"event: run_started\ndata: {json.dumps({'run_id': run_id, 'status': 'running'})}\n\n"
+        # The orchestrator publishes a typed run_started event to the event
+        # store immediately after starting; SSE just mirrors the store so we
+        # don't need a synthetic preamble here.
 
         max_empty_polls = int(os.getenv("VIBE_SSE_TIMEOUT_SECONDS", "60")) // 1
         empty_polls = 0

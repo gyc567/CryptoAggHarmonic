@@ -21,6 +21,8 @@ from app.infra.supabase_client import (
     get_chart_url,
     delete_chart,
     log_audit_event,
+    get_analysis_by_idem_key,
+    reset_idem_cache,
 )
 from app.api.errors import AppError
 
@@ -244,6 +246,46 @@ class TestAnalysisFunctions:
 
         result = update_analysis_record("analysis-123", {"status": "completed"})
         assert result is True
+
+    def test_get_analysis_by_idem_key_skips_on_empty_args(self):
+        """Empty user_id / idem_key short-circuits to None without hitting Supabase."""
+        reset_idem_cache()
+        assert get_analysis_by_idem_key("", "key") is None
+        assert get_analysis_by_idem_key("user", "") is None
+
+    @patch("app.infra.supabase_client.get_supabase_client")
+    def test_get_analysis_by_idem_key_miss_then_hit(self, mock_get_client):
+        """First call hits Supabase and caches the result; second call reuses cache."""
+        reset_idem_cache()
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.data = [{"id": "a1", "user_id": "user-1", "idempotency_key": "k1", "status": "completed", "technical_result": {"x": 1}}]
+        (
+            mock_client.table.return_value
+            .select.return_value
+            .eq.return_value
+            .eq.return_value
+            .order.return_value
+            .limit.return_value
+            .execute.return_value
+        ) = mock_result
+        mock_get_client.return_value = mock_client
+
+        first = get_analysis_by_idem_key("user-1", "k1")
+        assert first["id"] == "a1"
+
+        # Second call should not call Supabase again (cache hit).
+        second = get_analysis_by_idem_key("user-1", "k1")
+        assert second == first
+        # Same row dict reused, no extra .execute() invocations.
+        assert mock_client.table.call_count == 1
+
+    @patch("app.infra.supabase_client.get_supabase_client")
+    def test_get_analysis_by_idem_key_handles_errors(self, mock_get_client):
+        """Supabase errors degrade to None (treated as miss) and are cached as such."""
+        reset_idem_cache()
+        mock_get_client.side_effect = RuntimeError("supabase down")
+        assert get_analysis_by_idem_key("user-1", "k-err") is None
 
 
 class TestQuotaFunctions:

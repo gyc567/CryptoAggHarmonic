@@ -582,3 +582,106 @@ class TestBuildSignal:
         d = signal.to_dict()
         assert d["regime"] == signal.regime
         assert d["reasoning"] == signal.reasoning
+
+
+class TestPipelineHelpers:
+    """Direct unit tests for the three helpers that ``build_signal`` delegates to.
+
+    ``TestBuildSignal`` covers the public façade end-to-end; these tests
+    pin the per-stage contracts so a regression in one stage can't be
+    hidden by another stage absorbing the failure.
+    """
+
+    def test_rank_signals_prefers_higher_grade(self):
+        from dataclasses import replace
+
+        from app.services.signal_engine import rank_signals
+
+        a = _dummy_signal(grade="A", score=70, formed=True)
+        b = _dummy_signal(grade="B", score=95, formed=True)
+        assert rank_signals([b, a]).pattern_name == a.pattern_name
+
+    def test_rank_signals_breaks_ties_by_score_then_formed(self):
+        from dataclasses import replace
+
+        from app.services.signal_engine import rank_signals
+
+        a = _dummy_signal(grade="A", score=80, formed=True)
+        c = _dummy_signal(grade="A", score=80, formed=False)
+        assert rank_signals([c, a]).pattern_name == a.pattern_name
+
+    def test_rank_signals_empty_returns_none(self):
+        from app.services.signal_engine import rank_signals
+        assert rank_signals([]) is None
+
+    def test_apply_stability_passes_through_for_c_grade(self):
+        from app.services.signal_engine import apply_stability
+
+        sig = _dummy_signal(grade="C", score=60)
+        calls = {"n": 0}
+
+        def detector(_df):
+            calls["n"] += 1
+            return "none"
+
+        # C-grade should skip the detector entirely.
+        assert apply_stability(bullish_df(), sig, detector) is sig
+        assert calls["n"] == 0
+
+    def test_apply_stability_vetoes_when_only_in_full_window(self):
+        from app.services.signal_engine import apply_stability
+
+        sig = _dummy_signal(grade="A", score=80, name="gartley")
+
+        def detector(_df):
+            return None  # Pattern absent from every sub-window.
+
+        assert apply_stability(bullish_df(), sig, detector) is None
+
+    def test_score_candidate_rejects_when_trap_veto(self, monkeypatch):
+        from app.services import signal_engine as se
+        from app.services.signal_engine import score_candidate, _prepare_score_context
+
+        df = bullish_df()
+        ctx = _prepare_score_context(
+            df, "15m",
+            {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
+        )
+        assert ctx is not None
+
+        def fake_trap(*_a, **_kw):
+            return 0.0, True, ["test trap"]
+
+        monkeypatch.setattr(se, "quant_trap_risk", fake_trap)
+        assert score_candidate(ctx, gartley_candidate()) is None
+
+
+def _dummy_signal(grade="A", score=70, formed=True, name="gartley"):
+    """Build a minimal ``Signal`` for ranking/stability tests without a real df."""
+    from app.services.signal_engine import Signal
+
+    sig = Signal(
+        status="confirmed",
+        grade=grade,
+        direction="long",
+        pattern_name=name,
+        family="g",
+        formed=formed,
+        entry_zone=(100.0, 101.0),
+        entry_reference=100.5,
+        stop_loss=99.0,
+        stop_basis="atr",
+        stop_level="standard",
+        invalidation_point=99.0,
+        targets=[],
+        net_rr_tp1=2.0,
+        net_rr_tp2=3.0,
+        confluence_score=score,
+        confluence={},
+        htf_trend="bullish",
+        sharpe=0.0,
+        regime="normal",
+        position_multiplier=1.0,
+        trap_score=10.0,
+    )
+    return sig

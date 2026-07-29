@@ -25,6 +25,7 @@ from app.infra.supabase_client import (
     consume_ledger_quota,
     release_ledger_quota,
     log_audit_event,
+    get_analysis_by_idem_key,
 )
 from app.infra.health_check import run_health_checks
 from app.api.errors import AppError
@@ -182,6 +183,38 @@ def analyze(user):
             ).model_dump()
         ), 400
 
+    # Idempotency short-circuit: a retry with the same idempotency_key from
+    # the same user returns the previously stored result without consuming
+    # another quota unit. Only attempts with a completed status are replayed;
+    # in-flight or failed attempts fall through to a fresh analysis so the
+    # retry can complete.
+    if req.idempotency_key:
+        prior = get_analysis_by_idem_key(user_id, req.idempotency_key)
+        if isinstance(prior, dict) and prior.get("status") == "completed" and prior.get("technical_result"):
+            replayed_id = prior.get("id") or str(uuid.uuid4())
+            logging.info("Replaying analysis by idempotency_key=%s", req.idempotency_key)
+            return jsonify(
+                SuccessResponse(
+                    data={
+                        "analysis_id": replayed_id,
+                        "status": prior.get("status", "completed"),
+                        "market": prior.get("market"),
+                        "symbol": prior.get("symbol"),
+                        "interval": prior.get("interval"),
+                        "analysis_type": prior.get("analysis_type"),
+                        "technical_result": prior.get("technical_result"),
+                        "interpretation": prior.get("interpretation"),
+                        "chart": {"path": prior.get("chart_path")} if prior.get("chart_path") else {},
+                        "timing": {
+                            "duration_ms": prior.get("duration_ms"),
+                            "started_at": prior.get("started_at"),
+                            "completed_at": prior.get("completed_at"),
+                        },
+                        "idempotent_replay": True,
+                    }
+                ).model_dump()
+            ), 200
+
     # Reserve quota
     analysis_id = str(uuid.uuid4())
     if is_local_dev_mode():
@@ -204,17 +237,24 @@ def analyze(user):
     # Create analysis record using the same ID returned to the caller.
     # In local dev mode without Supabase configured this may fail; we log a
     # warning but do not block the analysis.
+    record_payload = {
+        "input_mode": "form",
+        "market": req.market.value,
+        "symbol": req.symbol,
+        "interval": req.interval.value,
+        "analysis_type": req.analysis_type.value,
+        "parameters": req.model_dump(),
+        "status": "created",
+    }
+    # Lift idempotency_key to a top-level column so the (user_id,
+    # idempotency_key) lookup in get_analysis_by_idem_key can use the
+    # dedicated index instead of scanning parameters JSONB.
+    if req.idempotency_key:
+        record_payload["idempotency_key"] = req.idempotency_key
+
     record_id = create_analysis_record(
         user_id,
-        {
-            "input_mode": "form",
-            "market": req.market.value,
-            "symbol": req.symbol,
-            "interval": req.interval.value,
-            "analysis_type": req.analysis_type.value,
-            "parameters": req.model_dump(),
-            "status": "created",
-        },
+        record_payload,
         analysis_id=analysis_id,
     )
     if is_local_dev_mode() and not record_id:

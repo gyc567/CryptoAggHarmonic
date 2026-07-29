@@ -1,8 +1,15 @@
 """Analysis result cache (Redis-backed, in-memory fallback).
 
 形态检测结果对同一组 K 线是完全确定的，因此以 (请求参数 + K线指纹) 为键缓存
-整个 AnalysisData JSON 与图表 PNG。命中时跳过形态检测、LLM 解读和 Kaleido
-渲染，响应从秒级降到毫秒级。
+整个 AnalysisData JSON 与图表的 URL/path。命中时跳过形态检测、LLM 解读和
+Kaleido 渲染，响应从秒级降到毫秒级。
+
+为什么缓存 URL/path 而不是 PNG 字节：一张 PNG 通常 0.5–2 MB，把它写进
+Redis 会被 Redis 的单 key 体积限制 (512 MB 但慢) 拖累、占满内存、并拖慢
+序列化。URL/path 才是真正可重用的视图：Supabase 上的对象路径
+``chart_path`` 可重新签名出新的 ``chart_url``；本地路径可直接经
+``/api/charts/<id>.png`` 路由返回。客户端只需根据需要调用签名刷新
+接口或直接命中本地路由。
 
 缓存键中的 K线指纹 = 最后一根 K 线时间戳 + K线数 + 最新收盘价；新 K 线收盘后
 指纹变化，缓存自然失效，TTL 仅作为兜底。
@@ -12,7 +19,6 @@
 - ANALYSIS_CACHE_TTL_SECONDS: 兜底 TTL（默认 21600 = 6 小时）
 - REDIS_URL: 未配置或连接失败时退化为进程内内存缓存
 """
-import base64
 import hashlib
 import json
 import logging
@@ -36,7 +42,13 @@ _KEY_PREFIX = "analysis:v1:"
 
 
 class AnalysisCache:
-    """Cache AnalysisData JSON + chart PNG keyed by request + candle fingerprint."""
+    """Cache AnalysisData JSON + chart view refs keyed by request + candle fingerprint.
+
+    The cache stores the AnalysisData JSON plus two short strings: the
+    remote ``chart_url`` (signed Supabase URL or local ``/api/charts/<id>.png``
+    URL) and the ``chart_path`` (object key for re-signing). It deliberately
+    does NOT cache the raw PNG bytes — see module docstring.
+    """
 
     def __init__(self, redis_url: Optional[str] = None, ttl_seconds: Optional[int] = None):
         self.enabled = os.getenv("ANALYSIS_CACHE_ENABLED", "true").lower() not in ("0", "false", "no")
@@ -111,7 +123,11 @@ class AnalysisCache:
         return _KEY_PREFIX + hashlib.sha1(raw.encode()).hexdigest()
 
     def get(self, key: str) -> Optional[dict]:
-        """Return {"analysis_json": str, "chart_png": bytes|None} or None."""
+        """Return ``{"analysis_json": str, "chart_url": str|None, "chart_path": str|None}`` or ``None``.
+
+        The chart view refs are intentionally tiny strings so a hit doesn't
+        require round-tripping multi-MB PNG bytes through Redis.
+        """
         if not self.enabled:
             return None
         try:
@@ -123,21 +139,35 @@ class AnalysisCache:
             return None
         try:
             entry = json.loads(payload)
-            chart_png = None
-            if entry.get("chart_png_b64"):
-                chart_png = base64.b64decode(entry["chart_png_b64"])
             logger.info("Analysis cache HIT: %s", key)
-            return {"analysis_json": entry["analysis_json"], "chart_png": chart_png}
+            return {
+                "analysis_json": entry["analysis_json"],
+                "chart_url": entry.get("chart_url"),
+                "chart_path": entry.get("chart_path"),
+            }
         except Exception as e:
             logger.warning("Analysis cache decode failed: %s", e)
             return None
 
-    def set(self, key: str, analysis_json: str, chart_png: Optional[bytes] = None) -> None:
+    def set(
+        self,
+        key: str,
+        analysis_json: str,
+        chart_url: Optional[str] = None,
+        chart_path: Optional[str] = None,
+    ) -> None:
+        """Cache the analysis JSON plus chart view refs.
+
+        Both refs are optional; cache entries from pre-chart failures
+        (``NO_RESULT`` without a chart) are valid and just carry
+        ``chart_url=None, chart_path=None``.
+        """
         if not self.enabled:
             return
         entry = {
             "analysis_json": analysis_json,
-            "chart_png_b64": base64.b64encode(chart_png).decode() if chart_png else None,
+            "chart_url": chart_url,
+            "chart_path": chart_path,
         }
         try:
             self._set_raw(key, json.dumps(entry))

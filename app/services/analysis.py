@@ -103,16 +103,25 @@ class AnalysisOrchestrator:
                         user_id: Optional[str], start_time: float) -> AnalysisData:
         """Rebuild an AnalysisData from a cache entry.
 
-        缓存命中后：分配新 analysis_id、用缓存的 PNG 重新分发图表（Supabase 签名 URL
-        会过期、本地文件可能不在当前容器，绝不复用旧 URL）、刷新 timing。
+        缓存命中后：分配新 analysis_id、用缓存的图表 URL/path 直接复用
+        （刷新 timing）。原来这里重新分发 PNG 是为了对抗签名 URL 过期，
+        现在缓存里只存 URL/path，重新分发反而需要再拿一次字节，得不偿失：
+        签名过期的场景由前端的 ``/api/charts/<id>.png`` 兜底。
         """
         data = AnalysisData.model_validate_json(cached["analysis_json"])
         data.analysis_id = analysis_id
-        if cached.get("chart_png"):
-            chart = ChartMeta(format="png", width=data.chart.width, height=data.chart.height)
-            data.chart = self._distribute_chart(chart, analysis_id, cached["chart_png"], user_id)
+        chart_url = cached.get("chart_url")
+        chart_path = cached.get("chart_path")
+        if chart_url or chart_path:
+            data.chart = ChartMeta(
+                format="png",
+                path=chart_path,
+                url=chart_url,
+                width=data.chart.width if data.chart else None,
+                height=data.chart.height if data.chart else None,
+            )
         elif data.chart and data.chart.url:
-            # 无 PNG 字节可重分发时，旧链接不可信，清空
+            # 旧链接不可信（签名过期），清空
             data.chart = ChartMeta(format="png")
         data.timing = TimingInfo(
             started_at=str(int(start_time)),
@@ -317,11 +326,9 @@ class AnalysisOrchestrator:
 
         # Step 6: Chart (single render, then distribute via Supabase or local)
         chart = ChartMeta()
-        chart_png: Optional[bytes] = None
         try:
             image_bytes, chart_meta = render_chart(detection_result, dpi=150)
             if validate_chart_size(image_bytes):
-                chart_png = image_bytes
                 chart = chart_meta
                 chart = self._distribute_chart(chart, analysis_id, image_bytes, user_id)
             else:
@@ -351,5 +358,10 @@ class AnalysisOrchestrator:
             chart=chart,
             timing=timing,
         )
-        self.cache.set(cache_key, data.model_dump_json(), chart_png=chart_png)
+        self.cache.set(
+            cache_key,
+            data.model_dump_json(),
+            chart_url=chart.url,
+            chart_path=chart.path,
+        )
         return data

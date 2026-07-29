@@ -8,12 +8,19 @@ Pipeline (v4):
     candidates -> freshness filter -> trap/adverse-momentum vetoes
                -> confluence score -> grade (regime-aware) -> best signal
                -> multi-window stability check (A/B only) -> Signal
+
+The pipeline is composed from three small helpers so each stage can be
+unit-tested in isolation:
+
+    * :func:`score_candidate`  - per-candidate scoring + veto logic
+    * :func:`rank_signals`    - pick the strongest signal from a list
+    * :func:`apply_stability` - A/B-only multi-window re-detection guard
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from typing import Any, Callable, Optional
+from typing import Any, Callable, List, NamedTuple, Optional
 
 import pandas as pd
 
@@ -242,6 +249,225 @@ def _clamp_sharpe(sharpe: float) -> float:
     return round(max(-10.0, min(10.0, sharpe)), 4)
 
 
+class _ScoreContext(NamedTuple):
+    """Pre-computed, per-call data needed by :func:`score_candidate`.
+
+    Bundling these keeps the per-candidate function pure: callers that need
+    to score the same candidate under different ``stop_level`` values
+    (e.g. A/B-grade stress tests) reuse the same context instead of
+    recomputing ATR / RSI / regime from scratch.
+    """
+
+    df: pd.DataFrame
+    atr: float
+    rsi: float
+    trend: str
+    sharpe: float
+    regime: str
+    a_min: float
+    pa_scale: float
+    position_mult: float
+    price: float
+    last: Any  # last row of df
+    divergences: dict
+
+
+def _prepare_score_context(
+    df: pd.DataFrame,
+    interval: str,
+    divergences: Optional[dict],
+) -> Optional[_ScoreContext]:
+    """Compute shared data-level metrics. Returns None if a hard gate fires."""
+    auth = volume_authenticity(df)
+    if auth < AUTHENTICITY_VETO:
+        logger.info(
+            "Volume authenticity %d < %d, vetoing all signals",
+            auth, AUTHENTICITY_VETO,
+        )
+        return None
+    pa_scale = 0.5 if auth < AUTHENTICITY_HALVE else 1.0
+
+    atr = compute_atr(df)
+    if atr <= 0:
+        return None
+    rsi = compute_rsi(df["close"])
+    trend = htf_trend(df, interval)
+    sharpe = per_bar_sharpe(df["close"])
+    regime_score, regime = quant_regime(df)
+    a_min = A_GRADE_MIN_HIGH_QUANT if regime == "high_quant" else A_GRADE_MIN
+    regime_mult = HIGH_QUANT_POSITION_MULT if regime == "high_quant" else 1.0
+    price = float(df["close"].iloc[-1])
+    position_mult = round(volatility_multiplier(atr, price) * regime_mult, 4)
+
+    return _ScoreContext(
+        df=df,
+        atr=atr,
+        rsi=rsi,
+        trend=trend,
+        sharpe=sharpe,
+        regime=regime,
+        a_min=a_min,
+        pa_scale=pa_scale,
+        position_mult=position_mult,
+        price=price,
+        last=df.iloc[-1],
+        divergences=divergences or {},
+    )
+
+
+def score_candidate(
+    ctx: _ScoreContext,
+    candidate: Candidate,
+    stop_level: str = "standard",
+) -> Optional[Signal]:
+    """Score a single surviving candidate.
+
+    Runs every per-candidate gate in order: trap veto, adverse-momentum
+    veto, PRZ state inference, stop/targets, direction invariant, RR,
+    confluence score, grade. Returns ``None`` for any rejection and the
+    fully populated :class:`Signal` for survivors so callers can run
+    their own ranking on the survivors.
+    """
+    df = ctx.df
+    atr = ctx.atr
+    last = ctx.last
+
+    stop, stop_basis, invalidation_point = compute_stop(candidate, atr, stop_level)
+
+    # Quant-trap veto (false breakouts, stop hunts, PRZ failure...).
+    trap_score, trap_veto, _reasons = quant_trap_risk(
+        df, candidate.prz_low, candidate.prz_high, candidate.bullish,
+    )
+    if trap_veto:
+        return None
+
+    # Falling-knife / blow-off veto.
+    if adverse_momentum_veto(candidate.direction, ctx.sharpe):
+        return None
+
+    swept = is_swept(
+        float(last["low"]), float(last["high"]), ctx.price,
+        candidate.prz_low, candidate.prz_high,
+    )
+    status = prz_state(ctx.price, candidate.prz_low, candidate.prz_high, swept)
+    if status in ("in_prz", "swept") and _is_reversal_candle(last, candidate.bullish):
+        status = "confirmed"
+
+    entry = ctx.price if status != "approaching" else (
+        candidate.prz_high if candidate.bullish else candidate.prz_low
+    )
+    targets = compute_targets(candidate, entry)
+
+    # Direction geometry invariant (defense in depth).
+    if not direction_invariant_ok(
+        candidate.direction, entry, stop,
+        [t.price for t in targets],
+    ):
+        return None
+
+    rr1 = net_rr(entry, stop, targets[0].price)
+    rr2 = net_rr(entry, stop, targets[1].price)
+
+    score, factors = confluence_score(
+        df, candidate, atr, ctx.rsi, ctx.trend,
+        ctx.divergences, ctx.pa_scale,
+    )
+    bullish_trend = ctx.trend == "bullish"
+    bearish_trend = ctx.trend == "bearish"
+    htf_aligned = (candidate.bullish and bullish_trend) or (
+        not candidate.bullish and bearish_trend
+    )
+    htf_counter = (candidate.bullish and bearish_trend) or (
+        not candidate.bullish and bullish_trend
+    )
+    g = grade(
+        score, rr1, rr2, htf_aligned, htf_counter, a_min=ctx.a_min,
+    )
+    if g is None:
+        return None
+
+    signal = Signal(
+        status=status,
+        grade=g,
+        direction=candidate.direction,
+        pattern_name=candidate.name,
+        family=candidate.family,
+        formed=candidate.formed,
+        entry_zone=(candidate.prz_low, candidate.prz_high),
+        entry_reference=round(entry, 8),
+        stop_loss=stop,
+        stop_basis=stop_basis,
+        stop_level=stop_level,
+        invalidation_point=invalidation_point,
+        targets=targets,
+        net_rr_tp1=rr1 if rr1 is not None else 0.0,
+        net_rr_tp2=rr2 if rr2 is not None else 0.0,
+        confluence_score=int(round(score)),
+        confluence=factors,
+        htf_trend=ctx.trend,
+        sharpe=_clamp_sharpe(ctx.sharpe),
+        regime=ctx.regime,
+        position_multiplier=ctx.position_mult,
+        trap_score=trap_score,
+    )
+    return replace(signal, reasoning=reasoning_from_signal(signal))
+
+
+def rank_signals(signals: List[Signal]) -> Optional[Signal]:
+    """Return the strongest signal by ``(grade, score, formed)``.
+
+    Ties on grade break by raw confluence score; final tie-break is the
+    ``formed`` flag (True > False) so we prefer finished patterns over
+    in-flight ones when everything else is equal.
+    """
+    best: Optional[Signal] = None
+    best_rank = (-1, -1.0, False)
+    for signal in signals:
+        g_rank = {"A": 3, "B": 2, "C": 1}.get(signal.grade, 0)
+        rank = (g_rank, float(signal.confluence_score), bool(signal.formed))
+        if rank > best_rank:
+            best, best_rank = signal, rank
+    return best
+
+
+def apply_stability(
+    df: pd.DataFrame,
+    best: Optional[Signal],
+    stability_detector: Optional[Callable[[pd.DataFrame], Optional[str]]],
+) -> Optional[Signal]:
+    """Re-detect the pattern on two shifted sub-windows; veto if it disappears.
+
+    This is the only stage that costs an extra pattern-detection pass;
+    we only run it for A/B-grade signals (the only grades worth the
+    latency). Detector failures are treated as unverifiable -> pass.
+    """
+    if (
+        best is None
+        or best.grade not in ("A", "B")
+        or stability_detector is None
+    ):
+        return best
+
+    try:
+        sub1 = stability_detector(df.iloc[:-_STABILITY_WINDOW])
+        sub2 = stability_detector(df.iloc[_STABILITY_WINDOW:])
+    except Exception:
+        # Detector failures degrade to "unknown sub-windows"; the
+        # downstream ``stability_verdict`` treats that as suspect so
+        # A/B-grade signals still get vetoed on a flaky re-detector.
+        logger.exception("Stability detector failed, treating as unverifiable")
+        sub1 = sub2 = None
+
+    s_score, suspect = stability_verdict(best.pattern_name, sub1, sub2)
+    if suspect:
+        logger.warning(
+            "Pattern %s only exists in the full window, vetoing",
+            best.pattern_name,
+        )
+        return None
+    return replace(best, stability_score=s_score)
+
+
 def build_signal(
     df: pd.DataFrame,
     interval: str,
@@ -252,6 +478,10 @@ def build_signal(
 ) -> Optional[Signal]:
     """Build the best executable signal from candidates, or None.
 
+    Public façade kept for backwards compatibility. Implementation now
+    delegates to :func:`score_candidate`, :func:`rank_signals` and
+    :func:`apply_stability` so each stage is individually testable.
+
     ``stability_detector``: optional callable re-running pattern detection on
     a dataframe slice and returning the best pattern name (or None). Used for
     the multi-window stability check on A/B-grade signals.
@@ -259,123 +489,27 @@ def build_signal(
     if df is None or len(df) < MIN_CANDLES or not candidates:
         return None
 
-    # --- Data-level gates -------------------------------------------------
-    auth = volume_authenticity(df)
-    if auth < AUTHENTICITY_VETO:
-        logger.info("Volume authenticity %d < %d, vetoing all signals", auth, AUTHENTICITY_VETO)
+    ctx = _prepare_score_context(df, interval, divergences)
+    if ctx is None:
         return None
-    pa_scale = 0.5 if auth < AUTHENTICITY_HALVE else 1.0
-
-    atr = compute_atr(df)
-    if atr <= 0:
-        return None
-    rsi = compute_rsi(df["close"])
-    trend = htf_trend(df, interval)
-    price = float(df["close"].iloc[-1])
-    last = df.iloc[-1]
-
-    sharpe = per_bar_sharpe(df["close"])
-    regime_score, regime = quant_regime(df)
-    a_min = A_GRADE_MIN_HIGH_QUANT if regime == "high_quant" else A_GRADE_MIN
-    regime_mult = HIGH_QUANT_POSITION_MULT if regime == "high_quant" else 1.0
-    position_mult = round(volatility_multiplier(atr, price) * regime_mult, 4)
 
     # --- Candidate freshness filter ---------------------------------------
     close_times = df["close_time"] if "close_time" in df.columns else None
-    valid, rejected = filter_candidates(candidates, price, atr, close_times)
+    valid, rejected = filter_candidates(
+        candidates, ctx.price, ctx.atr, close_times,
+    )
     if rejected:
-        logger.debug("Filtered %d stale/invalid candidates: %s",
-                     len(rejected), [r.reason for r in rejected])
+        logger.debug(
+            "Filtered %d stale/invalid candidates: %s",
+            len(rejected), [r.reason for r in rejected],
+        )
 
     # --- Score surviving candidates ----------------------------------------
-    best: Optional[Signal] = None
-    best_rank: tuple = ()
+    scored: list[Signal] = []
     for candidate in valid:
-        stop, stop_basis, invalidation_point = compute_stop(candidate, atr, stop_level)
+        signal = score_candidate(ctx, candidate, stop_level=stop_level)
+        if signal is not None:
+            scored.append(signal)
 
-        # Quant-trap veto (false breakouts, stop hunts, PRZ failure...).
-        trap_score, trap_veto, _reasons = quant_trap_risk(
-            df, candidate.prz_low, candidate.prz_high, candidate.bullish
-        )
-        if trap_veto:
-            continue
-
-        # Falling-knife / blow-off veto.
-        if adverse_momentum_veto(candidate.direction, sharpe):
-            continue
-
-        swept = is_swept(float(last["low"]), float(last["high"]), price,
-                         candidate.prz_low, candidate.prz_high)
-        status = prz_state(price, candidate.prz_low, candidate.prz_high, swept)
-        if status in ("in_prz", "swept") and _is_reversal_candle(last, candidate.bullish):
-            status = "confirmed"
-
-        entry = price if status != "approaching" else (
-            candidate.prz_high if candidate.bullish else candidate.prz_low
-        )
-        targets = compute_targets(candidate, entry)
-
-        # Direction geometry invariant (defense in depth).
-        if not direction_invariant_ok(candidate.direction, entry, stop,
-                                      [t.price for t in targets]):
-            continue
-
-        rr1 = net_rr(entry, stop, targets[0].price)
-        rr2 = net_rr(entry, stop, targets[1].price)
-
-        score, factors = confluence_score(df, candidate, atr, rsi, trend,
-                                          divergences or {}, pa_scale)
-        bullish_trend = trend == "bullish"
-        bearish_trend = trend == "bearish"
-        htf_aligned = (candidate.bullish and bullish_trend) or (not candidate.bullish and bearish_trend)
-        htf_counter = (candidate.bullish and bearish_trend) or (not candidate.bullish and bullish_trend)
-        g = grade(score, rr1, rr2, htf_aligned, htf_counter, a_min=a_min)
-        if g is None:
-            continue
-
-        signal = Signal(
-            status=status,
-            grade=g,
-            direction=candidate.direction,
-            pattern_name=candidate.name,
-            family=candidate.family,
-            formed=candidate.formed,
-            entry_zone=(candidate.prz_low, candidate.prz_high),
-            entry_reference=round(entry, 8),
-            stop_loss=stop,
-            stop_basis=stop_basis,
-            stop_level=stop_level,
-            invalidation_point=invalidation_point,
-            targets=targets,
-            net_rr_tp1=rr1 if rr1 is not None else 0.0,
-            net_rr_tp2=rr2 if rr2 is not None else 0.0,
-            confluence_score=int(round(score)),
-            confluence=factors,
-            htf_trend=trend,
-            sharpe=_clamp_sharpe(sharpe),
-            regime=regime,
-            position_multiplier=position_mult,
-            trap_score=trap_score,
-        )
-        signal = replace(signal, reasoning=reasoning_from_signal(signal))
-
-        rank = ({"A": 3, "B": 2, "C": 1}[g], score, candidate.formed)
-        if best is None or rank > best_rank:
-            best, best_rank = signal, rank
-
-    # --- Multi-window stability (A/B-grade only, saves the 2x re-detect) ---
-    if best is not None and best.grade in ("A", "B") and stability_detector is not None:
-        try:
-            sub1 = stability_detector(df.iloc[:-_STABILITY_WINDOW])
-            sub2 = stability_detector(df.iloc[_STABILITY_WINDOW:])
-        except Exception:
-            logger.exception("Stability detector failed, treating as unverifiable")
-            sub1 = sub2 = None
-        s_score, suspect = stability_verdict(best.pattern_name, sub1, sub2)
-        if suspect:
-            logger.warning("Pattern %s only exists in the full window, vetoing",
-                           best.pattern_name)
-            return None
-        best = replace(best, stability_score=s_score)
-
-    return best
+    best = rank_signals(scored)
+    return apply_stability(df, best, stability_detector)

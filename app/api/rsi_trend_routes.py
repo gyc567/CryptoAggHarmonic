@@ -6,9 +6,10 @@ extreme zone defines entry timing. See ``app.domain.rsi_trend``.
 import logging
 import uuid
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, request
 
 from app.api.auth import is_local_dev_mode, require_auth
+from app.api.responses import success as _success, error as _error
 from app.domain.rsi_trend_schemas import RsiTrendBacktestRequest, RsiTrendScanRequest
 from app.infra.supabase_client import (
     consume_ledger_quota,
@@ -21,19 +22,6 @@ from app.services import rsi_trend_service
 logger = logging.getLogger(__name__)
 
 rsi_trend_bp = Blueprint("rsi_trend", __name__, url_prefix="/api/rsi-trend")
-
-
-def _success(data: dict) -> Response:
-    return jsonify({"success": True, "data": data}), 200
-
-
-def _error(code: str, message: str, status: int = 400, retryable: bool = False) -> Response:
-    return jsonify(
-        {
-            "success": False,
-            "error": {"code": code, "message": message, "retryable": retryable},
-        }
-    ), status
 
 
 def _reserve_quota(user_id: str, ref_id: str):

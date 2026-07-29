@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from typing import Any, Optional
 
 import pandas as pd
@@ -24,6 +26,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_BRIDGE_URL = "http://127.0.0.1:5002"
 REQUEST_TIMEOUT = 8
 
+# Sliding-window cache for ``is_bridge_healthy``. The bridge health endpoint
+# is a synchronous WebSocket-state probe; calling it on every analyzer tick
+# would hammer the bridge. We treat the result as fresh for ``HEALTH_CACHE_TTL``
+# seconds and re-probe on miss. Tests reset this with ``reset_health_cache``.
+HEALTH_CACHE_TTL = float(os.getenv("TRADINGVIEW_HEALTH_CACHE_TTL", "5"))
+
 # Standard columns expected by downstream consumers (matches pyharmonics CandleData.COLUMNS).
 COLUMNS = ["open", "high", "low", "close", "volume", "close_time", "dts"]
 
@@ -36,8 +44,26 @@ def is_tradingview_enabled() -> bool:
     return os.getenv("USE_TRADINGVIEW", "true").lower() not in ("0", "false", "no")
 
 
-def is_bridge_healthy() -> bool:
-    """Return True if the TradingView bridge is up AND connected to TV."""
+# --- Health cache ------------------------------------------------------------
+#
+# ``_HEALTH_CACHE`` is guarded by ``_HEALTH_LOCK`` so concurrent analyzer
+# workers don't all probe the bridge when the cache expires simultaneously.
+_health_lock = threading.Lock()
+_health_cache: dict = {
+    "expires_at": 0.0,  # monotonic seconds; 0.0 -> forced miss on first call.
+    "value": False,
+}
+
+
+def reset_health_cache() -> None:
+    """Drop the cached health result. Used by tests; harmless in prod."""
+    with _health_lock:
+        _health_cache["expires_at"] = 0.0
+        _health_cache["value"] = False
+
+
+def _probe_bridge_health() -> bool:
+    """Synchronous health probe with no caching. Returns True iff bridge up + TV connected."""
     try:
         resp = requests.get(
             f"{get_bridge_url()}/health",
@@ -50,6 +76,25 @@ def is_bridge_healthy() -> bool:
     except Exception as e:
         logger.debug("TradingView bridge health check failed: %s", e)
         return False
+
+
+def is_bridge_healthy() -> bool:
+    """Return True if the TradingView bridge is up AND connected to TV.
+
+    Result is cached for :data:`HEALTH_CACHE_TTL` seconds. Probe failures
+    are cached too — only the next call after TTL expiry will retry.
+    """
+    with _health_lock:
+        now = time.monotonic()
+        if now < _health_cache["expires_at"]:
+            return _health_cache["value"]
+        # Probe inside the lock so concurrent callers don't all hit the
+        # bridge on the same miss; the slow-path cost is bounded by the
+        # 2-second HTTP timeout on ``_probe_bridge_health``.
+        value = _probe_bridge_health()
+        _health_cache["value"] = value
+        _health_cache["expires_at"] = now + HEALTH_CACHE_TTL
+        return value
 
 
 def _map_market(market: str) -> str:

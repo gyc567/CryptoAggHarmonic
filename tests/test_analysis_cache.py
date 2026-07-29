@@ -1,4 +1,6 @@
 """Tests for app.infra.analysis_cache and orchestrator cache integration."""
+import base64
+import json
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -85,17 +87,23 @@ class TestMakeKey:
 
 
 class TestSetGet:
-    def test_roundtrip_with_chart_png(self, cache):
-        cache.set("k1", '{"a": 1}', chart_png=b"png-bytes")
+    def test_roundtrip_with_chart_url(self, cache):
+        cache.set(
+            "k1", '{"a": 1}',
+            chart_url="/api/charts/abc.png",
+            chart_path="charts/abc.png",
+        )
         entry = cache.get("k1")
         assert entry["analysis_json"] == '{"a": 1}'
-        assert entry["chart_png"] == b"png-bytes"
+        assert entry["chart_url"] == "/api/charts/abc.png"
+        assert entry["chart_path"] == "charts/abc.png"
 
     def test_roundtrip_without_chart(self, cache):
         cache.set("k2", '{"a": 2}')
         entry = cache.get("k2")
         assert entry["analysis_json"] == '{"a": 2}'
-        assert entry["chart_png"] is None
+        assert entry["chart_url"] is None
+        assert entry["chart_path"] is None
 
     def test_miss_returns_none(self, cache):
         assert cache.get("nonexistent") is None
@@ -116,6 +124,22 @@ class TestSetGet:
         cache = AnalysisCache(redis_url="")
         cache.set("k4", '{"a": 4}')
         assert cache.get("k4") is None
+
+    def test_legacy_chart_png_b64_payload_is_decoded_as_none(self, cache):
+        """Cache entries written by the previous version stored chart_png_b64;
+        on read we must not crash and must surface both refs as None.
+        """
+        legacy_payload = json.dumps({
+            "analysis_json": '{"a": "legacy"}',
+            "chart_png_b64": base64.b64encode(b"old-bytes").decode(),
+        })
+        # Bypass set() so we can write the legacy shape.
+        cache._memory.set("legacy", legacy_payload)
+        entry = cache.get("legacy")
+        assert entry is not None
+        assert entry["analysis_json"] == '{"a": "legacy"}'
+        assert entry["chart_url"] is None
+        assert entry["chart_path"] is None
 
 
 class TestOrchestratorCacheIntegration:
@@ -178,7 +202,9 @@ class TestOrchestratorCacheIntegration:
         assert render_calls["n"] == 1  # 图表只渲染一次
         assert first.status == Status.COMPLETED
         assert second.status == Status.COMPLETED
-        # 命中时用缓存 PNG 重新分发，URL 指向新 analysis_id
-        assert second.chart.url == f"/api/charts/{second.analysis_id}.png"
+        # Cache stores chart URL/path (no re-distribute on hit), so the
+        # second response reuses the first run's URL/path verbatim.
+        assert second.chart.url == first.chart.url
+        assert second.chart.path == first.chart.path
         assert first.analysis_id != second.analysis_id
         assert second.technical_result.pattern_family == "XABCD"
