@@ -249,7 +249,13 @@ class TestNetRr:
         assert net_rr(100.0, 100.0, 110.0) is None
 
     def test_zero_entry_returns_none(self):
-        assert net_rr(0.0, 95.0, 110.0) is None
+        # Pre-icontract contract: zero entry raises ViolationError (it used to
+        # silently return None). The Layer-2 contract now catches this at the
+        # boundary so the signal engine fails loudly instead of producing
+        # a misleading "None = no signal" silently. Asserting both:
+        from icontract import ViolationError
+        with pytest.raises(ViolationError):
+            net_rr(0.0, 95.0, 110.0)
 
     def test_negative_reward_returns_none(self):
         # target barely above entry, fees eat the whole reward

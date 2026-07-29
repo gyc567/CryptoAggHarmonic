@@ -8,20 +8,54 @@ forming candidates ranked by grade + distance, rather than the legacy single
 
 Layering (read top-down):
 
-* ``Candidate``             — upstream pyharmonics raw pattern
+* ``Candidate``             — upstream pyharmonics raw pattern (frozen dataclass
+  in :mod:`app.domain.signals`; a third-party object graph we don't own)
 * ``CandidateMetrics``      — pure-filter output (stale / past_tp2 / dist_pct)
+* ``MacroOverlay``          — daily EMA200-derived size multiplier + advice
 * ``CandidateWithMetrics``  — composite view fed to the frontend
+
+Design choice — Pydantic ``BaseModel(frozen=True)`` over ``@dataclass(frozen=True)``:
+
+These models are *internal* (not API-boundary) but they ARE the dashboard's
+contract — the dashboard depends on the ``to_dict()`` shape, on default values
+rendering safe "active" rows, and on no constructor ever silently mutating
+fields. ``BaseModel(frozen=True)`` gives all that plus runtime type coercion
+that dataclasses lack, without the friction of API-boundary models
+(see ``app.domain.schemas._StrictModel`` for why we don't enable
+``strict=True`` / ``extra="forbid"`` everywhere).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.signals import Candidate
 
 
-@dataclass(frozen=True)
-class CandidateMetrics:
+class _DomainModel(BaseModel):
+    """Base for internal-domain (not API-boundary) Pydantic models.
+
+    ``frozen=True`` so callers can't mutate a ``CandidateMetrics`` after it's
+    been attached to a ``CandidateWithMetrics`` — the signal engine builds
+    many of these per request and accidental mutation would corrupt the
+    orchestrator's view of what got filtered.
+
+    We deliberately do NOT enable:
+
+    * ``strict=True`` — these are constructed from pandas / numeric contexts
+      where widening int → float should be silently accepted (e.g. ``bars_since_c``
+      as int from a numpy slice vs as int from a plain dict).
+    * ``extra="forbid"`` — orchestrator code attaches metadata fields for
+      diagnostics. We want the model to *accept* extra fields without raising,
+      so the dashboard contract is forward-compatible with new metrics.
+    * ``validate_assignment=True`` — frozen already blocks writes.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+
+class CandidateMetrics(_DomainModel):
     """Discipline-filter metrics for one candidate.
 
     All fields default to the safe "active" state so callers that haven't run
@@ -36,8 +70,7 @@ class CandidateMetrics:
     dist_pct: float = 0.0          # 现价到 PRZ 最近边缘距离(% 正数)
 
 
-@dataclass(frozen=True)
-class MacroOverlay:
+class MacroOverlay(_DomainModel):
     """Macro bias layer suggestion for one signal.
 
     Mirrors the structure produced by :func:`app.services.macro_bias.compute`
@@ -53,12 +86,20 @@ class MacroOverlay:
     ema200_slope_20d: float = 0.0
 
 
-@dataclass(frozen=True)
-class CandidateWithMetrics:
-    """Composite view: a :class:`Candidate` plus its discipline + macro tags."""
+class CandidateWithMetrics(_DomainModel):
+    """Composite view: a :class:`Candidate` plus its discipline + macro tags.
+
+    The ``candidate`` field is a frozen dataclass (not Pydantic), so we use
+    ``Field(arbitrary_types_allowed=True)`` to declare it without changing the
+    upstream :class:`Candidate` shape.
+    """
+
+    # ``Candidate`` is a frozen dataclass from app.domain.signals; Pydantic
+    # needs an explicit ``arbitrary_types_allowed`` flag to accept it.
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     candidate: Candidate
-    metrics: CandidateMetrics = field(default_factory=CandidateMetrics)
+    metrics: CandidateMetrics = Field(default_factory=CandidateMetrics)
     macro: Optional[MacroOverlay] = None
 
     @property
@@ -86,9 +127,9 @@ class CandidateWithMetrics:
             return 0.0
         return (c.prz_high - c.prz_low) / mid
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise for API/JSON. Mirrors the subset of fields the dashboard needs."""
-        out = {
+        out: dict[str, Any] = {
             "pattern_name": self.candidate.name,
             "family": self.candidate.family,
             "direction": "long" if self.candidate.bullish else "short",

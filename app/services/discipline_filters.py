@@ -16,6 +16,12 @@ Three live-trading checks the upstream ``HarmonicSearch`` does NOT enforce:
 
 All three checks are pure: no I/O, no logging. The orchestrator loops them
 per candidate.
+
+Three-layer defense (L1 type-check → L2 contracts → L3 schema) lives one level
+up; this module is **L2-bound** — every public function carries ``@require``
+preconditions so invalid inputs fail fast with a ``ViolationError`` instead
+of silently producing wrong ``DisciplineResult``s that downstream graders
+trust.
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import pandas as pd
+from icontract import require
 
 from app.config.tuning import TUNING
 from app.domain.forming_schemas import CandidateMetrics
@@ -127,6 +134,18 @@ def evaluate(
         switch; ``metrics`` always carries the per-check outcomes so the
         frontend can render diagnostics.
     """
+    @require(lambda df: len(df) > 0, "df must not be empty")
+    @require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0,
+             "candidate PRZ bounds must be positive")
+    @require(lambda current_price: current_price > 0,
+             "current_price must be positive")
+    @require(lambda max_ttl: max_ttl >= 0, "max_ttl must be non-negative")
+    def _check_inputs(**_kwargs) -> None:
+        return None
+
+    _check_inputs(df=df, candidate=candidate, current_price=current_price,
+                  max_ttl=max_ttl)
+
     n = len(df)
     if c_idx is None:
         # Prefer the new ``indices`` field (bar positions in the source df).

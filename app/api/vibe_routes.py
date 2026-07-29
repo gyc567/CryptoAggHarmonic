@@ -14,6 +14,7 @@ from rq import Queue
 from app.api.auth import require_auth, is_local_dev_mode
 from app.api.errors import AppError
 from app.api.responses import success as _success, error as _error
+from app.api.validation import parse_request
 from app.domain.enums import ErrorCode
 from app.domain.vibe_schemas import (
     CreateSessionRequest,
@@ -74,11 +75,9 @@ def _now() -> str:
 @require_auth
 def create_session(user):
     """Create a new vibe session."""
-    data = request.get_json(force=True, silent=True) or {}
-    try:
-        req = CreateSessionRequest(**data)
-    except Exception as e:
-        return _error("INVALID_PARAMS", f"参数错误: {e}")
+    req, err = parse_request(CreateSessionRequest, request.get_json(silent=True))
+    if err is not None:
+        return err
 
     store = _get_session_store()
     session = store.create_session(
@@ -132,11 +131,9 @@ def delete_session(user, session_id):
 def send_message(user, session_id):
     """Send a message and start an agent run."""
     user_id = user["id"]
-    data = request.get_json(force=True, silent=True) or {}
-    try:
-        req = SendMessageRequest(**data)
-    except Exception as e:
-        return _error("INVALID_PARAMS", f"参数错误: {e}")
+    req, err = parse_request(SendMessageRequest, request.get_json(silent=True))
+    if err is not None:
+        return err
 
     store = _get_session_store()
     session = store.get_session(session_id, user_id)
@@ -268,11 +265,9 @@ def invoke_tool(user, tool_name):
     orchestrator so that system prompts and safety constraints apply.
     """
     user_id = user["id"]
-    data = request.get_json(force=True, silent=True) or {}
-    try:
-        req = ToolRequest(**data)
-    except Exception as e:
-        return _error("INVALID_PARAMS", f"参数错误: {e}")
+    req, err = parse_request(ToolRequest, request.get_json(silent=True))
+    if err is not None:
+        return err
 
     if tool_name not in _DIRECT_TOOL_ALLOWLIST:
         return _error(

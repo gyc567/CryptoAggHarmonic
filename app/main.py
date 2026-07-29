@@ -8,6 +8,7 @@ import uuid
 # New SaaS API imports
 from app.api.middleware import register_error_handlers, log_request_middleware
 from app.api.auth import require_auth, check_quota, is_local_dev_mode
+from app.api.validation import parse_request
 from app.api.vibe_routes import vibe_bp
 from app.api.rsi_trend_routes import rsi_trend_bp
 from app.domain.enums import Market, Interval, AnalysisType, ErrorCode
@@ -155,33 +156,10 @@ def analyze(user):
     except Exception:
         data = None
 
-    if not data:
-        return jsonify(
-            ErrorResponse(
-                error={
-                    "code": "INVALID_PARAMS",
-                    "message": "Request body must be valid JSON.",
-                    "retryable": False,
-                    "request_id": "",
-                }
-            ).model_dump()
-        ), 400
-
     # Validate request
-    try:
-        req = AnalyzeRequest(**data)
-    except Exception as e:
-        logging.warning("Validation error: %s", e)
-        return jsonify(
-            ErrorResponse(
-                error={
-                    "code": "INVALID_PARAMS",
-                    "message": f"Invalid request parameters: {str(e)}",
-                    "retryable": False,
-                    "request_id": "",
-                }
-            ).model_dump()
-        ), 400
+    req, err = parse_request(AnalyzeRequest, data)
+    if err is not None:
+        return err
 
     # Idempotency short-circuit: a retry with the same idempotency_key from
     # the same user returns the previously stored result without consuming

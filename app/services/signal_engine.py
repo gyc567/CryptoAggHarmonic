@@ -23,6 +23,7 @@ from dataclasses import replace
 from typing import Any, Callable, List, NamedTuple, Optional, Sequence
 
 import pandas as pd
+from icontract import require
 
 from app.config.tuning import TUNING
 from app.domain.signals import (
@@ -114,6 +115,13 @@ def extract_candidates(
     Falls back to ``int(t)`` when not provided (used by unit tests that pass
     hand-built candidates with synthetic times).
     """
+    @require(lambda detection_result: isinstance(detection_result, dict),
+             "detection_result must be a dict")
+    def _check_inputs(**_kwargs) -> None:
+        return None
+
+    _check_inputs(detection_result=detection_result)
+
     assessment = detection_result.get("raw_assessment") or {}
     candidates: list[Candidate] = []
     for formed, key in ((True, "patterns"), (False, "forming")):
@@ -231,6 +239,15 @@ def compute_atr(df: pd.DataFrame, window: int = ATR_WINDOW) -> float:
     A long lookback desensitizes the value to a recent crash/candle burst,
     which would otherwise inflate every ATR-derived buffer.
     """
+    @require(lambda df: len(df) >= 2, "df must have at least 2 bars")
+    @require(lambda window: window >= 1, "window must be >= 1")
+    @require(lambda df: {"high", "low", "close"}.issubset(df.columns),
+             "df must contain high/low/close columns")
+    def _check_inputs(**_kwargs) -> None:
+        return None
+
+    _check_inputs(df=df, window=window)
+
     high, low, close = df["high"], df["low"], df["close"]
     prev_close = close.shift(1)
     tr = pd.concat(
@@ -632,6 +649,15 @@ def build_signal(
     a dataframe slice and returning the best pattern name (or None). Used for
     the multi-window stability check on A/B-grade signals.
     """
+    @require(lambda interval: isinstance(interval, str) and len(interval) > 0,
+             "interval must be a non-empty string")
+    @require(lambda stop_level: stop_level in ("standard", "tight", "wide"),
+             "stop_level must be one of standard/tight/wide")
+    def _check_inputs(**_kwargs) -> None:
+        return None
+
+    _check_inputs(interval=interval, stop_level=stop_level)
+
     if df is None or len(df) < MIN_CANDLES or not candidates:
         return None
 

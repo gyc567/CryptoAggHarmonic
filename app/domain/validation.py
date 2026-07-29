@@ -78,9 +78,15 @@ def rejection_reason(
         if width <= 0 or (atr > 0 and width > MAX_FORMING_PRZ_WIDTH_ATR * atr):
             return "degenerate_prz"
 
-    stop, _, _ = compute_stop(candidate, atr)
-    if (candidate.bullish and price < stop) or (not candidate.bullish and price > stop):
-        return "violated"
+    # Stop-based "violated" check only makes sense with a positive ATR (the
+    # buffer is a multiple of ATR). With atr=0 the buffer collapses and the
+    # check becomes noise — skip it, matching the behaviour the rest of the
+    # function already had for the width gate above. compute_stop's contract
+    # forbids atr<=0 so we have to gate here.
+    if atr > 0:
+        stop, _, _ = compute_stop(candidate, atr)
+        if (candidate.bullish and price < stop) or (not candidate.bullish and price > stop):
+            return "violated"
 
     # "Completed": price already travelled beyond TP2 measured from the PRZ,
     # i.e. the trade played out without us. Anchored at the PRZ, not at price.

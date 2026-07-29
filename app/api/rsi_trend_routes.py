@@ -10,6 +10,7 @@ from flask import Blueprint, request
 
 from app.api.auth import is_local_dev_mode, require_auth
 from app.api.responses import success as _success, error as _error
+from app.api.validation import parse_request
 from app.domain.rsi_trend_schemas import RsiTrendBacktestRequest, RsiTrendScanRequest
 from app.infra.supabase_client import (
     consume_ledger_quota,
@@ -38,10 +39,9 @@ def _reserve_quota(user_id: str, ref_id: str):
 @require_auth
 def scan(user):
     """Scan the latest market state and recent trend-RSI signals."""
-    try:
-        req = RsiTrendScanRequest(**request.args.to_dict())
-    except Exception as e:
-        return _error("INVALID_PARAMS", f"参数错误: {e}")
+    req, err = parse_request(RsiTrendScanRequest, request.args.to_dict())
+    if err is not None:
+        return err
 
     ref_id = str(uuid.uuid4())
     ledger_id = _reserve_quota(user["id"], ref_id)
@@ -65,11 +65,9 @@ def scan(user):
 @require_auth
 def backtest(user):
     """Run a full trend-RSI strategy backtest over a historical window."""
-    payload = request.get_json(force=True, silent=True) or {}
-    try:
-        req = RsiTrendBacktestRequest(**payload)
-    except Exception as e:
-        return _error("INVALID_PARAMS", f"参数错误: {e}")
+    req, err = parse_request(RsiTrendBacktestRequest, request.get_json(silent=True))
+    if err is not None:
+        return err
 
     ref_id = str(uuid.uuid4())
     ledger_id = _reserve_quota(user["id"], ref_id)

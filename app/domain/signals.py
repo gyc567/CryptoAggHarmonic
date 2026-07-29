@@ -10,11 +10,24 @@ Design rules encoded here (see docs/plans/harmonic-signal-optimization-plan.md):
 - Take profits are Fibonacci retraces/extensions of the A-D leg: 38.2% / 61.8%
   (retracement) and 127.2% (extension).
 - Risk/reward is computed net of fees and slippage.
+
+Three-layer defense notes:
+- Layer 3 (Pydantic) — request/response shape lives in :mod:`app.domain.schemas`.
+- Layer 2 (this module) — business invariants are enforced via ``icontract``
+  decorators on the public pure functions. The contracts assert the
+  preconditions the rest of the signal engine relies on (positive ATR,
+  finite prices, score range) and the postconditions the caller can trust
+  (finite stop, monotonic R/R). They raise ``icontract.ViolationError`` on
+  failure — caught and unit-tested in ``tests/test_signals_contract.py``.
+- Layer 1 (mypy/pyright) — every public function has full type annotations;
+  CI runs both checkers on this module.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
+
+from icontract import ensure, require
 
 from app.config.tuning import TUNING
 
@@ -203,8 +216,20 @@ def is_swept(low: float, high: float, close: float, prz_low: float, prz_high: fl
 # --- Stop loss ----------------------------------------------------------------
 
 
+@require(lambda candidate, atr, level="standard": atr > 0,
+         "ATR must be positive; compute_stop is undefined for zero volatility")
+@require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0,
+         "PRZ bounds must be positive; degenerate candidates are filtered upstream")
+@require(lambda candidate: all(p > 0 for p in candidate.points),
+         "Pattern pivot prices must all be positive")
+@ensure(lambda result: result[0] > 0,
+        "Returned stop price must be positive")
+@ensure(lambda result: result[2] > 0,
+        "Returned invalidation point must be positive")
+@ensure(lambda result: len(result[1]) > 0,
+        "stop_basis must be a non-empty human-readable string")
 def compute_stop(candidate: Candidate, atr: float,
-                 level: str = "standard") -> tuple[float, str, str]:
+                 level: str = "standard") -> tuple[float, str, float]:
     """Stop at the structural invalidation point plus an ATR buffer.
 
     Args:
@@ -281,6 +306,19 @@ def compute_targets(candidate: Candidate, entry: float) -> tuple:
 # --- Net risk/reward ----------------------------------------------------------
 
 
+@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: entry > 0,
+         "Entry price must be positive for risk/reward math")
+@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: stop > 0,
+         "Stop price must be positive")
+@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: target > 0,
+         "Target price must be positive")
+@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: fee_rate >= 0,
+         "fee_rate must be non-negative")
+@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: slippage_rate >= 0,
+         "slippage_rate must be non-negative")
+@ensure(lambda entry, stop, target, result, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE:
+        result is None or result > 0,
+        "net_rr returns None for degenerate geometry, otherwise a positive ratio")
 def net_rr(entry: float, stop: float, target: float, fee_rate: float = FEE_RATE,
            slippage_rate: float = SLIPPAGE_RATE) -> Optional[float]:
     """Risk/reward of one target, net of round-trip fees and slippage.
@@ -302,6 +340,17 @@ def net_rr(entry: float, stop: float, target: float, fee_rate: float = FEE_RATE,
 # --- Grading ------------------------------------------------------------------
 
 
+@require(lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None:
+         0 <= score <= 100,
+         "score must be a 0-100 confluence value")
+@require(lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None:
+         0 < a_min <= 100,
+         "a_min must be in (0, 100]")
+@require(lambda score, rr_tp1, rr_tp2, htf_aligned, htf_counter, a_min=75, width_pct=None:
+         not (htf_aligned and htf_counter),
+         "Aligned and counter cannot both be True")
+@ensure(lambda result: result is None or result in ("A", "B", "C(参考)"),
+        "grade() returns None or one of A / B / C(参考)")
 def grade(score: int, rr_tp1: Optional[float], rr_tp2: Optional[float],
           htf_aligned: bool, htf_counter: bool, a_min: int = 75,
           width_pct: Optional[float] = None) -> Optional[str]:

@@ -76,12 +76,14 @@ class TestScan:
 
     def test_scan_missing_symbol(self, client):
         resp = client.get("/api/rsi-trend/scan")
-        assert resp.status_code == 400
+        # Schema-level rejection (missing required field) → 422.
+        assert resp.status_code == 422
         assert resp.get_json()["error"]["code"] == "INVALID_PARAMS"
 
     def test_scan_yahoo_rejects_4h(self, client):
         resp = client.get("/api/rsi-trend/scan?market=yahoo&symbol=AAPL&interval=4h")
-        assert resp.status_code == 400
+        # Cross-field validator on RsiTrendScanRequest (yahoo rejects 4h) → 422.
+        assert resp.status_code == 422
         assert "1d" in resp.get_json()["error"]["message"]
 
     def test_scan_insufficient_bars(self, client):
@@ -138,14 +140,16 @@ class TestBacktest:
 
     def test_backtest_invalid_params(self, client):
         resp = client.post("/api/rsi-trend/backtest", json={"symbol": ""})
-        assert resp.status_code == 400
+        # Schema-level rejection (empty symbol after constraint check) → 422.
+        assert resp.status_code == 422
 
     def test_backtest_lookback_out_of_range(self, client):
         resp = client.post(
             "/api/rsi-trend/backtest",
             json={"symbol": "BTCUSDT", "lookback_days": 1000},
         )
-        assert resp.status_code == 400
+        # Schema-level rejection (lookback_days exceeds le=365) → 422.
+        assert resp.status_code == 422
 
     def test_backtest_data_unavailable(self, client):
         with patch(

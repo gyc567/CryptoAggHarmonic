@@ -11,12 +11,17 @@ with two expert amendments from the v2 audit:
    lowest single-trade expectation of all combinations).
 
 Pure pandas, no I/O. Caller is responsible for fetching the daily close series.
+
+Three-layer defense: this module is **L2-bound** — :func:`compute` has a
+``@require`` on ``signal_dir ∈ {-1, 0, 1}`` so callers can't silently pass a
+bogus direction and get a fake ``MacroOverlay`` back.
 """
 from __future__ import annotations
 
 from typing import Optional
 
 import pandas as pd
+from icontract import require
 
 from app.config.tuning import TUNING
 from app.domain.forming_schemas import MacroOverlay
@@ -56,6 +61,13 @@ def compute(
         A :class:`MacroOverlay` instance. Never raises: a missing/short
         series returns the conservative 0.8 multiplier.
     """
+    @require(lambda signal_dir: signal_dir in (-1, 0, 1),
+             "signal_dir must be -1, 0, or +1")
+    def _check(**_kwargs) -> None:
+        return None
+
+    _check(signal_dir=signal_dir)
+
     if daily_close is None or len(daily_close) < _MIN_DAILY_BARS:
         return MacroOverlay(
             size_mult=_MULT_DATA_SHORT,
