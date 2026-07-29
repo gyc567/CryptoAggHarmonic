@@ -115,6 +115,11 @@ class AnalysisData(BaseModel):
     chart: ChartMeta = Field(default_factory=ChartMeta)
     timing: TimingInfo = Field(default_factory=TimingInfo)
     binance_ws_url: Optional[str] = None  # 客户端直连 Binance WS（仅 FUTURES）
+    # v2: ranked list of forming-pattern candidates with discipline + macro tags.
+    # Populated when analysis_type == "forming"; empty otherwise. The top entry
+    # is mirrored into ``technical_result.signal`` for backwards compatibility
+    # with single-best consumers.
+    forming_candidates: list = Field(default_factory=list)
 
 
 class SuccessResponse(BaseModel):

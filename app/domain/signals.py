@@ -122,6 +122,14 @@ class Signal:
     position_multiplier: Optional[float] = None
     stability_score: Optional[int] = None
     trap_score: Optional[int] = None
+    # --- v2 additions (Q7 保留 grade=C 为参考区; Q3/Q4/Q5 联动字段) ---
+    tradable: bool = True           # False => grade="C", 仅展示不入场
+    macro_advice: Optional[str] = None  # 宏观层建议文案(顺势/逆势/极端位)
+    bars_since_c: Optional[int] = None  # 形成中形态:C 点到当前 bar 数
+    stale: bool = False             # True => bars_since_c > TTL, 降级不剔除
+    breached_stop: bool = False     # True => C 点后路径触达 PRZ(形态已走完)
+    past_tp2: bool = False          # True => 现价已穿越 TP2(行情结束)
+    width_pct: Optional[float] = None  # PRZ 宽度 / 价格, 用于 grade() 阈值
 
     def to_dict(self) -> dict:
         return {
@@ -158,6 +166,13 @@ class Signal:
             "position_multiplier": self.position_multiplier,
             "stability_score": self.stability_score,
             "trap_score": self.trap_score,
+            "tradable": self.tradable,
+            "macro_advice": self.macro_advice,
+            "bars_since_c": self.bars_since_c,
+            "stale": self.stale,
+            "breached_stop": self.breached_stop,
+            "past_tp2": self.past_tp2,
+            "width_pct": self.width_pct,
         }
 
 
@@ -286,25 +301,36 @@ def net_rr(entry: float, stop: float, target: float, fee_rate: float = FEE_RATE,
 
 
 def grade(score: int, rr_tp1: Optional[float], rr_tp2: Optional[float],
-          htf_aligned: bool, htf_counter: bool, a_min: int = 75) -> Optional[str]:
+          htf_aligned: bool, htf_counter: bool, a_min: int = 75,
+          width_pct: Optional[float] = None) -> Optional[str]:
     """Heuristic A/B/C grade (to be replaced by calibrated quantiles in P3).
 
     Hard gates: TP1 net R >= 1.0 and TP2 net R >= 1.5, otherwise the signal is
     observation-only (C). Counter-trend signals are capped at C. ``a_min`` is
-    the A-grade score threshold (raised in high-quant regimes).
+    the A-grade score threshold (raised in high-quant regimes). ``width_pct``
+    is the PRZ width as a fraction of price (Q6 整合); wide PRZ automatically
+    degrades to grade C even when the score would otherwise rank higher, so a
+    95-score Crab in a 6%-wide PRZ doesn't masquerade as an A.
+
+    Returns:
+        "A" / "B" / "C(参考)" — never None for a passing hard-gate score, so
+        callers can still emit the signal as a "reference zone" candidate.
     """
     if rr_tp1 is None or rr_tp2 is None:
         return None
+    # Width gate (Q6). 4% is the empirical backtest cut-off (see docs).
+    if width_pct is not None and width_pct >= 0.04:
+        return "C(参考)" if score >= 45 else None
     if htf_counter:
-        return "C" if score >= 45 else None
+        return "C(参考)" if score >= 45 else None
     if rr_tp1 < 1.0 or rr_tp2 < 1.5:
-        return "C" if score >= 45 else None
+        return "C(参考)" if score >= 45 else None
     if score >= a_min and rr_tp2 >= 2.0 and htf_aligned:
         return "A"
     if score >= 60:
         return "B"
     if score >= 45:
-        return "C"
+        return "C(参考)"
     return None
 
 

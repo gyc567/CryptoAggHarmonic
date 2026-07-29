@@ -78,6 +78,36 @@ HIGH_QUANT_POSITION_MULT = 0.6
 _STABILITY_WINDOW = 5
 
 
+# Q4: Pattern-reliability weighting. Empirically observed win rates from the
+# BTC/ETH/BNB 4H backtest documented in docs/. Gartley wins most often so it
+# gets a positive bump; Crab/DeepCrab lose so they get a penalty. The lookup
+# is keyed on the lowercase pattern family name (the prefix before any
+# pyharmonics numeric suffix). Unknown patterns get 0.
+PATTERN_BASE_SCORE: dict[str, int] = {
+    "gartley": +5,
+    "bat": +2,
+    "butterfly": 0,
+    "crab": -3,
+    "deep crab": -5,
+    "shark": -8,
+}
+
+
+def _pattern_base_score(pattern_name: str) -> int:
+    """Look up the Q4 reliability bump for a pattern name.
+
+    Matches on the family prefix so ``"gartley-382-1"`` still resolves to
+    ``+5``. Returns ``0`` for unknown families.
+    """
+    if not pattern_name:
+        return 0
+    name = pattern_name.lower()
+    for family, bump in PATTERN_BASE_SCORE.items():
+        if name.startswith(family):
+            return bump
+    return 0
+
+
 def extract_candidates(detection_result: dict) -> list[Candidate]:
     """Extract serializable candidates from a pyharmonics detection result.
 
@@ -217,12 +247,20 @@ def confluence_score(
     else:
         factors["htf_trend"] = 0
 
-    # RSI: divergence bonus + extreme-zone positioning.
+    # RSI: divergence bonus + extreme-zone positioning + reverse-divergence penalty.
+    # Q5: an RSI divergence that points the OPPOSITE direction of the candidate
+    # is a strong warning (price-vs-momentum disagreement). Penalise -5 so a
+    # candidate with opposite divergence can never reach A grade.
     div_families = divergences or {}
     rsi_divs = div_families.get("rsi", [])
     rsi_score = 0
     if any(bool(d.get("bullish")) == candidate.bullish for d in rsi_divs):
         rsi_score += 8
+    elif any(d.get("bullish") is not None for d in rsi_divs):
+        # At least one real RSI divergence was found, and it disagrees with
+        # the pattern direction. Strong warning — a reversal harmonic pattern
+        # riding against the divergence is fighting the most recent momentum.
+        rsi_score -= 5
     if (candidate.bullish and rsi <= 35) or (not candidate.bullish and rsi >= 65):
         rsi_score += 7
     elif (candidate.bullish and rsi <= 45) or (not candidate.bullish and rsi >= 55):
@@ -270,6 +308,7 @@ class _ScoreContext(NamedTuple):
     price: float
     last: Any  # last row of df
     divergences: dict
+    volume_authenticity: int = 50  # 0-100; per-candidate gate reads this
 
 
 def _prepare_score_context(
@@ -277,14 +316,14 @@ def _prepare_score_context(
     interval: str,
     divergences: Optional[dict],
 ) -> Optional[_ScoreContext]:
-    """Compute shared data-level metrics. Returns None if a hard gate fires."""
+    """Compute shared data-level metrics. Returns None if a hard gate fires.
+
+    Volume authenticity is computed here but the GATE is per-candidate
+    (Q6 amendment): formed patterns use the strict ``AUTHENTICITY_VETO``
+    threshold, forming patterns use the looser ``AUTHENTICITY_HALVE``
+    because forming patterns haven't yet had their confirming volume spike.
+    """
     auth = volume_authenticity(df)
-    if auth < AUTHENTICITY_VETO:
-        logger.info(
-            "Volume authenticity %d < %d, vetoing all signals",
-            auth, AUTHENTICITY_VETO,
-        )
-        return None
     pa_scale = 0.5 if auth < AUTHENTICITY_HALVE else 1.0
 
     atr = compute_atr(df)
@@ -312,6 +351,9 @@ def _prepare_score_context(
         price=price,
         last=df.iloc[-1],
         divergences=divergences or {},
+        # New field: store the raw authenticity score so per-candidate
+        # gates (Q6 formed vs forming) can consult it.
+        volume_authenticity=auth,
     )
 
 
@@ -322,15 +364,32 @@ def score_candidate(
 ) -> Optional[Signal]:
     """Score a single surviving candidate.
 
-    Runs every per-candidate gate in order: trap veto, adverse-momentum
-    veto, PRZ state inference, stop/targets, direction invariant, RR,
-    confluence score, grade. Returns ``None`` for any rejection and the
-    fully populated :class:`Signal` for survivors so callers can run
-    their own ranking on the survivors.
+    Runs every per-candidate gate in order: volume authenticity (formed vs
+    forming threshold), trap veto, adverse-momentum veto, PRZ state
+    inference, stop/targets, direction invariant, RR, confluence score,
+    grade. Returns ``None`` for any rejection and the fully populated
+    :class:`Signal` for survivors so callers can run their own ranking on
+    the survivors.
+
+    Q4 + Q6: the raw confluence score is bumped by ``PATTERN_BASE_SCORE`` for
+    the pattern family, and the grade gate additionally receives
+    ``width_pct`` so a wide PRZ can never reach A even with a perfect score.
     """
     df = ctx.df
     atr = ctx.atr
     last = ctx.last
+
+    # Q6: per-candidate volume gate. formed=True → strict (AUTHENTICITY_VETO);
+    # formed=False → lenient (AUTHENTICITY_HALVE) because forming patterns
+    # legitimately lack the confirming volume spike.
+    threshold = AUTHENTICITY_VETO if candidate.formed else AUTHENTICITY_HALVE
+    if ctx.volume_authenticity < threshold:
+        logger.debug(
+            "Volume authenticity %d < %d for %s pattern, vetoing",
+            ctx.volume_authenticity, threshold,
+            "formed" if candidate.formed else "forming",
+        )
+        return None
 
     stop, stop_basis, invalidation_point = compute_stop(candidate, atr, stop_level)
 
@@ -372,6 +431,17 @@ def score_candidate(
         df, candidate, atr, ctx.rsi, ctx.trend,
         ctx.divergences, ctx.pa_scale,
     )
+    # Q4 pattern-reliability bump (Gartley +5, Crab -3, ...).
+    score += _pattern_base_score(candidate.name)
+
+    # Q6 PRZ width gate input. Computed here so grade() can apply its 4% cap
+    # without each caller having to remember to thread the value through.
+    prz_mid = (candidate.prz_low + candidate.prz_high) / 2
+    width_pct = (
+        (candidate.prz_high - candidate.prz_low) / prz_mid
+        if prz_mid > 0 else 0.0
+    )
+
     bullish_trend = ctx.trend == "bullish"
     bearish_trend = ctx.trend == "bearish"
     htf_aligned = (candidate.bullish and bullish_trend) or (
@@ -381,7 +451,8 @@ def score_candidate(
         not candidate.bullish and bullish_trend
     )
     g = grade(
-        score, rr1, rr2, htf_aligned, htf_counter, a_min=ctx.a_min,
+        score, rr1, rr2, htf_aligned, htf_counter,
+        a_min=ctx.a_min, width_pct=width_pct,
     )
     if g is None:
         return None
@@ -409,6 +480,10 @@ def score_candidate(
         regime=ctx.regime,
         position_multiplier=ctx.position_mult,
         trap_score=trap_score,
+        # Q6: width_pct kept on the signal so consumers can re-grade without
+        # recomputing; Q7: tradable=False iff grade="C(参考)".
+        tradable=(g != "C(参考)"),
+        width_pct=round(width_pct, 4),
     )
     return replace(signal, reasoning=reasoning_from_signal(signal))
 

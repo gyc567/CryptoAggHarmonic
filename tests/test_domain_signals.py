@@ -275,21 +275,21 @@ class TestGrade:
         assert grade(65, 1.2, 1.6, htf_aligned=False, htf_counter=False) == "B"
 
     def test_grade_c(self):
-        assert grade(50, 1.2, 1.6, htf_aligned=False, htf_counter=False) == "C"
+        assert grade(50, 1.2, 1.6, htf_aligned=False, htf_counter=False) == "C(参考)"
 
     def test_below_45_dropped(self):
         assert grade(40, 1.2, 1.6, htf_aligned=False, htf_counter=False) is None
 
     def test_rr_gate_violation_demotes_to_c(self):
         # score high but TP2 net R too low -> observation only
-        assert grade(90, 1.2, 1.2, htf_aligned=True, htf_counter=False) == "C"
-        assert grade(90, 0.8, 2.5, htf_aligned=True, htf_counter=False) == "C"
+        assert grade(90, 1.2, 1.2, htf_aligned=True, htf_counter=False) == "C(参考)"
+        assert grade(90, 0.8, 2.5, htf_aligned=True, htf_counter=False) == "C(参考)"
 
     def test_rr_gate_violation_low_score_dropped(self):
         assert grade(40, 1.2, 1.2, htf_aligned=False, htf_counter=False) is None
 
     def test_counter_trend_capped_at_c(self):
-        assert grade(90, 1.2, 2.5, htf_aligned=False, htf_counter=True) == "C"
+        assert grade(90, 1.2, 2.5, htf_aligned=False, htf_counter=True) == "C(参考)"
 
     def test_counter_trend_low_score_dropped(self):
         assert grade(40, 1.2, 2.5, htf_aligned=False, htf_counter=True) is None

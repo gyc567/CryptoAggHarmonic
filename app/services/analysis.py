@@ -3,8 +3,9 @@ import logging
 import time
 import uuid
 from types import SimpleNamespace
-from typing import Optional
+from typing import Optional, List
 from app.domain.enums import Market, Interval, AnalysisType, Status, ErrorCode
+from app.domain.forming_schemas import CandidateWithMetrics, CandidateMetrics, MacroOverlay
 from app.domain.schemas import (
     AnalyzeRequest,
     AnalysisData,
@@ -29,6 +30,8 @@ from app.infra.pyharmonics_adapter import (
 )
 from app.domain.signals import resolve_analysis_type
 from app.services.signal_engine import build_signal, extract_candidates
+from app.services.discipline_filters import evaluate as discipline_evaluate
+from app.services.macro_bias import compute as macro_compute
 from app.infra.analysis_cache import AnalysisCache, get_analysis_cache
 from app.infra.supabase_client import upload_chart, get_chart_url
 from app.services.chart import validate_chart_size
@@ -174,6 +177,61 @@ class AnalysisOrchestrator:
             return None
 
     @staticmethod
+    def _build_forming_view(
+        candle_data,
+        detection_result: dict,
+        daily_close: Optional[object] = None,
+        max_ttl: int = 40,
+    ) -> List[CandidateWithMetrics]:
+        """Build the ranked list of forming-pattern views (v2).
+
+        For every forming candidate from the upstream detector:
+
+        1. Run :func:`discipline_filters.evaluate` to attach
+           ``stale / breached_stop / past_tp2 / in_prz / dist_pct``.
+           Drop candidates whose path-integrity check failed.
+        2. Run :func:`macro_bias.compute` per surviving candidate to attach
+           ``MacroOverlay`` (size_mult + advice). The daily series is
+           optional — when absent the macro layer falls back to the
+           conservative 0.8 multiplier.
+        3. Sort by ``(tradable desc, dist_pct asc, width_pct asc)`` so the
+           row closest to the PRZ and narrowest comes first.
+        """
+        try:
+            candidates = extract_candidates(detection_result)
+            df = candle_data.df
+            current_price = float(df["close"].iloc[-1])
+            out: List[CandidateWithMetrics] = []
+            for cand in candidates:
+                # Forming view only — skip formed patterns (their best is
+                # already surfaced via _build_trade_signal).
+                if cand.formed:
+                    continue
+                verdict = discipline_evaluate(
+                    df, cand, current_price, max_ttl=max_ttl,
+                )
+                if not verdict.passed:
+                    continue
+                overlay = macro_compute(
+                    daily_close, 1 if cand.bullish else -1,
+                )
+                out.append(CandidateWithMetrics(
+                    candidate=cand,
+                    metrics=verdict.metrics,
+                    macro=overlay,
+                ))
+            # Sort: tradable first, then closest PRZ, then narrowest.
+            out.sort(key=lambda v: (
+                0 if v.tradable else 1,
+                v.metrics.dist_pct,
+                v.width_pct,
+            ))
+            return out
+        except Exception:
+            logger.exception("Forming view build failed, returning empty list")
+            return []
+
+    @staticmethod
     def _distribute_chart(chart, analysis_id: str, image_bytes: bytes,
                           user_id: Optional[str]):
         """Attach a viewable URL to the chart: Supabase first, local fallback.
@@ -199,7 +257,9 @@ class AnalysisOrchestrator:
             chart.url = f"/api/charts/{analysis_id}.png"
         return chart
 
-    def analyze(self, request: AnalyzeRequest, user_id: Optional[str] = None, analysis_id: Optional[str] = None) -> AnalysisData:
+    def analyze(self, request: AnalyzeRequest, user_id: Optional[str] = None,
+                analysis_id: Optional[str] = None,
+                daily_close: Optional[object] = None) -> AnalysisData:
         """Run full analysis pipeline.
 
         Pipeline:
@@ -214,6 +274,9 @@ class AnalysisOrchestrator:
             request: Validated analyze request.
             user_id: Optional user ID for chart upload.
             analysis_id: Optional analysis ID for chart upload.
+            daily_close: Optional daily close series (≥210 bars) for the
+                macro-bias overlay (v2). When None the macro layer falls
+                back to the conservative 0.8 size multiplier.
 
         Returns:
             AnalysisData with results.
@@ -300,9 +363,52 @@ class AnalysisOrchestrator:
             limit_to=request.limit_to,
             percent_complete=request.percent_complete,
         )
+        # v2: form the ranked forming-pattern view (always populated when
+        # the upstream detector found any forming candidates; empty list
+        # otherwise). Independent of analysis_type so callers can render
+        # either view from one response.
+        forming_view = self._build_forming_view(
+            candle_data, detection_result, daily_close=daily_close,
+        )
+        # If the user explicitly asked for forming, mirror the top surviving
+        # entry into ``technical_result.signal`` so legacy single-best
+        # consumers still see something instead of falling back to "no
+        # signal". For other analysis types the legacy signal path wins.
+        forming_signal_dict = None
+        if analysis_type == AnalysisType.FORMING and forming_view:
+            top = forming_view[0]
+            prz_mid = (top.candidate.prz_low + top.candidate.prz_high) / 2
+            forming_signal_dict = {
+                # Required Signal fields
+                "status": "forming",
+                "grade": "C(参考)",
+                "direction": "long" if top.candidate.bullish else "short",
+                "pattern_name": top.candidate.name,
+                "family": top.candidate.family,
+                "formed": False,
+                "entry_zone": [top.candidate.prz_low, top.candidate.prz_high],
+                "entry_reference": prz_mid,
+                "stop_loss": top.candidate.prz_low,
+                "targets": [],
+                # v2 forming metadata
+                "tradable": top.tradable,
+                "width_pct": top.width_pct,
+                "bars_since_c": top.metrics.bars_since_c,
+                "stale": top.metrics.stale,
+                "past_tp2": top.metrics.past_tp2,
+                "in_prz": top.metrics.in_prz,
+                "dist_pct": top.metrics.dist_pct,
+                "macro": (
+                    {
+                        "size_mult": top.macro.size_mult,
+                        "advice": top.macro.advice,
+                    }
+                    if top.macro else None
+                ),
+            }
         technical = technical_result_to_schema(
             detection_result,
-            signal=signal.to_dict() if signal else None,
+            signal=signal.to_dict() if signal else forming_signal_dict,
         )
         # resolved_type: what the engine actually used (auto mode's answer).
         # request value stays in AnalysisData.analysis_type unchanged.
@@ -357,6 +463,10 @@ class AnalysisOrchestrator:
             interpretation=interpretation,
             chart=chart,
             timing=timing,
+            # v2: surface the ranked forming view (empty list when none).
+            # Capped at 10 to avoid blowing up the response payload when the
+            # upstream detector is too permissive on a choppy market.
+            forming_candidates=[v.to_dict() for v in forming_view[:10]],
         )
         self.cache.set(
             cache_key,

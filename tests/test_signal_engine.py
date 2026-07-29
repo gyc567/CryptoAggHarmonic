@@ -421,7 +421,7 @@ class TestBuildSignal:
         # HTF unknown -> capped below A but signal may still exist.
         if signal is not None:
             assert signal.htf_trend == "unknown"
-            assert signal.grade in ("B", "C")
+            assert signal.grade in ("B", "C", "C(参考)")
 
     def test_stale_candidate_filtered(self):
         # PRZ 45x ATR away from price -> filtered before scoring (SOXLUSDT case).
@@ -475,7 +475,7 @@ class TestBuildSignal:
         cand = gartley_candidate(completion_min=99.0, completion_max=101.0)
         result = build_signal(df, "15m", [cand])
         # Either vetoed or heavily penalized; must not crash.
-        assert result is None or result.grade == "C"
+        assert result is None or result.grade in ("C", "C(参考)")
 
     def test_volume_authenticity_hard_veto(self):
         from app.services.signal_engine import volume_authenticity
@@ -654,6 +654,120 @@ class TestPipelineHelpers:
 
         monkeypatch.setattr(se, "quant_trap_risk", fake_trap)
         assert score_candidate(ctx, gartley_candidate()) is None
+
+
+# --- v2 engine amendments (Q4 reliability, Q5 reverse-div, Q6 width_pct) -------
+
+
+class TestV2EngineAmendments:
+    def test_pattern_reliability_bump_visible_on_signal(self):
+        from app.services.signal_engine import (
+            _prepare_score_context, score_candidate,
+        )
+
+        df = bullish_df()
+        ctx = _prepare_score_context(
+            df, "15m",
+            {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
+        )
+        assert ctx is not None
+        sig = score_candidate(ctx, gartley_candidate())
+        assert sig is not None
+        # Gartley base bump is +5.
+        assert sig.confluence_score >= 50
+
+    def test_reverse_rsi_divergence_penalised(self):
+        from app.services.signal_engine import (
+            confluence_score, compute_atr, compute_rsi,
+        )
+
+        # Use a flat series: RSI returns 50 (mid-zone, not extreme so the
+        # -5 penalty is NOT compensated by the +7 extreme-zone bonus).
+        df = make_df([100.0] * 100)
+        cand = gartley_candidate(bullish=True)
+        atr = compute_atr(df)
+        rsi = compute_rsi(df["close"])
+        # Bearish divergence on a bullish candidate must subtract 5.
+        divs = {"rsi": [{"bullish": False}]}
+        _score, factors = confluence_score(
+            df, cand, atr, rsi, "unknown", divs,
+        )
+        assert factors["rsi"] == -5
+
+        # Same divergence on a bearish candidate is aligned (not penalised).
+        bear_cand = gartley_candidate(bullish=False)
+        _score, factors_bear = confluence_score(
+            df, bear_cand, atr, rsi, "unknown", divs,
+        )
+        assert factors_bear["rsi"] >= 0
+
+    def test_wide_width_pct_demotes_to_observation(self):
+        from app.services.signal_engine import (
+            _prepare_score_context, score_candidate,
+        )
+
+        df = bullish_df()
+        ctx = _prepare_score_context(
+            df, "15m",
+            {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
+        )
+        assert ctx is not None
+        # 8% PRZ width (mid=143, range=11.4) → above the 4% gate.
+        wide = gartley_candidate(
+            completion_min=137.5, completion_max=148.5,
+        )
+        sig = score_candidate(ctx, wide)
+        assert sig is not None
+        assert sig.grade == "C(参考)"
+        assert sig.tradable is False
+        assert sig.width_pct >= 0.04
+
+    def test_forming_pattern_volume_gate_is_lenient(self):
+        # Forming pattern with low volume authenticity → still produces a signal.
+        from app.services.signal_engine import (
+            _prepare_score_context, score_candidate,
+        )
+
+        df = bullish_df()
+        # Inject very low volume across the whole df to depress authenticity.
+        df["volume"] = 1.0
+        df.loc[df.index[-1], "volume"] = 1.0  # no spike
+        ctx = _prepare_score_context(
+            df, "15m",
+            {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
+        )
+        assert ctx is not None
+        # Forming pattern: lenient (HALVE) threshold.
+        forming = gartley_candidate(formed=False)
+        sig = score_candidate(ctx, forming)
+        assert sig is not None
+
+    def test_formed_pattern_vetoed_on_low_volume(self):
+        from app.services.signal_engine import (
+            _prepare_score_context, score_candidate,
+        )
+
+        df = bullish_df()
+        ctx = _prepare_score_context(
+            df, "15m",
+            {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]},
+        )
+        assert ctx is not None
+
+        # Force authenticity below VETO (25). _ScoreContext is a NamedTuple,
+        # so we use _replace.
+        ctx_low = ctx._replace(volume_authenticity=10)
+        formed = gartley_candidate(formed=True)
+        assert score_candidate(ctx_low, formed) is None
+
+        # auth=30 is below VETO (25)? No — 30 ≥ 25. Use 20 to be sure.
+        ctx_20 = ctx._replace(volume_authenticity=20)
+        assert score_candidate(ctx_20, formed) is None
+        # Forming pattern with the same auth (20) — the LOOSER threshold
+        # (HALVE = 40) still rejects, so bump up to 45 (above HALVE).
+        ctx_mid = ctx._replace(volume_authenticity=45)
+        forming = gartley_candidate(formed=False)
+        assert score_candidate(ctx_mid, forming) is not None
 
 
 def _dummy_signal(grade="A", score=70, formed=True, name="gartley"):
