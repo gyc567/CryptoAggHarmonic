@@ -56,6 +56,16 @@ jobs:
       - name: Black format check
         run: black --check app/ tests/
 
+      # Cheap import-time safety net for the Pydantic schemas. black has a
+      # known interaction with multi-line ``Annotated[Optional[X], Field(...)]``
+      # annotations where its line-splitter occasionally pushes a closing
+      # parenthesis outside the ``Annotated[...]`` brackets. The result parses
+      # fine visually but blows up at import time. Running this right after
+      # ``black --check`` means any re-mangling is caught on the same PR
+      # rather than weeks later when somebody imports the module.
+      - name: Schema import smoke test
+        run: python tests/smoke_schemas.py
+
       - name: Run backend tests
         run: |
           pytest -q --cov=app --cov-report=term-missing -m "not slow"
