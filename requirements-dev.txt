@@ -1,5 +1,15 @@
 # Development / test dependencies
 -r requirements.txt
-
 pytest==9.1.1
 pytest-cov==7.1.0
+
+# Type-check + contract tooling (Layer 1 + Layer 2 of the three-layer defense)
+# Versions pinned to match CI for reproducibility.
+mypy==1.13.0
+pyright==1.1.391
+icontract==2.7.1
+
+# Linting + formatting (CI gate).
+# Versions pinned to match CI for reproducibility.
+ruff==0.7.4
+black==24.10.0

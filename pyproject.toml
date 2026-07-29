@@ -31,6 +31,9 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
+    "mypy==1.13.0",
+    "pyright==1.1.391",
+    "icontract==2.7.1",
 ]
 
 [tool.pytest.ini_options]
@@ -64,3 +67,126 @@ exclude_lines = [
 ]
 show_missing = true
 precision = 2
+
+# ----------------------------------------------------------------------
+# Layer 1: type checking (mypy + pyright)
+#
+# Baseline: non-strict repo-wide. App/domain/ runs strict because that is
+# the three-layer defense's "trusted core": schemas enforce I/O shape,
+# signals enforce business invariants. Once the rest of app/ is migrated
+# to fully-typed code, expand the strict overrides below.
+# ----------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = ["."]
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+# Reports columns but not errors in 3rd-party libs / stubs we don't own.
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Trusted core: schemas + signals must be 100% type-clean.
+module = [
+    "app.domain.schemas",
+    "app.domain.signals",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_return_any = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pyright]
+# Pyright only checks the trusted core. app/domain/rsi_trend.py is pandas-heavy
+# (DataFrame | Series unions) and not part of the L3 Pydantic surface, so it
+# is deliberately excluded until that module is migrated to typed wrappers.
+include = ["app/domain/signals.py", "app/domain/schemas.py"]
+exclude = ["**/__pycache__", "**/.venv"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+# Same default in standard mode that pyright ships with; surface the knobs we
+# actively rely on so future tightening is a one-line change.
+reportMissingTypeStubs = false
+reportUnknownParameterType = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportMissingTypeArgument = "none"  # dataclass / pydantic style permits bare generics
+# icontract ships without type stubs; treat the import as Any rather than failing.
+reportMissingImports = "none"
+# Strict checks we *do* want even in standard mode for the trusted core:
+reportCallIssue = "error"
+
+# ---------------------------------------------------------------------------
+# Linting + formatting (CI gate; pinned versions in requirements-dev.txt)
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+# Match black's default line length; both tools must agree.
+# 132 (not black's default 88 or 100) chosen to match the codebase's natural max —
+# line-length 120 still produces 22 E501 hits on pre-existing code, and 132 absorbs
+# the remaining historical strings (json payloads, docstrings) without churn.
+line-length = 132
+target-version = "py311"
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# E/F = pycodestyle/pyflakes, W = pycodestyle warnings, I = isort,
+# N = pep8-naming, UP = pyupgrade, B = bugbear, S = bandit (security).
+# Tuned to catch the regressions we actually want to block:
+#   * unused imports/vars (F401/F841) — happen often when refactoring
+#   * bugbear (B) — real correctness issues
+#   * bandit (S) — bare except, hardcoded passwords
+#
+# Disabled rules:
+#   * UP006/UP007 — pyproject.toml requires-python = ">=3.11", and the Dockerfile
+#                   pins python:3.11-slim. PEP 604 unions ``X | None`` /
+#                   ``list[X]`` are valid runtime syntax on 3.10+; the ``@require``
+#                   icontract decorators in app/services/signal_engine.py rely on
+#                   them in eager-evaluated contexts (default-arg evaluation).
+#                   The 3.9 assumption in the previous version of this comment
+#                   was wrong — keeping ``Optional[X]`` / ``List[X]`` verbatim
+#                   diverged from the actual runtime and forced black to emit
+#                   the ``Annotated[X], Optional]`` syntax bug fixed separately.
+select = ["E", "F", "W", "I", "N", "B", "S"]
+# Bandit noise we don't want to block on:
+#   S101 — asserts in tests (every pytest test has them)
+#   S104 — hardcoded binding (we run Flask on 0.0.0.0 by design)
+#   S301 — pickle (false positives in vendored pyharmonics)
+extend-ignore = ["S101", "S104", "S301"]
+
+# Per-file tolerances:
+#   * tests/ — random is fine for fixture generation; /tmp is fine for test scratch space.
+#               Long mock-chain lines (mock_service_client.table.return_value.x.y.z.execute) are
+#               unreadable when wrapped; allow up to 200 chars there.
+#   * app/loop/ — evolutionary search (genetic algorithms) deliberately uses random.Random;
+#                 S311/S108 would just produce noise on legitimate non-crypto uses.
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S311", "S108", "E501"]
+"app/loop/**" = ["S311"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.black]
+line-length = 132
+target-version = ["py311"]
+exclude = '''
+/(
+    \.venv
+  | build
+  | dist
+  | \.egg-info
+)/
+'''

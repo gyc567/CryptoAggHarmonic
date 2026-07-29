@@ -44,6 +44,17 @@ jobs:
             tests/test_services_contract.py \
             tests/test_api_validation.py
 
+      # ------------------------------------------------------------------
+      # Linting + formatting gate (ruff + black).
+      # Block-on-fail so PRs cannot regress the codebase past the formatting
+      # baseline. Pinned versions in requirements-dev.txt match this gate.
+      # ------------------------------------------------------------------
+      - name: Ruff lint
+        run: ruff check app/ tests/
+
+      - name: Black format check
+        run: black --check app/ tests/
+
       - name: Run backend tests
         run: |
           pytest -q --cov=app --cov-report=term-missing -m "not slow"
