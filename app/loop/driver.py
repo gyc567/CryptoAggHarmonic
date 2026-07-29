@@ -36,12 +36,14 @@ from typing import Any, Optional
 
 from app.config.tuning import TUNING, from_dict, to_dict
 from app.loop import state
+from app.loop.checker import check_candidate
 from app.loop.pareto import (
     ParetoSet,
     from_metrics,
     load as pareto_load,
     save as pareto_save,
 )
+from app.loop.skills_version import current_version
 from app.loop.worker import CandidateResult, run_candidate
 
 
@@ -144,13 +146,19 @@ def main():
     pareto_path = state_root / "PARETO.json"
     pareto = pareto_load(pareto_path)
 
+    skills_version = current_version()
+
     accepted_count = 0
     rejected_count = 0
     error_count = 0
     best_so_far: Optional[CandidateResult] = None
 
     for r in results:
-        # Append to HISTORY regardless of decision.
+        # Run the second-opinion checker (plan §4).
+        verdict = check_candidate(r, parent_metrics=None)
+
+        # Append to HISTORY regardless of decision. Tag every record
+        # with the skills_version so we can detect stale decisions.
         state.append_history({
             "ts": time.time(),
             "gen": gen,
@@ -163,6 +171,13 @@ def main():
             "metrics": r.metrics,
             "run_dir": r.run_dir,
             "error": r.error,
+            "checker": {
+                "decision": verdict.decision,
+                "confidence": verdict.confidence,
+                "reasons": verdict.reasons,
+                "flags": verdict.flags,
+            },
+            "skills_version": skills_version,
         }, root=state_root)
 
         if r.decision == "accepted":
@@ -228,6 +243,7 @@ def main():
                 f"cluster: {cluster}",
                 f"symbol_set: {symbol_set}",
                 f"quarter: {quarter or 'full'}",
+                f"skills_version: {skills_version}",
             ],
         ),
         root=state_root,
