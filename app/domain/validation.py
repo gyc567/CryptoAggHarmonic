@@ -20,13 +20,15 @@ from typing import Optional, Sequence
 
 import pandas as pd
 
+from app.config.tuning import TUNING
 from app.domain.signals import Candidate, compute_stop, compute_targets
 
-# --- Thresholds ----------------------------------------------------------------
+# --- Backwards-compat aliases (read from TUNING singleton) -----------------
+# See app/domain/signals.py for the rationale.
 
-MAX_PRZ_DISTANCE_ATR = 3.0       # |price - PRZ mid| beyond this => stale
-MAX_D_AGE_BARS = 20              # D point older than this many bars => stale
-MAX_FORMING_PRZ_WIDTH_ATR = 1.0  # forming PRZ wider than this => degenerate
+MAX_PRZ_DISTANCE_ATR = TUNING.max_prz_distance_atr
+MAX_D_AGE_BARS = TUNING.max_d_age_bars
+MAX_FORMING_PRZ_WIDTH_ATR = TUNING.max_forming_prz_width_atr
 
 FALSE_BREAK_VETO = 0.25          # false-breakout rate above this => veto
 FALSE_BREAK_PENALTY = 0.15
@@ -34,15 +36,15 @@ FALSE_BREAK_WARN = 0.08
 STOP_HUNT_PENALTY = 0.10
 VOL_CLIMAX_PENALTY = 0.12
 
-AUTHENTICITY_HALVE = 40          # below this, price-action factor is halved
-AUTHENTICITY_VETO = 25           # below this, all candidates are vetoed
+AUTHENTICITY_HALVE = TUNING.authenticity_halve
+AUTHENTICITY_VETO = TUNING.authenticity_veto
 
-ADVERSE_SHARPE_THRESHOLD = 1.0   # per-bar momentum Sharpe veto threshold
+ADVERSE_SHARPE_THRESHOLD = TUNING.adverse_sharpe_threshold
 
-REGIME_MODERATE = 35
-REGIME_HIGH = 60
+REGIME_MODERATE = TUNING.regime_moderate
+REGIME_HIGH = TUNING.regime_high
 
-TARGET_ATR_PCT = 2.5             # volatility targeting anchor
+TARGET_ATR_PCT = TUNING.target_atr_pct
 
 
 # --- 1. Candidate validity filter -----------------------------------------------
@@ -130,7 +132,7 @@ def quant_trap_risk(
     prz_low: float,
     prz_high: float,
     bullish: bool,
-    lookback: int = 60,
+    lookback: int = TUNING.quant_trap_lookback,
 ) -> tuple:
     """Score trap risk and veto on structural failures.
 
@@ -215,7 +217,7 @@ def quant_trap_risk(
 # --- 3. Volume authenticity ------------------------------------------------------
 
 
-def volume_authenticity(df: pd.DataFrame, window: int = 60) -> int:
+def volume_authenticity(df: pd.DataFrame, window: int = TUNING.volume_authenticity_window) -> int:
     """Price-volume authenticity score (0-100)."""
     d = df.tail(window)
     n = len(d)
@@ -278,7 +280,7 @@ def stability_verdict(
 # --- 5. Quant regime -------------------------------------------------------------
 
 
-def quant_regime(df: pd.DataFrame, window: int = 100) -> tuple:
+def quant_regime(df: pd.DataFrame, window: int = TUNING.quant_regime_window) -> tuple:
     """Market manipulation/quant-dominance regime from recent candles.
 
     Returns (score 0-100, regime) where regime is normal | moderate_quant | high_quant.
@@ -340,7 +342,7 @@ def quant_regime(df: pd.DataFrame, window: int = 100) -> tuple:
 # --- 6. Statistical gates ---------------------------------------------------------
 
 
-def per_bar_sharpe(closes: pd.Series, window: int = 20) -> float:
+def per_bar_sharpe(closes: pd.Series, window: int = TUNING.per_bar_sharpe_window) -> float:
     """Per-bar momentum Sharpe (mean/std of recent returns).
 
     Interval-agnostic: no annualization, so it works uniformly from 15m to 1w.

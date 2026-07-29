@@ -24,6 +24,7 @@ from typing import Optional
 
 import pandas as pd
 
+from app.config.tuning import TUNING
 from app.domain.forming_schemas import CandidateMetrics
 from app.domain.signals import Candidate, compute_targets
 
@@ -31,11 +32,12 @@ from app.domain.signals import Candidate, compute_targets
 # --- Default TTL --------------------------------------------------------------
 #
 # Reference default is 40 bars on 4H (~6.7 days). The signal engine also runs
-# its own staleness check (``MAX_D_AGE_BARS = 20``) anchored at the D point;
+# its own staleness check (``MAX_D_AGE_BARS``) anchored at the D point;
 # this module's TTL is anchored at the C point and only applies to forming
 # patterns (D not yet confirmed). Callers may override per-request.
+# Backwards-compat alias — the value lives in TUNING.default_ttl_bars.
 
-DEFAULT_TTL_BARS = 40
+DEFAULT_TTL_BARS = TUNING.default_ttl_bars
 
 
 @dataclass(frozen=True)

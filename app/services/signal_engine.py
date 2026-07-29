@@ -24,6 +24,7 @@ from typing import Any, Callable, List, NamedTuple, Optional, Sequence
 
 import pandas as pd
 
+from app.config.tuning import TUNING
 from app.domain.signals import (
     ATR_PRZ_SWEEP,
     Candidate,
@@ -52,30 +53,26 @@ from app.domain.validation import (
 
 logger = logging.getLogger(__name__)
 
-ATR_WINDOW = 14
-ATR_LONG_WINDOW = 100
-RSI_WINDOW = 14
-VOLUME_MA_WINDOW = 20
-SWING_LOOKBACK = 60
+# Backwards-compat aliases — values live in TUNING.
+
+ATR_WINDOW = TUNING.atr_window
+ATR_LONG_WINDOW = TUNING.atr_long_window
+RSI_WINDOW = TUNING.rsi_window
+VOLUME_MA_WINDOW = TUNING.volume_ma_window
+SWING_LOOKBACK = TUNING.swing_lookback
 
 # Resample map: current interval -> higher timeframe rule for trend filter.
-HTF_RULE = {
-    "15m": "1h",
-    "1h": "4h",
-    "4h": "1D",
-    "1d": "1W",
-    "1w": "1ME",
-}
+HTF_RULE = dict(TUNING.htf_rule)
 
-MIN_CANDLES = 60
+MIN_CANDLES = TUNING.min_candles
 
-A_GRADE_MIN = 75
-A_GRADE_MIN_HIGH_QUANT = 85
-HIGH_QUANT_POSITION_MULT = 0.6
+A_GRADE_MIN = TUNING.a_grade_min
+A_GRADE_MIN_HIGH_QUANT = TUNING.a_grade_min_high_quant
+HIGH_QUANT_POSITION_MULT = TUNING.high_quant_position_mult
 
 # Pattern names considered identical across sub-windows (pyharmonics suffixes
 # like "gartley-382-1" are normalized by prefix matching).
-_STABILITY_WINDOW = 5
+_STABILITY_WINDOW = TUNING.stability_window
 
 
 # Q4: Pattern-reliability weighting. Empirically observed win rates from the
@@ -83,14 +80,7 @@ _STABILITY_WINDOW = 5
 # gets a positive bump; Crab/DeepCrab lose so they get a penalty. The lookup
 # is keyed on the lowercase pattern family name (the prefix before any
 # pyharmonics numeric suffix). Unknown patterns get 0.
-PATTERN_BASE_SCORE: dict[str, int] = {
-    "gartley": +5,
-    "bat": +2,
-    "butterfly": 0,
-    "crab": -3,
-    "deep crab": -5,
-    "shark": -8,
-}
+PATTERN_BASE_SCORE: dict[str, int] = dict(TUNING.pattern_base_score)
 
 
 def _pattern_base_score(pattern_name: str) -> int:

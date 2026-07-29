@@ -18,23 +18,26 @@ from typing import Optional
 
 import pandas as pd
 
+from app.config.tuning import TUNING
 from app.domain.forming_schemas import MacroOverlay
 
+# Backwards-compat aliases — values live in TUNING.
+
 # Slope thresholds (% over 20 daily bars). Tuned for BTC/ETH/BNB 4H backtest.
-_SLOPE_TREND_UP = 0.5
-_SLOPE_TREND_DOWN = -0.5
+_SLOPE_TREND_UP = TUNING.slope_trend_up
+_SLOPE_TREND_DOWN = TUNING.slope_trend_down
 
 # Position-size multipliers by regime alignment.
-_MULT_TRENDING_ALIGNED = 1.0
-_MULT_RANGING_ALIGNED = 1.0
-_MULT_TRENDING_INVERSE = 0.6
-_MULT_RANGING_INVERSE = 0.5
-_MULT_EXTREME_INVERSE = 1.2  # 牛市顶/熊市底反转概率最高
-_MULT_DATA_SHORT = 0.8  # 数据不足(<210 根日 K)兜底
+_MULT_TRENDING_ALIGNED = TUNING.mult_trending_aligned
+_MULT_RANGING_ALIGNED = TUNING.mult_ranging_aligned
+_MULT_TRENDING_INVERSE = TUNING.mult_trending_inverse
+_MULT_RANGING_INVERSE = TUNING.mult_ranging_inverse
+_MULT_EXTREME_INVERSE = TUNING.mult_extreme_inverse  # 牛市顶/熊市底反转概率最高
+_MULT_DATA_SHORT = TUNING.mult_data_short  # 数据不足(<210 根日 K)兜底
 
-_EXTREME_DEVIATION_PCT = 20.0
+_EXTREME_DEVIATION_PCT = TUNING.extreme_deviation_pct
 
-_MIN_DAILY_BARS = 210
+_MIN_DAILY_BARS = TUNING.min_daily_bars
 
 
 def compute(

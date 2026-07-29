@@ -16,32 +16,33 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-# --- Constants ---------------------------------------------------------------
+from app.config.tuning import TUNING
 
-FIB_TP1 = 0.382
-FIB_TP2 = 0.618
-FIB_TP3 = 1.272
+# --- Backwards-compat aliases (read from TUNING singleton) -----------------
+#
+# The values formerly defined as module-level constants now live in
+# :class:`app.config.tuning.TuningConstants` (see ``app/config/tuning.py``).
+# The aliases below preserve the original import paths so existing tests
+# (``from app.domain.signals import ATR_STOP_BUFFER``) continue to work.
+# Loop-tuning mutates TUNING via :func:`dataclasses.replace`; these aliases
+# point at the snapshot taken at import time, which matches the historical
+# behaviour of "import this constant at startup and freeze it".
 
-# Stop-loss risk levels (三档止损体系)
+FIB_TP1 = TUNING.fib_tp1
+FIB_TP2 = TUNING.fib_tp2
+FIB_TP3 = TUNING.fib_tp3
+ATR_STOP_BUFFER = dict(TUNING.atr_stop_buffer)
+ATR_PRZ_SWEEP = TUNING.atr_prz_sweep
+FEE_RATE = TUNING.fee_rate
+SLIPPAGE_RATE = TUNING.slippage_rate
+TP_CLOSE_PCTS = TUNING.tp_close_pcts
+EXTENDED_PATTERNS = frozenset(TUNING.extended_patterns)
+
+# Stop-loss risk levels (三档止损体系) — see TUNING.atr_stop_buffer for buffers.
 # Level 1 Conservative: PRZ外 + 1.0*ATR  — 新手,高波动市场
 # Level 2 Standard:     D点外 + 0.5*ATR  — 推荐日常使用
 # Level 3 Aggressive:   D点内 + 0.25*ATR — 高手,低波动市场
-STOP_LOSS_LEVELS = {"conservative", "standard", "aggressive"}
-ATR_STOP_BUFFER = {
-    "conservative": 1.0,
-    "standard": 0.5,
-    "aggressive": 0.25,
-}
-ATR_PRZ_SWEEP = 0.3
-
-# Binance USDT-M taker fee both sides (0.05% x 2) plus slippage allowance.
-FEE_RATE = 0.001
-SLIPPAGE_RATE = 0.0005
-
-TP_CLOSE_PCTS = (50, 30, 20)
-
-# Extended patterns complete beyond X, so X is not the invalidation anchor.
-EXTENDED_PATTERNS = {"butterfly", "deep butterfly", "crab", "deep crab", "shark", "deep shark"}
+STOP_LOSS_LEVELS = frozenset(TUNING.atr_stop_buffer.keys())
 
 LONG = "long"
 SHORT = "short"
