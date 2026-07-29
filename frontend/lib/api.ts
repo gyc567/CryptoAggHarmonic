@@ -59,7 +59,7 @@ function toApiError(body: unknown, status: number): ApiError {
  * for HTTP error codes. Network failures still throw so the hook can
  * surface a distinct "offline" UX.
  */
-async function request<T>(
+export async function request<T>(
   path: string,
   token: string | null,
   init?: RequestInit
