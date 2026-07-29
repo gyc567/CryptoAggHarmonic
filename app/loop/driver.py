@@ -75,6 +75,15 @@ def main():
     p.add_argument("--timeout", type=int, default=900,
                    help="Per-candidate subprocess timeout (seconds)")
     p.add_argument("--anchor-step", type=int, default=50)
+    p.add_argument(
+        "--use-maker-checker",
+        action="store_true",
+        help=(
+            "Augment the M4 verdict with the Maker-Checker runner "
+            "(LLM second opinion + arbitration). Disabled by default "
+            "to preserve the v0 driver behaviour."
+        ),
+    )
     args = p.parse_args()
 
     logging.basicConfig(
@@ -110,6 +119,16 @@ def main():
         "gen=%d cluster=%s candidates=%d workers=%d quarter=%s",
         gen, cluster, len(jobs), args.workers, quarter or "full",
     )
+
+    # Optional Maker-Checker runner. Created lazily so the v0 driver
+    # behaviour is preserved when ``--use-maker-checker`` is absent.
+    mc_runner: Optional[Any] = None
+    if args.use_maker_checker:
+        from app.loop.maker_checker.adapter import evaluate_candidate  # noqa: F401
+        from app.loop.maker_checker.runner import make_runner
+
+        mc_runner = make_runner()
+        logger.info("Maker-Checker runner attached")
 
     # Fan out.
     results: list[CandidateResult] = []
@@ -154,8 +173,16 @@ def main():
     best_so_far: Optional[CandidateResult] = None
 
     for r in results:
-        # Run the second-opinion checker (plan §4).
-        verdict = check_candidate(r, parent_metrics=None)
+        # Run the second-opinion checker (plan §4). When a Maker-Checker
+        # runner is attached we use the adapter so the M4 verdict can
+        # be overruled by the LLM check (audit §2.5). Otherwise we use
+        # the existing ``check_candidate`` exactly as before.
+        if mc_runner is not None:
+            from app.loop.maker_checker.adapter import evaluate_candidate
+
+            verdict = evaluate_candidate(r, runner=mc_runner)
+        else:
+            verdict = check_candidate(r, parent_metrics=None)
 
         # Append to HISTORY regardless of decision. Tag every record
         # with the skills_version so we can detect stale decisions.
