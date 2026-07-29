@@ -23,7 +23,7 @@ the system.
 """
 from __future__ import annotations
 
-from typing import Annotated, Any, Optional
+from typing import Optional, Annotated, Any
 
 from pydantic import (
     BaseModel,
@@ -33,8 +33,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.domain.enums import Market, Interval, AnalysisType, Status, ErrorCode
-
+from app.domain.enums import AnalysisType, ErrorCode, Interval, Market, Status
 
 # --- Shared base model --------------------------------------------------------
 #
@@ -116,7 +115,7 @@ class AnalyzeRequest(_StrictModel):
         return v.upper().strip()
 
     @model_validator(mode="after")
-    def _check_candles_covers_limit(self) -> "AnalyzeRequest":
+    def _check_candles_covers_limit(self) -> AnalyzeRequest:
         # The engine needs enough bars to honour limit_to + filter chain.
         # Candles below 2*limit_to silently produces empty results; surface
         # the constraint at the I/O boundary instead.
