@@ -58,9 +58,11 @@ TICKER_FIELDS = (
 )
 
 # Per-symbol premiumIndex fields we care about.
+# Note: Binance's premiumIndex payload uses ``lastFundingRate`` (not
+# ``fundingRate``). The route-level fallback below accepts either.
 PREMIUM_FIELDS = (
     "markPrice",
-    "fundingRate",
+    "lastFundingRate",
     "nextFundingTime",
 )
 
@@ -235,9 +237,12 @@ def _coerce_premium(
     row: Mapping[str, Any],
     existing: FuturesQuote,
 ) -> dict[str, Any]:
+    # Binance uses ``lastFundingRate``; older payloads / mirrors may use
+    # ``fundingRate``. Accept either.
+    raw_rate = row.get("lastFundingRate", row.get("fundingRate"))
     return {
         "mark_price": _as_float(row.get("markPrice"), existing.mark_price),
-        "funding_rate": _as_float(row.get("fundingRate"), existing.funding_rate),
+        "funding_rate": _as_float(raw_rate, existing.funding_rate),
         "next_funding_time": _as_int(
             row.get("nextFundingTime"), existing.next_funding_time
         ),

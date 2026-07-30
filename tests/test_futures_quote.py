@@ -112,7 +112,7 @@ def _premium(symbol: str, **overrides: Any) -> dict[str, Any]:
     base = {
         "symbol": symbol,
         "markPrice": "100.55",
-        "fundingRate": "0.0001",
+        "lastFundingRate": "0.0001",
         "nextFundingTime": "1700000000000",
     }
     base.update(overrides)
@@ -185,6 +185,17 @@ class TestParseQuotesPayload:
         )
         assert out["MUUSDT"].last_price == 100.5
         assert out["MUUSDT"].mark_price is None
+
+    def test_legacy_funding_rate_key_falls_back(self):
+        # Older payloads / mirrors use ``fundingRate`` instead of
+        # ``lastFundingRate``. We accept either.
+        out = parse_quotes_payload(
+            symbols=["MUUSDT"],
+            ticker_payload=[_ticker("MUUSDT")],
+            premium_payload=[{"symbol": "MUUSDT", "markPrice": "100.55", "fundingRate": "0.0002"}],
+        )
+        assert out["MUUSDT"].mark_price == 100.55
+        assert out["MUUSDT"].funding_rate == 0.0002
 
     def test_malformed_int_field_does_not_overwrite(self):
         # Defaults are None, malformed strings should NOT crash and should
