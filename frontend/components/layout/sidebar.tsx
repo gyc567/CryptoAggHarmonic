@@ -8,6 +8,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  Star,
   TrendingUp,
   Wallet,
   Zap,
@@ -21,6 +22,7 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS = [
+  { href: "/watchlist", label: "自选币种", icon: Star },
   { href: "/rsi-strategy", label: "趋势RSI策略", icon: TrendingUp },
   { href: "/dashboard", label: "分析", icon: BarChart3 },
   { href: "/position", label: "仓位", icon: Wallet },
