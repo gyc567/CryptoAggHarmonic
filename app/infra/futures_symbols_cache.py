@@ -165,6 +165,17 @@ class FuturesSymbolsCache:
             self._kick_background_refresh()
         return [e.to_dict() for e in entries]
 
+    def get_meta(self, symbol: str) -> dict | None:
+        """Look up a single symbol's dict, or ``None`` if not in the cache.
+
+        Convenience for the watchlist store's whitelist resolver: O(N) over
+        the cached list, but N ≈ 850 so a linear scan is fine.
+        """
+        for entry in self.get():
+            if entry.get("symbol") == symbol:
+                return entry
+        return None
+
     def refresh(self) -> int:
         """Synchronously re-fetch from fapi, overwrite cache, return count.
 

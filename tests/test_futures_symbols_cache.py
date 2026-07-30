@@ -699,3 +699,22 @@ class TestEdgeBranches:
         )
         mod._default_fetcher()
         assert captured["url"] == "https://example.test/fapi/v1/exchangeInfo"
+
+    def test_get_meta_returns_entry(self, tmp_cache, fetcher_factory):
+        """``get_meta`` returns the matching entry's dict or None."""
+        fetcher, _ = fetcher_factory()
+        cache = FuturesSymbolsCache(path=tmp_cache, fetcher=fetcher)
+        # _SAMPLE_RAW contains MUUSDT, ORCLUSDT, BTCUSDT
+        meta = cache.get_meta("MUUSDT")
+        assert meta is not None
+        assert meta["symbol"] == "MUUSDT"
+        assert meta["isTradfi"] is True
+        assert cache.get_meta("DOES_NOT_EXIST") is None
+
+    def test_get_meta_works_against_empty_cache(self, tmp_cache):
+        """If the cache can't be loaded, ``get_meta`` returns None gracefully."""
+        cache = FuturesSymbolsCache(
+            path=tmp_cache,
+            fetcher=lambda: (_ for _ in ()).throw(RuntimeError("network down")),
+        )
+        assert cache.get_meta("BTCUSDT") is None
