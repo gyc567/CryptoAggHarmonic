@@ -71,9 +71,18 @@ def _store() -> WatchlistStore:
 
     Lazy import keeps test isolation: tests can monkeypatch
     ``get_symbols_cache`` to inject a stub before the route is hit.
+
+    The resolver must return a :class:`SymbolMeta` (the store layer types
+    ``_ensure_whitelisted`` accordingly), so we wrap ``cache.get_meta``
+    with ``symbol_meta_from_cache``.
     """
     cache = get_symbols_cache()
-    return WatchlistStore(whitelist_resolver=cache.get_meta)
+
+    def resolver(symbol: str):
+        entry = cache.get_meta(symbol)
+        return symbol_meta_from_cache(entry) if entry else None
+
+    return WatchlistStore(whitelist_resolver=resolver)
 
 
 # ---------------------------------------------------------------------------

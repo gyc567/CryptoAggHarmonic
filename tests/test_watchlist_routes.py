@@ -573,6 +573,25 @@ class TestStoreHelper:
         assert isinstance(s, WatchlistStore)
         assert s._whitelist_resolver("MUUSDT") is not None
 
+    def test_store_helper_resolver_returns_symbol_meta(self, monkeypatch):
+        """Regression: _store() used to pass cache.get_meta directly, which
+        returns a raw dict. The store layer's _ensure_whitelisted accesses
+        .quote_asset on the resolved value, so a dict blew up at runtime
+        with AttributeError. The factory now wraps with symbol_meta_from_cache.
+        """
+        from app.api import watchlist_routes as wr
+        from app.infra.watchlist_store import SymbolMeta
+
+        cache = _StubCache()
+        monkeypatch.setattr(wr, "get_symbols_cache", lambda: cache)
+        s = wr._store()
+        meta = s._whitelist_resolver("MUUSDT")
+        assert isinstance(meta, SymbolMeta)
+        assert meta.quote_asset == "USDT"
+        assert meta.base_asset == "MU"
+        # Unknown → None.
+        assert s._whitelist_resolver("FOOUSDT") is None
+
 
 # ---------------------------------------------------------------------------
 
