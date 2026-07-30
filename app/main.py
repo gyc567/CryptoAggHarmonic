@@ -20,6 +20,7 @@ from app.api.middleware import log_request_middleware, register_error_handlers
 from app.api.rsi_trend_routes import rsi_trend_bp
 from app.api.validation import parse_request
 from app.api.vibe_routes import vibe_bp
+from app.api.watchlist_routes import watchlist_bp
 from app.domain.enums import AnalysisType, ErrorCode, Interval, Market
 from app.domain.schemas import (
     AnalyzeRequest,
@@ -67,6 +68,9 @@ app.register_blueprint(vibe_bp)
 
 # Register trend-RSI strategy blueprint
 app.register_blueprint(rsi_trend_bp)
+
+# Register watchlist blueprint
+app.register_blueprint(watchlist_bp)
 
 
 # Simple CORS support for local dev / preview origins

@@ -303,6 +303,31 @@ def _default_fetcher() -> dict:
     return resp.json()
 
 
+# ---------------------------------------------------------------------------
+# Module-level singleton
+# ---------------------------------------------------------------------------
+
+_symbols_cache: FuturesSymbolsCache | None = None
+
+
+def get_symbols_cache() -> FuturesSymbolsCache:
+    """Return the process-wide :class:`FuturesSymbolsCache` singleton.
+
+    Lazy construction: the cache file is only read on first use, so tests
+    can patch :data:`DEFAULT_CACHE_PATH` before triggering any route call.
+    """
+    global _symbols_cache
+    if _symbols_cache is None:
+        _symbols_cache = FuturesSymbolsCache()
+    return _symbols_cache
+
+
+def reset_symbols_cache_for_tests() -> None:
+    """Drop the singleton so the next ``get_symbols_cache`` call rebuilds it."""
+    global _symbols_cache
+    _symbols_cache = None
+
+
 __all__ = [
     "DEFAULT_CACHE_PATH",
     "DEFAULT_FAPI_URL",
@@ -311,4 +336,6 @@ __all__ = [
     "FuturesSymbolsCache",
     "_parse_entry",
     "_entries_from_exchangeinfo",
+    "get_symbols_cache",
+    "reset_symbols_cache_for_tests",
 ]
