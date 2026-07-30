@@ -633,3 +633,109 @@ class TestBuildStoreWithCache:
         assert isinstance(s, WatchlistStore)
         # Bound methods compare by underlying function — assert via a probe call.
         assert s._whitelist_resolver("MUUSDT") == stub_cache.get_meta("MUUSDT")
+
+
+# ---------------------------------------------------------------------------
+# /api/markets/futures/quote
+# ---------------------------------------------------------------------------
+
+
+def _stub_fetch_quotes(monkeypatch, payload: dict[str, dict] | Exception):
+    """Replace ``fetch_quotes`` in the routes module with a closure."""
+    from app.api import watchlist_routes as wr
+
+    def fake(symbols):
+        if isinstance(payload, Exception):
+            raise payload
+        return {s: type("Q", (), {"to_dict": lambda self, s=s: payload[s]})() for s in symbols}
+
+    monkeypatch.setattr(wr, "fetch_quotes", fake)
+
+
+class TestBatchQuotes:
+    def test_returns_merged_quotes(self, client, monkeypatch):
+        _stub_fetch_quotes(
+            monkeypatch,
+            {
+                "MUUSDT": {"symbol": "MUUSDT", "lastPrice": 100.5},
+                "BTCUSDT": {"symbol": "BTCUSDT", "lastPrice": 50000.0},
+            },
+        )
+        resp = client.get(
+            "/api/markets/futures/quote?symbols=MUUSDT,BTCUSDT"
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["success"] is True
+        data = body["data"]
+        assert {q["symbol"] for q in data["quotes"]} == {"MUUSDT", "BTCUSDT"}
+        assert data["unknown"] == []
+
+    def test_unknown_symbols_dropped(self, client, monkeypatch):
+        _stub_fetch_quotes(
+            monkeypatch,
+            {"MUUSDT": {"symbol": "MUUSDT", "lastPrice": 1.0}},
+        )
+        resp = client.get("/api/markets/futures/quote?symbols=MUUSDT,FOOUSDT")
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert [q["symbol"] for q in data["quotes"]] == ["MUUSDT"]
+        assert data["unknown"] == ["FOOUSDT"]
+
+    def test_empty_symbols_param_returns_422(self, client):
+        resp = client.get("/api/markets/futures/quote")
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == ErrorCode.INVALID_PARAMS.value
+
+    def test_only_whitespace_symbols_returns_422(self, client):
+        resp = client.get("/api/markets/futures/quote?symbols=%20%2C%20")
+        assert resp.status_code == 422
+
+    def test_too_many_symbols_returns_422(self, client):
+        # 101 symbols
+        big = ",".join(f"S{i}USDT" for i in range(101))
+        resp = client.get(f"/api/markets/futures/quote?symbols={big}")
+        assert resp.status_code == 422
+        assert "too many" in resp.get_json()["error"]["message"]
+
+    def test_upstream_failure_returns_502(self, client, monkeypatch):
+        from app.infra.futures_quote import QuoteFetchError
+
+        _stub_fetch_quotes(monkeypatch, QuoteFetchError("boom"))
+        resp = client.get("/api/markets/futures/quote?symbols=MUUSDT")
+        assert resp.status_code == 502
+        assert (
+            resp.get_json()["error"]["code"]
+            == ErrorCode.MARKET_DATA_UNAVAILABLE.value
+        )
+
+    def test_cache_failure_returns_500(self, client, stub_cache, monkeypatch):
+        from app.api import watchlist_routes as wr
+
+        # Replace the stub cache with one that raises.
+        class BrokenCache(_StubCache):
+            def get(self):
+                raise RuntimeError("cache down")
+
+        monkeypatch.setattr(wr, "get_symbols_cache", lambda: BrokenCache())
+        resp = client.get("/api/markets/futures/quote?symbols=MUUSDT")
+        assert resp.status_code == 500
+        assert resp.get_json()["error"]["code"] == ErrorCode.INTERNAL_ERROR.value
+
+    def test_all_unknown_skips_upstream(self, client, monkeypatch):
+        # If nothing is known, fetch_quotes is invoked with [] and returns {}
+        # without hitting the network (the early-return is covered by
+        # TestFetchQuotes::test_empty_known_returns_empty_without_http).
+        from app.api import watchlist_routes as wr
+        seen_symbols: list[list[str]] = []
+
+        def fake(symbols):
+            seen_symbols.append(list(symbols))
+            return {}
+
+        monkeypatch.setattr(wr, "fetch_quotes", fake)
+        resp = client.get("/api/markets/futures/quote?symbols=FOOUSDT,BARUSDT")
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["quotes"] == []
+        assert resp.get_json()["data"]["unknown"] == ["FOOUSDT", "BARUSDT"]
+        assert seen_symbols == [[]]

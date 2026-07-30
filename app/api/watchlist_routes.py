@@ -39,6 +39,12 @@ from app.domain.watchlist_schemas import (
     WatchlistUpdateRequest,
 )
 from app.infra.futures_symbols_cache import FuturesSymbolsCache, get_symbols_cache
+from app.infra.futures_quote import (
+    FuturesQuote,
+    QuoteFetchError,
+    fetch_quotes,
+    filter_known_symbols,
+)
 from app.infra.watchlist_store import (
     DEFAULT_MARKET,
     DuplicateError,
@@ -126,6 +132,77 @@ def _is_admin(user: dict[str, Any]) -> bool:
     if is_local_dev_mode():
         return True
     return user.get("role") == "admin"
+
+
+# ---------------------------------------------------------------------------
+# Markets — batch quote snapshot
+# ---------------------------------------------------------------------------
+
+
+_MAX_QUOTE_SYMBOLS = 100
+
+
+@watchlist_bp.route("/markets/futures/quote", methods=["GET"])
+@require_auth
+def batch_quotes(user):  # noqa: ARG001 — user injected by require_auth
+    """Return combined 24hr + premiumIndex quotes for the requested symbols.
+
+    Query string: ``?symbols=MUUSDT,ORCLUSDT,BTCUSDT`` (comma-separated,
+    max 100). Symbols not in the cached whitelist are dropped silently
+    (the watchlist page only ever passes its own rows, so this is a
+    defensive cap). On upstream failure returns 502 with
+    ``ErrorCode.MARKET_DATA_UNAVAILABLE``.
+    """
+    raw = (request.args.get("symbols") or "").strip()
+    if not raw:
+        return _error(
+            ErrorCode.INVALID_PARAMS.value,
+            "missing required query param: symbols",
+            status=422,
+        )
+
+    raw_symbols = [s for s in raw.split(",") if s.strip()]
+    if len(raw_symbols) > _MAX_QUOTE_SYMBOLS:
+        return _error(
+            ErrorCode.INVALID_PARAMS.value,
+            f"too many symbols (max {_MAX_QUOTE_SYMBOLS})",
+            status=422,
+        )
+    if not raw_symbols:
+        # Query had only commas / whitespace.
+        return _error(
+            ErrorCode.INVALID_PARAMS.value,
+            "symbols query param must contain at least one non-empty symbol",
+            status=422,
+        )
+
+    try:
+        whitelist_iter = get_symbols_cache().get()
+        whitelist = [e.get("symbol", "") for e in whitelist_iter]
+    except Exception:
+        logger.exception("batch_quotes: cache failed")
+        return _error(
+            ErrorCode.INTERNAL_ERROR.value, "symbol cache unavailable", status=500
+        )
+
+    known, unknown = filter_known_symbols(raw_symbols, whitelist=whitelist)
+
+    try:
+        quotes = fetch_quotes(known)
+    except QuoteFetchError as exc:
+        logger.exception("batch_quotes: upstream failed")
+        return _error(
+            ErrorCode.MARKET_DATA_UNAVAILABLE.value,
+            f"upstream quote failed: {exc}",
+            status=502,
+        )
+
+    return _success(
+        {
+            "quotes": [q.to_dict() for q in (quotes[s] for s in known)],
+            "unknown": unknown,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
