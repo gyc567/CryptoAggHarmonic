@@ -189,3 +189,6 @@ tradingview-bridge/node_modules
 
 # Local dev scripts runtime state (pids, logs)
 scripts/.run/
+
+# Watchlist symbol cache (rebuilt weekly from fapi exchangeInfo)
+app/cache/
