@@ -63,7 +63,7 @@ class AnalyzeHarmonicTool(Tool):
             "target_price": {"type": "number"},
             "risk_reward_ratio": {"type": "number"},
             "signal": {"type": "object"},
-            "chart_url": {"type": "string"},
+
             "interpretation_summary": {"type": "string"},
         },
     }
@@ -119,7 +119,7 @@ class AnalyzeHarmonicTool(Tool):
             "target_price": tech.target_price,
             "risk_reward_ratio": tech.risk_reward_ratio,
             "signal": signal_dict,
-            "chart_url": result.chart.url if result.chart else None,
+            # chart_url removed - charts disabled
             "interpretation_summary": (result.interpretation.summary if result.interpretation else None),
         }
 

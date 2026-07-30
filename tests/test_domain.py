@@ -9,7 +9,6 @@ from app.domain.enums import AnalysisType, ErrorCode, Interval, Market, Status
 from app.domain.schemas import (
     AnalysisData,
     AnalyzeRequest,
-    ChartMeta,
     ErrorResponse,
     HealthResponse,
     Interpretation,
@@ -191,19 +190,6 @@ class TestAnalyzeRequest:
                 idempotency_key="a" * 100,
             )
 
-
-class TestChartMeta:
-    def test_defaults(self):
-        chart = ChartMeta()
-        assert chart.format == "png"
-        assert chart.path is None
-        assert chart.url is None
-
-    def test_custom(self):
-        chart = ChartMeta(width=800, height=600, path="charts/abc.png")
-        assert chart.width == 800
-        assert chart.height == 600
-        assert chart.path == "charts/abc.png"
 
 
 class TestTechnicalResult:

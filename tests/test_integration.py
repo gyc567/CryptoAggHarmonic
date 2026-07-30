@@ -46,7 +46,6 @@ def mock_auth():
             interval=Interval.D1,
             analysis_type=AnalysisType.FORMING,
             technical_result=TechnicalResult(),
-            chart=ChartMeta(),
             timing=TimingInfo(duration_ms=1000, started_at="1234567890", completed_at="1234567891"),
         )
 

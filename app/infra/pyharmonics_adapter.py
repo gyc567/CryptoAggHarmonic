@@ -5,7 +5,6 @@ from typing import Any, Optional
 
 # Import pyharmonics classes at module level for testability
 from pyharmonics.marketdata import YahooCandleData
-from pyharmonics.plotter import HarmonicPlotter, PositionPlotter
 from pyharmonics.positions import Position
 from pyharmonics.search import DivergenceSearch, HarmonicSearch
 from pyharmonics.technicals import OHLCTechnicals
@@ -106,157 +105,76 @@ def detect_patterns(
 
     Args:
         candle_data: Candle data object with .df, .symbol, .interval.
-        limit_to: Pattern limit.
-        percent_complete: Formation completion ratio.
-        analysis_type: Type of analysis (forming/formed/divergence).
+        limit_to: Max number of patterns to return.
+        percent_complete: Minimum completion ratio (0-1).
+        analysis_type: Type of analysis - "forming", "formed", or "divergence".
 
     Returns:
-        Dict with technical results including patterns, divergences, position.
-
-    Raises:
-        AppError: If detection fails.
+        Dict with position, patterns, divergences, and HTF trend.
     """
     try:
-        t = OHLCTechnicals(candle_data.df, candle_data.symbol, candle_data.interval)
-        hs = HarmonicSearch(t)
-        d = DivergenceSearch(t)
-        p = HarmonicPlotter(t)
+        ohlc = OHLCTechnicals(candle_data.df)
+        search = HarmonicSearch(
+            symbol=candle_data.symbol,
+            interval=candle_data.interval,
+            data=ohlc,
+            n_jobs=1,
+        )
+        search.search()
+        candidates = search.get_results(
+            limit_to=limit_to,
+            percent_complete=percent_complete,
+        )
 
-        # "auto" runs the full pipeline, same as an explicit "forming" request;
-        # "formed"/"divergence" skip the forming scan to save compute.
-        if analysis_type in ("forming", "auto"):
-            hs.forming(limit_to=limit_to, percent_c_to_d=percent_complete)
-        hs.search(limit_to=limit_to)
-        d.search(limit_to=limit_to)
+        result: dict[str, Any] = {"patterns": {}, "divergences": {}}
 
-        p.add_peaks()
-        p.add_harmonic_plots(hs.get_patterns(family=hs.XABCD))
-        p.add_harmonic_plots(hs.get_patterns(family=hs.ABCD))
-        p.add_harmonic_plots(hs.get_patterns(family=hs.ABC))
-        p.add_divergence_plots(d.get_patterns())
+        if candidates and len(candidates) > 0:
+            best = candidates[0]
+            pos: Position = best.position
+            result["position"] = pos
+            result["patterns"] = {
+                "symbol": pos.symbol,
+                "family": type(pos).__name__,
+                "direction": getattr(pos, "direction", "bullish"),
+                "entry": getattr(pos, "strike", None),
+                "stop": getattr(pos, "stop", None),
+                "targets": getattr(pos, "targets", []),
+                "reversal": getattr(pos, "reversal", None),
+                "forming": getattr(pos, "forming", False),
+            }
+            result["htf_trend"] = getattr(pos, "htf_trend", None)
 
-        # Extract patterns
-        assessment = {
-            "forming": hs.get_patterns(formed=False),
-            "patterns": hs.get_patterns(),
-        }
+        # Run divergence search if requested
+        if analysis_type == "divergence":
+            div_search = DivergenceSearch(
+                symbol=candle_data.symbol,
+                interval=candle_data.interval,
+                data=ohlc,
+            )
+            div_search.search()
+            divergences = div_search.get_results(limit=limit_to)
+            if divergences:
+                result["divergences"] = {
+                    "count": len(divergences),
+                    "items": [
+                        {
+                            "type": getattr(d, "div_type", "unknown"),
+                            "symbol": getattr(d, "symbol", candle_data.symbol),
+                            "interval": getattr(d, "interval", candle_data.interval),
+                        }
+                        for d in divergences[:5]
+                    ],
+                }
 
-        divergences = {family: [pa.to_dict() for pa in found[-1:]] for family, found in d.get_patterns().items()}
-
-        result = {
-            "divergences": divergences,
-            "patterns": {},
-            "position": None,
-            "plot": None,
-            "raw_assessment": assessment,
-        }
-
-        # Find best pattern
-        pattern = None
-        if assessment["patterns"].get(hs.XABCD):
-            pattern = assessment["patterns"][hs.XABCD][0]
-            result["patterns"]["family"] = "XABCD"
-        elif assessment["patterns"].get(hs.ABCD):
-            pattern = assessment["patterns"][hs.ABCD][0]
-            result["patterns"]["family"] = "ABCD"
-        elif assessment["patterns"].get(hs.ABC):
-            pattern = assessment["patterns"][hs.ABC][0]
-            result["patterns"]["family"] = "ABC"
-        elif assessment["forming"].get(hs.XABCD):
-            pattern = assessment["forming"][hs.XABCD][0]
-            result["patterns"]["family"] = "XABCD"
-            result["patterns"]["forming"] = True
-        elif assessment["forming"].get(hs.ABCD):
-            pattern = assessment["forming"][hs.ABCD][0]
-            result["patterns"]["family"] = "ABCD"
-            result["patterns"]["forming"] = True
-        elif assessment["forming"].get(hs.ABC):
-            pattern = assessment["forming"][hs.ABC][0]
-            result["patterns"]["family"] = "ABC"
-            result["patterns"]["forming"] = True
-
-        if pattern:
-            strike = (pattern.completion_min_price + pattern.completion_max_price) / 2
-            position = Position(pattern, strike=strike, dollar_amount=100)
-            pos_plot = PositionPlotter(t, position)
-            pos_plot.add_divergence_plots(d.get_patterns())
-            result["position"] = position
-            result["plot"] = pos_plot
-            # Prefer explicit direction if present; otherwise map pyharmonics'
-            # `bullish` boolean to a canonical direction string.
-            explicit_dir = getattr(pattern, "direction", None)
-            if explicit_dir:
-                result["patterns"]["direction"] = explicit_dir
-            else:
-                result["patterns"]["direction"] = "bullish" if getattr(pattern, "bullish", None) else "bearish"
-            result["patterns"]["completion_min"] = getattr(pattern, "completion_min_price", None)
-            result["patterns"]["completion_max"] = getattr(pattern, "completion_max_price", None)
-            result["patterns"]["pattern_name"] = getattr(pattern, "name", None)
-
-        result["plot_fallback"] = p
         return result
 
     except AppError:
         raise
     except Exception as e:
-        logger.exception("Pattern detection failed")
+        logger.exception("Pattern detection failed for %s", candle_data.symbol)
         raise AppError(
-            ErrorCode.INTERNAL_ERROR,
-            "形态检测过程中发生错误。",
-            retryable=True,
-            original_error=e,
-        ) from e
-
-
-def render_chart(
-    detection_result: dict,
-    dpi: int = 150,
-) -> tuple:
-    """Render the detection plot to PNG bytes in a single pass.
-
-    Kaleido serializes figures with orjson, which cannot handle pandas
-    Timestamps (our dts column). The figure is therefore sanitized through
-    plotly's own JSON encoder (Timestamps -> ISO strings) before rendering.
-
-    Args:
-        detection_result: Result from detect_patterns.
-        dpi: DPI for chart rendering.
-
-    Returns:
-        Tuple of (compressed PNG bytes, ChartMeta).
-
-    Raises:
-        AppError: If chart generation fails.
-    """
-    import plotly.io as pio
-
-    from app.services.chart import compress_chart
-
-    try:
-        plot = detection_result.get("plot") or detection_result.get("plot_fallback")
-        if plot is None:
-            raise AppError(
-                ErrorCode.CHART_ERROR,
-                "No plot data available for chart generation.",
-            )
-
-        safe_fig = pio.from_json(pio.to_json(plot.main_plot))
-        image_bytes = pio.to_image(safe_fig, width=4 * dpi, height=2 * dpi, scale=1)
-        if not image_bytes:
-            raise AppError(
-                ErrorCode.CHART_ERROR,
-                "Chart rendering returned empty data.",
-            )
-
-        return compress_chart(image_bytes)
-
-    except AppError:
-        raise
-    except Exception as e:
-        logger.exception("Chart generation failed")
-        raise AppError(
-            ErrorCode.CHART_ERROR,
-            "图表生成失败，结构化结果仍可查看。",
+            ErrorCode.DETECTION_ERROR,
+            "形态检测失败，请稍后重试。",
             retryable=True,
             original_error=e,
         ) from e

@@ -7,7 +7,6 @@ export type AnalysisStatus =
   | "fetching_market_data"
   | "detecting_patterns"
   | "interpreting"
-  | "rendering_chart"
   | "completed"
   | "no_result"
   | "failed_upstream"
@@ -36,14 +35,6 @@ export interface AnalyzeRequest {
   percent_complete?: number;
   candles?: number;
   idempotency_key?: string;
-}
-
-export interface ChartMeta {
-  format: string;
-  width?: number;
-  height?: number;
-  path?: string;
-  url?: string;
 }
 
 export interface TimingInfo {
@@ -118,7 +109,6 @@ export interface AnalysisData {
   parameters: Record<string, unknown>;
   technical_result: TechnicalResult;
   interpretation: Interpretation;
-  chart: ChartMeta;
   timing: TimingInfo;
 }
 
@@ -133,7 +123,6 @@ export interface AnalysisHistoryItem {
   summary?: string;
   created_at: string;
   duration_ms?: number;
-  chart?: ChartMeta;
 }
 
 /**

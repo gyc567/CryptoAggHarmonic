@@ -23,7 +23,6 @@ const baseResult: AnalysisData = {
     resolved_type: "formed",
   },
   interpretation: { summary: "形态完成度较高" },
-  chart: { format: "png" },
   timing: { duration_ms: 1250 },
 };
 

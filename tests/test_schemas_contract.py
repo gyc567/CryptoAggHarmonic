@@ -24,7 +24,6 @@ from app.domain.enums import AnalysisType, ErrorCode, Interval, Market, Status
 from app.domain.schemas import (
     AnalysisData,
     AnalyzeRequest,
-    ChartMeta,
     ErrorResponse,
     HealthResponse,
     Interpretation,
@@ -277,14 +276,8 @@ class TestResponseEnvelopes:
         assert s.success is True
         assert s.data.symbol == "BTCUSDT"
 
-    def test_chart_meta_rejects_zero_dimensions(self):
-        with pytest.raises(ValidationError):
-            ChartMeta(format="png", width=0)
-
-    def test_chart_meta_rejects_huge_dimensions(self):
-        with pytest.raises(ValidationError):
-            ChartMeta(format="png", width=10000)
-
+    
+    
     def test_timing_info_rejects_negative_duration(self):
         with pytest.raises(ValidationError):
             TimingInfo(duration_ms=-1)

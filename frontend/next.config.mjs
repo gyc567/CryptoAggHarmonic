@@ -8,7 +8,7 @@ const nextConfig = {
       { source: "/api/analyze", destination: `${apiBase}/api/analyze` },
       { source: "/api/history", destination: `${apiBase}/api/history` },
       { source: "/api/analysis/:path*", destination: `${apiBase}/api/analysis/:path*` },
-      { source: "/api/charts/:path*", destination: `${apiBase}/api/charts/:path*` },
+      
       { source: "/api/vibe/:path*", destination: `${apiBase}/api/vibe/:path*` },
       { source: "/api/rsi-trend/:path*", destination: `${apiBase}/api/rsi-trend/:path*` },
     ];

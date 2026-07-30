@@ -144,35 +144,6 @@ def get_markets():
     )
 
 
-@app.route("/api/charts/<name>.png", methods=["GET"])
-def serve_chart(name):
-    """Serve a locally stored chart PNG (fallback when Storage is unavailable).
-
-    Unauthenticated on purpose: charts are public market graphics addressed by
-    an unguessable analysis id; the name whitelist blocks path traversal.
-    """
-    from flask import send_file
-
-    from app.services.chart_store import chart_file_path
-
-    path = chart_file_path(name)
-    if path is None:
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "NOT_FOUND",
-                        "message": "Chart not found.",
-                        "retryable": False,
-                        "request_id": "",
-                    },
-                }
-            ),
-            404,
-        )
-    return send_file(path, mimetype="image/png")
-
 
 @app.route("/api/analyze", methods=["POST"])
 @require_auth
@@ -217,7 +188,7 @@ def analyze(user):
                             "analysis_type": prior.get("analysis_type"),
                             "technical_result": prior.get("technical_result"),
                             "interpretation": prior.get("interpretation"),
-                            "chart": {"path": prior.get("chart_path")} if prior.get("chart_path") else {},
+                            "chart": {},
                             "timing": {
                                 "duration_ms": prior.get("duration_ms"),
                                 "started_at": prior.get("started_at"),

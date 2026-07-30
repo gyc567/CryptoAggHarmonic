@@ -110,7 +110,6 @@ export function useAnalyze(getToken: () => Promise<string | null>) {
       summary: res.data.interpretation?.summary,
       created_at: new Date().toISOString(),
       duration_ms: res.data.timing?.duration_ms,
-      chart: res.data.chart,
     };
     appendLocalHistory(historyItem);
   }, [form, getToken]);

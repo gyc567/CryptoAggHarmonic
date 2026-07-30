@@ -1,4 +1,4 @@
-"""Analysis orchestrator: coordinates validation, detection, interpretation, charting."""
+"""Analysis orchestrator: coordinates validation, detection, and interpretation."""
 
 import logging
 import time
@@ -12,7 +12,6 @@ from app.domain.forming_schemas import CandidateWithMetrics
 from app.domain.schemas import (
     AnalysisData,
     AnalyzeRequest,
-    ChartMeta,
     Interpretation,
     TimingInfo,
 )
@@ -28,13 +27,9 @@ from app.infra.analysis_cache import AnalysisCache, get_analysis_cache
 from app.infra.pyharmonics_adapter import (
     detect_patterns,
     fetch_market_data,
-    render_chart,
     technical_result_to_schema,
 )
-from app.infra.supabase_client import get_chart_url, upload_chart
 from app.openai_handler import query_openai
-from app.services.chart import validate_chart_size
-from app.services.chart_store import save_chart_locally
 from app.services.discipline_filters import evaluate as discipline_evaluate
 from app.services.macro_bias import compute as macro_compute
 from app.services.signal_engine import build_signal, extract_candidates
@@ -104,263 +99,107 @@ class AnalysisOrchestrator:
         self.cache = cache or get_analysis_cache()
 
     def _restore_cached(self, cached: dict, analysis_id: str, user_id: Optional[str], start_time: float) -> AnalysisData:
-        """Rebuild an AnalysisData from a cache entry.
+        """Reconstruct AnalysisData from cache without re-running analysis.
 
-        缓存命中后：分配新 analysis_id、用缓存的图表 URL/path 直接复用
-        （刷新 timing）。原来这里重新分发 PNG 是为了对抗签名 URL 过期，
-        现在缓存里只存 URL/path，重新分发反而需要再拿一次字节，得不偿失：
-        签名过期的场景由前端的 ``/api/charts/<id>.png`` 兜底。
+        This is used for idempotent requests and GET /analysis/:id.
         """
         data = AnalysisData.model_validate_json(cached["analysis_json"])
         data.analysis_id = analysis_id
-        chart_url = cached.get("chart_url")
-        chart_path = cached.get("chart_path")
-        if chart_url or chart_path:
-            data.chart = ChartMeta(
-                format="png",
-                path=chart_path,
-                url=chart_url,
-                width=data.chart.width if data.chart else None,
-                height=data.chart.height if data.chart else None,
-            )
-        elif data.chart and data.chart.url:
-            # 旧链接不可信（签名过期），清空
-            data.chart = ChartMeta(format="png")
-        data.timing = TimingInfo(
-            started_at=str(int(start_time)),
-            duration_ms=int((time.time() - start_time) * 1000),
-            completed_at=str(int(time.time())),
-        )
+        # Restore timing from cache (may be stale but gives approximate duration)
+        if data.timing:
+            data.timing.duration_ms = int((time.time() - start_time) * 1000)
+            data.timing.completed_at = str(int(time.time()))
         return data
-
-    @staticmethod
-    def _build_trade_signal(candle_data, interval, detection_result: dict, limit_to: int = 10, percent_complete: float = 0.8):
-        """Build a trade signal from the detection result (best-effort).
-
-        Signal generation never blocks the analysis pipeline: any failure is
-        logged and results in no signal attached.
-        """
-        try:
-            candidates = extract_candidates(
-                detection_result,
-                candle_data.df["close_time"],
-            )
-            if not candidates:
-                return None
-
-            def detect_on_slice(slice_df):
-                """Re-run pattern detection on a sub-window (stability check)."""
-                try:
-                    proxy = SimpleNamespace(
-                        df=slice_df,
-                        symbol=candle_data.symbol,
-                        interval=candle_data.interval,
-                    )
-                    det = detect_patterns(
-                        proxy,
-                        limit_to=limit_to,
-                        percent_complete=percent_complete,
-                        analysis_type="forming",
-                    )
-                    sub_candidates = extract_candidates(
-                        det,
-                        slice_df["close_time"],
-                    )
-                    return sub_candidates[0].name if sub_candidates else None
-                except Exception:
-                    return None
-
-            return build_signal(
-                df=candle_data.df,
-                interval=interval.value,
-                candidates=candidates,
-                divergences=detection_result.get("divergences", {}),
-                stability_detector=detect_on_slice,
-            )
-        except Exception:
-            logger.exception("Signal engine failed, continuing without signal")
-            return None
-
-    @staticmethod
-    def _build_forming_view(
-        candle_data,
-        detection_result: dict,
-        daily_close: Optional[object] = None,
-        max_ttl: int = 40,
-    ) -> list[CandidateWithMetrics]:
-        """Build the ranked list of forming-pattern views (v2).
-
-        For every forming candidate from the upstream detector:
-
-        1. Run :func:`discipline_filters.evaluate` to attach
-           ``stale / breached_stop / past_tp2 / in_prz / dist_pct``.
-           Drop candidates whose path-integrity check failed.
-        2. Run :func:`macro_bias.compute` per surviving candidate to attach
-           ``MacroOverlay`` (size_mult + advice). The daily series is
-           optional — when absent the macro layer falls back to the
-           conservative 0.8 multiplier.
-        3. Sort by ``(tradable desc, dist_pct asc, width_pct asc)`` so the
-           row closest to the PRZ and narrowest comes first.
-        """
-        try:
-            candidates = extract_candidates(
-                detection_result,
-                candle_data.df["close_time"],
-            )
-            df = candle_data.df
-            current_price = float(df["close"].iloc[-1])
-            out: list[CandidateWithMetrics] = []
-            for cand in candidates:
-                # Forming view only — skip formed patterns (their best is
-                # already surfaced via _build_trade_signal).
-                if cand.formed:
-                    continue
-                verdict = discipline_evaluate(
-                    df,
-                    cand,
-                    current_price,
-                    max_ttl=max_ttl,
-                )
-                if not verdict.passed:
-                    continue
-                overlay = macro_compute(
-                    daily_close,
-                    1 if cand.bullish else -1,
-                )
-                out.append(
-                    CandidateWithMetrics(
-                        candidate=cand,
-                        metrics=verdict.metrics,
-                        macro=overlay,
-                    )
-                )
-            # Sort: tradable first, then closest PRZ, then narrowest.
-            out.sort(
-                key=lambda v: (
-                    0 if v.tradable else 1,
-                    v.metrics.dist_pct,
-                    v.width_pct,
-                )
-            )
-            return out
-        except Exception:
-            logger.exception("Forming view build failed, returning empty list")
-            return []
-
-    @staticmethod
-    def _distribute_chart(chart, analysis_id: str, image_bytes: bytes, user_id: Optional[str]):
-        """Attach a viewable URL to the chart: Supabase first, local fallback.
-
-        Distribution is best-effort: on any storage failure the chart falls
-        back to a locally served file so the dashboard always has a picture.
-        """
-        if user_id:
-            try:
-                storage_path = upload_chart(user_id, analysis_id, image_bytes)
-                if storage_path:
-                    chart.path = storage_path
-                    chart.url = get_chart_url(storage_path, expires_in=300)
-                    logger.info("Chart uploaded to Storage: %s", storage_path)
-                    return chart
-                logger.warning("Chart upload returned None, falling back to local")
-            except Exception as e:
-                logger.warning("Chart upload failed, falling back to local: %s", e)
-
-        local_path = save_chart_locally(analysis_id, image_bytes)
-        if local_path:
-            chart.path = local_path
-            chart.url = f"/api/charts/{analysis_id}.png"
-        return chart
 
     def analyze(
         self,
         request: AnalyzeRequest,
         user_id: Optional[str] = None,
-        analysis_id: Optional[str] = None,
-        daily_close: Optional[object] = None,
+        idempotency_key: Optional[str] = None,
     ) -> AnalysisData:
-        """Run full analysis pipeline.
+        """Run full technical analysis.
 
-        Pipeline:
-        1. Validate inputs
-        2. Fetch market data
-        3. Detect patterns
-        4. Generate interpretation (optional)
-        5. Generate chart and upload to Storage
-        6. Build response
+        Steps:
+        1. Validation (fast, no I/O)
+        2. Market data fetch
+        3. Pattern detection
+        4. Signal evaluation (optional)
+        5. Interpretation (optional)
 
         Args:
-            request: Validated analyze request.
-            user_id: Optional user ID for chart upload.
-            analysis_id: Optional analysis ID for chart upload.
-            daily_close: Optional daily close series (≥210 bars) for the
-                macro-bias overlay (v2). When None the macro layer falls
-                back to the conservative 0.8 size multiplier.
+            request: Validated analysis request.
+            user_id: Authenticated user ID (optional, enables caching & quota).
+            idempotency_key: Request deduplication key.
 
         Returns:
-            AnalysisData with results.
+            Complete AnalysisData response.
 
         Raises:
-            AppError: On any pipeline failure.
+            AppError: On validation failure, data fetch failure, or pattern
+                detection failure.
         """
         start_time = time.time()
-        if analysis_id is None:
-            analysis_id = str(uuid.uuid4())[:12]
+        analysis_id = str(uuid.uuid4())
 
-        # Step 1: Validate
-        market = validate_market(request.market.value)
-        symbol = validate_symbol(request.symbol)
-        interval = validate_interval(request.interval.value)
-        analysis_type = validate_analysis_type(request.analysis_type.value)
-        validate_bounds(request.limit_to, request.percent_complete, request.candles)
+        # Unpack validated request fields
+        market = request.market
+        symbol = request.symbol.upper()
+        interval = request.interval
+        analysis_type = request.analysis_type
+        limit_to = request.limit_to or 10
+        percent_complete = request.percent_complete or 0.8
+        candles = request.candles or 1000
 
-        timing = TimingInfo(
-            started_at=str(int(start_time)),
-        )
+        # Check cache for idempotent requests
+        cache_key = f"{market.value}:{symbol}:{interval.value}:{analysis_type.value}"
+        if user_id and idempotency_key:
+            cache_key = f"{user_id}:{idempotency_key}"
+            cached = self.cache.get(cache_key)
+            if cached:
+                logger.info("Cache hit for idempotent request %s", idempotency_key)
+                return self._restore_cached(cached, analysis_id, user_id, start_time)
 
+        # Step 1 is done by the API layer (parse_request decorator)
         # Step 2: Fetch market data
+        timing = TimingInfo(duration_ms=0, started_at=str(int(time.time())))
         try:
-            candle_data = fetch_market_data(
-                market=market,
-                symbol=symbol,
-                interval=interval,
-                candles=request.candles,
+            candle_data = fetch_market_data(market, symbol, interval, candles)
+        except AppError:
+            raise
+        except Exception as e:
+            logger.exception("Market data fetch failed")
+            raise AppError(
+                ErrorCode.MARKET_DATA_UNAVAILABLE,
+                f"暂时无法获取 {symbol} 的行情数据，请稍后重试。",
+                retryable=True,
+                original_error=e,
+            ) from e
+
+        # Step 3: Pattern detection
+        try:
+            detection_result = detect_patterns(
+                candle_data,
+                limit_to=limit_to,
+                percent_complete=percent_complete,
+                analysis_type=analysis_type.value,
             )
         except AppError:
             raise
+        except Exception as e:
+            logger.exception("Pattern detection failed")
+            raise AppError(
+                ErrorCode.DETECTION_ERROR,
+                f"{symbol} 形态检测失败，请稍后重试。",
+                retryable=True,
+                original_error=e,
+            ) from e
 
-        # Step 3: 缓存检查（形态检测对同一组 K 线是确定的，命中则跳过全部重计算）
-        cache_key = self.cache.make_key(
-            market=market.value,
-            symbol=symbol,
-            interval=interval.value,
-            analysis_type=analysis_type.value,
-            limit_to=request.limit_to,
-            percent_complete=request.percent_complete,
-            candles=request.candles,
-            fingerprint=AnalysisCache.candle_fingerprint(candle_data),
-        )
-        cached = self.cache.get(cache_key)
-        if cached:
-            return self._restore_cached(cached, analysis_id, user_id, start_time)
-
-        # Step 4: Detect patterns
-        detection_result = detect_patterns(
-            candle_data=candle_data,
-            limit_to=request.limit_to,
-            percent_complete=request.percent_complete,
-            analysis_type=analysis_type.value,
-        )
-
-        # Check if any patterns found
-        has_patterns = detection_result.get("position") is not None
-        if not has_patterns:
-            # No patterns is a valid terminal state
-            technical = technical_result_to_schema(detection_result)
+        # Check for "no pattern" result early
+        if not detection_result.get("position") and not detection_result.get("patterns"):
+            logger.info("No patterns detected for %s %s", symbol, interval.value)
             timing.duration_ms = int((time.time() - start_time) * 1000)
             timing.completed_at = str(int(time.time()))
-
-            data = AnalysisData(
+            return AnalysisData(
                 analysis_id=analysis_id,
                 status=Status.NO_RESULT,
                 market=market,
@@ -368,51 +207,61 @@ class AnalysisOrchestrator:
                 interval=interval,
                 analysis_type=analysis_type,
                 parameters=request.model_dump(),
-                technical_result=technical,
+                technical_result={},
+                interpretation=Interpretation(summary="未检测到明显的谐波形态。"),
                 timing=timing,
+                forming_candidates=[],
             )
-            self.cache.set(cache_key, data.model_dump_json())
-            return data
 
-        # Step 4: Technical result (+ executable trade signal, best-effort)
-        signal = self._build_trade_signal(
-            candle_data,
-            interval,
-            detection_result,
-            limit_to=request.limit_to,
-            percent_complete=request.percent_complete,
-        )
-        # v2: form the ranked forming-pattern view (always populated when
-        # the upstream detector found any forming candidates; empty list
-        # otherwise). Independent of analysis_type so callers can render
-        # either view from one response.
-        forming_view = self._build_forming_view(
-            candle_data,
-            detection_result,
-            daily_close=daily_close,
-        )
-        # If the user explicitly asked for forming, mirror the top surviving
-        # entry into ``technical_result.signal`` so legacy single-best
-        # consumers still see something instead of falling back to "no
-        # signal". For other analysis types the legacy signal path wins.
+        # Step 4: Signal evaluation (forming type only)
+        forming_view: list[CandidateWithMetrics] = []
+        signal = None
+        if analysis_type == AnalysisType.FORMING:
+            try:
+                candidates = extract_candidates(detection_result)
+                forming_view = candidates[:limit_to]
+                if forming_view:
+                    # Score and rank with discipline + macro filters
+                    scored = []
+                    for c in forming_view:
+                        disc = discipline_evaluate(c)
+                        macro = macro_compute(candle_data, c)
+                        scored.append((c, disc, macro))
+                    scored.sort(key=lambda x: x[0].metrics.confidence or 0, reverse=True)
+                    top = scored[0][0]
+                    signal = build_signal(
+                        top,
+                        market=market.value,
+                        interval=interval.value,
+                        symbol=symbol,
+                        htf_trend=detection_result.get("htf_trend"),
+                    )
+            except Exception as e:
+                logger.warning("Signal evaluation failed: %s", e)
+                # Non-fatal: continue without signal
+
+        # Convert to schema
         forming_signal_dict = None
-        if analysis_type == AnalysisType.FORMING and forming_view:
+        if forming_view:
             top = forming_view[0]
-            prz_mid = (top.candidate.prz_low + top.candidate.prz_high) / 2
             forming_signal_dict = {
-                # Required Signal fields
                 "status": "forming",
-                "grade": "C(参考)",
-                "direction": "long" if top.candidate.bullish else "short",
-                "pattern_name": top.candidate.name,
-                "family": top.candidate.family,
+                "grade": "C",
+                "direction": top.direction or "long",
+                "pattern_name": top.pattern_name or "unknown",
+                "family": top.family or "XABCD",
                 "formed": False,
-                "entry_zone": [top.candidate.prz_low, top.candidate.prz_high],
-                "entry_reference": prz_mid,
-                "stop_loss": top.candidate.prz_low,
-                "targets": [],
-                # v2 forming metadata
-                "tradable": top.tradable,
+                "entry_zone": [top.entry_price * 0.99, top.entry_price * 1.01] if top.entry_price else [0, 0],
+                "entry_reference": top.entry_price,
+                "stop_loss": top.stop_loss,
+                "targets": (
+                    [{"label": "TP1", "price": t}] for t in (top.targets or [])
+                ),
+                "confluence_score": int((top.metrics.confidence or 0) * 100),
+                "macro": {
+                    "size_mult": top.macro.size_mult if top.macro else 1.0,
+                    "advice": top.macro.advice if top.macro else "neutral",
+                },
                 "width_pct": top.width_pct,
                 "bars_since_c": top.metrics.bars_since_c,
                 "stale": top.metrics.stale,
@@ -452,23 +301,6 @@ class AnalysisOrchestrator:
             else:
                 raise
 
-        # Step 6: Chart (single render, then distribute via Supabase or local)
-        chart = ChartMeta()
-        try:
-            image_bytes, chart_meta = render_chart(detection_result, dpi=150)
-            if validate_chart_size(image_bytes):
-                chart = chart_meta
-                chart = self._distribute_chart(chart, analysis_id, image_bytes, user_id)
-            else:
-                logger.warning("Chart exceeds size limit, omitting")
-                chart = ChartMeta(format="png", path=None, url=None)
-        except AppError as e:
-            if e.code == ErrorCode.CHART_ERROR:
-                logger.warning("Chart generation failed, continuing without chart")
-                chart = ChartMeta(format="png", path=None, url=None)
-            else:
-                raise
-
         # Finalize timing
         timing.duration_ms = int((time.time() - start_time) * 1000)
         timing.completed_at = str(int(time.time()))
@@ -483,17 +315,11 @@ class AnalysisOrchestrator:
             parameters=request.model_dump(),
             technical_result=technical,
             interpretation=interpretation,
-            chart=chart,
             timing=timing,
             # v2: surface the ranked forming view (empty list when none).
             # Capped at 10 to avoid blowing up the response payload when the
             # upstream detector is too permissive on a choppy market.
             forming_candidates=[v.to_dict() for v in forming_view[:10]],
         )
-        self.cache.set(
-            cache_key,
-            data.model_dump_json(),
-            chart_url=chart.url,
-            chart_path=chart.path,
-        )
+        self.cache.set(cache_key, data.model_dump_json())
         return data

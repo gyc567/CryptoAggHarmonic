@@ -9,9 +9,7 @@ from app.infra.supabase_client import (
     consume_ledger_quota,
     create_analysis_record,
     create_profile_for_user,
-    delete_chart,
     get_analysis_by_idem_key,
-    get_chart_url,
     get_db_connection_string,
     get_supabase_anon_key,
     get_supabase_service_key,
@@ -23,7 +21,6 @@ from app.infra.supabase_client import (
     reserve_user_quota,
     reset_idem_cache,
     update_analysis_record,
-    upload_chart,
     verify_user_token,
 )
 
@@ -353,34 +350,7 @@ class TestQuotaFunctions:
 
 class TestStorageFunctions:
     @patch("app.infra.supabase_client.get_supabase_client")
-    def test_upload_chart(self, mock_get_client):
-        mock_client = MagicMock()
-        mock_result = MagicMock()
-        mock_result.data = {"path": "user-123/analysis-123.png"}
-        mock_client.storage.from_.return_value.upload.return_value = mock_result
-        mock_get_client.return_value = mock_client
 
-        result = upload_chart("user-123", "analysis-123", b"fake_image")
-        assert result is not None
-        assert "user-123/analysis-123.png" in result
-
-    @patch("app.infra.supabase_client.get_supabase_client")
-    def test_get_chart_url(self, mock_get_client):
-        mock_client = MagicMock()
-        mock_result = {"signedURL": "https://signed.url/chart.png"}
-        mock_client.storage.from_.return_value.create_signed_url.return_value = mock_result
-        mock_get_client.return_value = mock_client
-
-        result = get_chart_url("user-123/analysis-123.png")
-        assert result == "https://signed.url/chart.png"
-
-    @patch("app.infra.supabase_client.get_supabase_client")
-    def test_delete_chart(self, mock_get_client):
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-
-        result = delete_chart("user-123/analysis-123.png")
-        assert result is True
 
 
 class TestAuditFunctions:

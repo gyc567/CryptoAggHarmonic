@@ -13,8 +13,18 @@ export function formatDate(dateStr: string) {
   });
 }
 
-export function formatNumber(n: number) {
-  return new Intl.NumberFormat("en-US").format(n);
+/**
+ * Format number with fixed decimal places.
+ * @param n - Number to format
+ * @param decimals - Number of decimal places (default: 2)
+ * @returns Formatted string or "—" for null/undefined
+ */
+export function formatNumber(n: number | undefined | null, decimals = 2): string {
+  if (n == null) return "—";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(n);
 }
 
 export function generateIdempotencyKey() {

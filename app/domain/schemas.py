@@ -156,22 +156,6 @@ class AnalyzeRequest(_StrictModel):
 # --- Response sub-schemas -----------------------------------------------------
 
 
-class ChartMeta(_StrictModel):
-    """Chart metadata (no base64 data)."""
-
-    format: Annotated[
-        str,
-        Field(
-            default="png",
-            min_length=1,
-            max_length=8,
-        ),
-    ]
-    width: Annotated[Optional[int], Field(default=None, ge=1, le=8192)] = None
-    height: Annotated[Optional[int], Field(default=None, ge=1, le=8192)] = None
-    path: Annotated[Optional[str], Field(default=None, max_length=512)] = None
-    url: Annotated[Optional[str], Field(default=None, max_length=2048)] = None
-
 
 class TimingInfo(_StrictModel):
     """Analysis timing information."""
@@ -261,7 +245,6 @@ class AnalysisData(_StrictModel):
     parameters: Annotated[dict[str, Any], Field(default_factory=dict)]
     technical_result: TechnicalResult = Field(default_factory=lambda: TechnicalResult(divergences={}, raw_patterns={}))
     interpretation: Interpretation = Field(default_factory=lambda: Interpretation(timeframes={}))
-    chart: ChartMeta = Field(default_factory=lambda: ChartMeta(format="png"))
     timing: TimingInfo = Field(default_factory=TimingInfo)
     binance_ws_url: Annotated[Optional[str], Field(default=None, max_length=512)] = None  # 客户端直连 Binance WS（仅 FUTURES）
     # v2: ranked list of forming-pattern candidates with discipline + macro tags.
