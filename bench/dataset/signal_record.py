@@ -63,6 +63,7 @@ class SignalRecord:
     mae: Optional[float] = None
     mfe: Optional[float] = None
     mae_atr_ratio: Optional[float] = None
+    mfe_atr_ratio: Optional[float] = None
     callback_depth: Optional[float] = None
     callback_bars: Optional[int] = None
     callback_volume_ratio: Optional[float] = None
@@ -90,6 +91,8 @@ class SignalRecord:
     stage4b_score: Optional[float] = None
     stage4c_score: Optional[float] = None
     signal_score: Optional[float] = None
+    config_score: Optional[float] = None
+    bench_total: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-friendly dict (no nested objects)."""
