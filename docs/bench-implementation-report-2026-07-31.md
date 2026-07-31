@@ -134,6 +134,7 @@ The `--cov-fail-under=100` gate is enforced in CI.
 | 4 | `d26141b` | test(bench): pass 8 report — CSV + leaderboard JSON + 8 charts |
 | 3 | `1408c1c` | fix(bench): per-pattern config_score aggregation (Level 2) |
 | 2 | `55d1631` | test(bench): pass 9 runner CLI |
+| 1 | `b29f77c` | fix(bench): apply Pass 9 AAA review findings |
 
 Each pass was independently reviewed by a sub-agent (AAA quality bar) before the next pass started.
 
@@ -217,7 +218,7 @@ Each pass was audited by a separate sub-agent (deepseek-v4-pro) against the AAA 
 | Pass | Grade | CRITICAL/MAJOR findings | Resolution |
 |---:|---|---|---|
 | 5+6 | **B** | Aggregator was a flat mean across all signals, not per-pattern aggregation; config_score + bench_total were dynamically assigned without dataclass fields. | Pass 8.1 refactor: per-pattern aggregation + explicit dataclass fields. 33 tests added. |
-| 9 | _pending_ | Awaiting report from `session_hatchling_1785516708627_457c5c078a04691e`. | _tracked separately_ |
+| 9 | **AA** | Dead `asdict` import; `warnings=` parameter not passed to `write_leaderboard` (top-level warnings always empty); coverage config excluded `bench/` (100% gate unverifiable for bench). | All 3 MAJOR fixed in commit `b29f77c`. Plus 3 MINOR (type-hint `src`, `field(default_factory=list)` for `ChartPaths.paths`, pass `str(path)` not `Path` to `write_leaderboard`). |
 
 Other passes had no critical/major findings.
 
