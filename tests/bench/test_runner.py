@@ -323,11 +323,37 @@ def test_run_bench_leaderboard_json_loadable(
     assert data["n_points"] == 1
     # Only 2 records in one pattern → n<10 → low_confidence=True (expected)
     assert data["low_confidence"] is True
+    # The top-level warnings key surfaces which patterns are low-sample.
+    # fake_walk_forward emits 2 records all in pattern "gartley" → "gartley"
+    # is in the low-sample list.
+    assert "gartley" in data["warnings"]
     pt = data["points"][0]
     assert "base_params_sha" in pt
     assert "signal_score" in pt
     assert "config_score" in pt
     assert "bench_total" in pt
+
+
+def test_run_bench_leaderboard_no_warnings_when_all_patterns_have_10_plus(
+    monkeypatch, patch_fetch, tmp_path: Path,
+) -> None:
+    """Top-level warnings=[] when every pattern has ≥10 signals."""
+    def _ten(df, symbol, interval, **kw):
+        return [_fake_backtest_record(result="win", r_multiple=2.0) for _ in range(12)]
+    res = run_bench(
+        walk_forward_fn=_ten,
+        symbol="BTCUSDT",
+        interval="1d",
+        days=90,
+        window=30,
+        step=1,
+        horizon=30,
+        out_dir=tmp_path,
+        config_id="lwtest",
+    )
+    data = json.loads(Path(res.leaderboard_path).read_text())
+    assert data["warnings"] == []
+    assert data["low_confidence"] is False
 
 
 def test_run_bench_passes_args_to_walk_forward(

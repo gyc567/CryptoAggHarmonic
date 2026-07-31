@@ -25,9 +25,9 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Any, Iterable, List, Optional
 
 from bench.dataset.signal_record import Outcome, SignalRecord
 from bench.pipeline.stage1_validity import stage1_score
@@ -76,11 +76,7 @@ class ChartPaths:
     Empty lists when ``out_dir`` is None.
     """
     dir: str = ""
-    paths: List[str] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.paths is None:
-            self.paths = []
+    paths: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -115,7 +111,7 @@ class BenchRunResult:
 # --- Field mapping -----------------------------------------------------------
 
 def _signal_record_from_backtest(
-    src,  # BacktestSignalRecord
+    src: Any,
     symbol: str,
     interval: str,
 ) -> SignalRecord:
@@ -262,6 +258,10 @@ def run_bench(
             trade_count=n_total,
             fitness=agg["bench_total"],
         )
+        low_sample_patterns = [
+            p["pattern_family"] for p in agg["pattern_scores"]
+            if p["signal_count"] < 10
+        ]
         points = [BenchAugmentedParetoPoint(
             base=base_pt,
             signal_score=agg["signal_score"],
@@ -271,13 +271,13 @@ def run_bench(
             n_signals=agg["n_signals"],
             win_rate=round(win_rate, 4),
             win_rate_ci=ci,
-            warnings=[p["pattern_family"] for p in agg["pattern_scores"]
-                      if p["signal_count"] < 10],
+            warnings=list(low_sample_patterns),
         )]
         write_leaderboard(
-            Path(leaderboard_path),
+            str(leaderboard_path),
             points=points,
             low_confidence=agg["low_confidence"],
+            warnings=low_sample_patterns,
             extra={
                 "config_id": config_id,
                 "symbol": symbol,

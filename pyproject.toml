@@ -50,7 +50,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["app"]
+source = ["app", "bench"]
 omit = [
     "*/templates/*",
     "*/__pycache__/*",
