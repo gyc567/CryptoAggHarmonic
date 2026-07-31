@@ -1,0 +1,33 @@
+{
+  "config": {
+    "market": "binance",
+    "symbol": "BTCUSDT",
+    "interval": "4h",
+    "days": 30,
+    "window": 200,
+    "step": 20,
+    "horizon": 30,
+    "fetch_days": 37,
+    "candles_fetched": 222,
+    "data_start": "2026-06-24T03:59:59+00:00",
+    "data_end": "2026-07-30T23:59:59+00:00",
+    "elapsed_fetch_seconds": 0.38,
+    "elapsed_walk_seconds": 0.0,
+    "llm_disabled": true
+  },
+  "summary": {
+    "total_signals": 0,
+    "skipped_signals": 0,
+    "decisions": 0,
+    "wins": 0,
+    "losses": 0,
+    "scratches": 0,
+    "win_rate": 0.0,
+    "avg_r": 0.0,
+    "total_r": 0.0,
+    "profit_factor": 0.0,
+    "by_grade": {},
+    "by_family": {}
+  },
+  "signals": []
+}
