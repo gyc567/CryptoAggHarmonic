@@ -15,6 +15,7 @@ from bench.scoring.aggregator import (
     aggregate,
     bench_total,
     config_score,
+    config_score_with_patterns,
     signal_score,
 )
 
@@ -25,12 +26,18 @@ def _rec(
     s3: float | None = 50.0,
     s4a: float | None = 20.0,
     s4b: float | None = 10.0,
+    pattern_family: str | None = "XABCD",
+    outcome: str | None = "tp2",
+    net_rr: float | None = 2.0,
 ):
     return empty_record(
         stage1_score=s1,
         stage3_score=s3,
         stage4a_score=s4a,
         stage4b_score=s4b,
+        pattern_family=pattern_family or "XABCD",
+        outcome=outcome,
+        net_rr=net_rr,
     )
 
 
@@ -54,29 +61,21 @@ def test_signal_score_half_each() -> None:
 
 
 def test_signal_score_weak_validity_halves() -> None:
-    # Set all stages max except stage1, then trigger weak_validity by
-    # setting stage1 < threshold. Verify the 0.5× applies.
     rec_max = _rec()  # 100
-    rec_weak = _rec(s1=WEAK_VALIDITY_THRESHOLD - 1)  # stage1=3 → weak
-    # rec_max: s1=12 → 20, s3=50 → 50, s4a=20 → 20, s4b=10 → 10. Total=100.
-    # rec_weak: s1=3 → 5, s3=50 → 50, s4a=20 → 20, s4b=10 → 10. Raw=85, weak → 42.5.
+    rec_weak = _rec(s1=WEAK_VALIDITY_THRESHOLD - 1)
     assert signal_score(rec_max) == pytest.approx(100.0)
     assert signal_score(rec_weak) == pytest.approx(42.5)
     assert rec_weak.weak_validity is True
 
 
 def test_signal_score_weak_validity_at_threshold_no_halving() -> None:
-    # stage1 == threshold → no halving
-    rec = _rec(s1=WEAK_VALIDITY_THRESHOLD)  # s1=4
-    # s1=4 → (4/12)*20 = 6.667, s3=50, s4a=20, s4b=10. Total = 86.667.
-    # NOT weak (threshold check is strict <).
+    rec = _rec(s1=WEAK_VALIDITY_THRESHOLD)
     assert signal_score(rec) == pytest.approx(86.6667, abs=0.01)
     assert rec.weak_validity is False
 
 
 def test_signal_score_missing_stage_contributes_zero() -> None:
-    rec = _rec(s3=None, s4a=None, s4b=None)  # only stage1
-    # s1 = 12 → W_STAGE1 = 20
+    rec = _rec(s3=None, s4a=None, s4b=None)
     assert signal_score(rec) == pytest.approx(20.0)
 
 
@@ -96,35 +95,143 @@ def test_signal_score_weak_validity_multiplier_constant() -> None:
     assert WEAK_VALIDITY_MULTIPLIER == 0.5
 
 
-# ---------- config_score ----------
-
-def test_config_score_mean() -> None:
-    r1 = _rec()
-    r2 = _rec(s3=0, s4a=0, s4b=0)  # 20 (only stage1)
-    signal_score(r1)
-    signal_score(r2)
-    assert config_score([r1, r2]) == pytest.approx(60.0)
-
+# ---------- config_score (per-pattern) ----------
 
 def test_config_score_empty_returns_none() -> None:
     assert config_score([]) is None
 
 
-def test_config_score_no_scores_returns_none() -> None:
-    r = empty_record()  # all scores None
-    assert config_score([r]) is None
-
-
-def test_config_score_single_record() -> None:
+def test_config_score_single_record_includes_penalty() -> None:
+    """A single record is in low_confidence territory (n<10), so applies penalty."""
     r = _rec()
     signal_score(r)
-    assert config_score([r]) == 100.0
+    score = config_score([r])
+    # pattern_score = 100*0.40 + 100*0.25 + (2/5)*100*0.20 + (1/100)*100*0.15
+    #               = 40 + 25 + 8 + 0.15 = 73.15, ×0.9 = 65.835
+    assert score == pytest.approx(65.835)
+
+
+def test_config_score_two_records_same_pattern_weighted_mean() -> None:
+    r1 = [_rec(net_rr=2.0) for _ in range(6)]          # 100 each
+    r2 = [_rec(s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(6)]  # 20 each
+    recs = r1 + r2
+    for r in recs:
+        signal_score(r)
+    # 12 records, same pattern, no penalty (12 >= 10).
+    # avg_score = 60, win_rate = 1.0, avg_rr = 1.5, n=12
+    #   = 60*0.40 + 100*0.25 + (1.5/5)*100*0.20 + (12/100)*100*0.15
+    #   = 24 + 25 + 6 + 1.8 = 56.8
+    assert config_score(recs) == pytest.approx(56.8)
+
+
+def test_config_score_per_pattern_breakdown() -> None:
+    gartley = [_rec(pattern_family="gartley", net_rr=2.0) for _ in range(15)]
+    bat = [_rec(pattern_family="bat", s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(15)]
+    for r in gartley + bat:
+        signal_score(r)
+    _, _, patterns = config_score_with_patterns(gartley + bat)
+    families = [p["pattern_family"] for p in patterns]
+    assert families == ["bat", "gartley"]  # sorted
+    assert all(p["signal_count"] == 15 for p in patterns)
+    gartley_score = next(p for p in patterns if p["pattern_family"] == "gartley")
+    bat_score = next(p for p in patterns if p["pattern_family"] == "bat")
+    # gartley: 100*0.40 + 1.0*100*0.25 + (2/5)*100*0.20 + (15/100)*100*0.15
+    #        = 40 + 25 + 8 + 2.25 = 75.25
+    # bat:    20*0.40 + 1.0*100*0.25 + (1/5)*100*0.20 + (15/100)*100*0.15
+    #        = 8 + 25 + 4 + 2.25 = 39.25
+    assert gartley_score["pattern_score"] == pytest.approx(75.25)
+    assert bat_score["pattern_score"] == pytest.approx(39.25)
+
+
+def test_config_score_weighted_by_signal_count() -> None:
+    gartley = [_rec(pattern_family="gartley", net_rr=2.0) for _ in range(20)]
+    bat = [_rec(pattern_family="bat", s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(15)]
+    for r in gartley + bat:
+        signal_score(r)
+    # gartley score = 76, bat score = 39.25
+    # weighted = (76*20 + 39.25*15) / 35 = 60.25
+    assert config_score(gartley + bat) == pytest.approx(60.25)
+
+
+def test_config_score_low_confidence_penalty_when_any_pattern_below_10() -> None:
+    gartley = [_rec(pattern_family="gartley", net_rr=2.0) for _ in range(20)]
+    bat = [_rec(pattern_family="bat", s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(5)]
+    for r in gartley + bat:
+        signal_score(r)
+    # gartley = 76, bat = 20*0.40 + 100*0.25 + (1/5)*20 + (5/100)*15
+    #        = 8 + 25 + 4 + 0.75 = 37.75
+    # weighted = (76*20 + 37.75*5) / 25 = 68.35
+    # ×0.9 = 61.515
+    base_score, low_conf, _ = config_score_with_patterns(gartley + bat)
+    assert low_conf is True
+    assert base_score == pytest.approx(68.35 * 0.9)
+
+
+def test_config_score_no_low_confidence_when_all_patterns_have_10_plus() -> None:
+    gartley = [_rec(pattern_family="gartley") for _ in range(15)]
+    bat = [_rec(pattern_family="bat", s3=0, s4a=0, s4b=0) for _ in range(15)]
+    for r in gartley + bat:
+        signal_score(r)
+    _, low_conf, _ = config_score_with_patterns(gartley + bat)
+    assert low_conf is False
+
+
+def test_config_score_no_penalty_at_exactly_10_samples() -> None:
+    recs = [_rec(pattern_family="gartley") for _ in range(10)]
+    for r in recs:
+        signal_score(r)
+    _, low_conf, _ = config_score_with_patterns(recs)
+    assert low_conf is False
+
+
+def test_config_score_win_rate_zero_for_all_losses() -> None:
+    recs = [
+        _rec(pattern_family="gartley", outcome="stoploss", net_rr=-1.0)
+        for _ in range(15)
+    ]
+    for r in recs:
+        signal_score(r)
+    _, _, patterns = config_score_with_patterns(recs)
+    assert patterns[0]["win_rate"] == 0.0
+
+
+def test_config_score_win_rate_zero_when_undecided() -> None:
+    recs = [
+        _rec(pattern_family="gartley", outcome="expired", net_rr=None)
+        for _ in range(15)
+    ]
+    for r in recs:
+        signal_score(r)
+    _, _, patterns = config_score_with_patterns(recs)
+    assert patterns[0]["win_rate"] == 0.0
+
+
+def test_config_score_sample_bonus_caps_at_100() -> None:
+    recs = [_rec(pattern_family="gartley", net_rr=2.0) for _ in range(150)]
+    for r in recs:
+        signal_score(r)
+    _, _, patterns = config_score_with_patterns(recs)
+    # avg_score=100, win_rate=1.0, avg_rr=2.0, n=150 → (150/100 capped 1)*15 = 15
+    # 100*0.40 + 100*0.25 + (2/5)*100*0.20 + 15 = 40+25+8+15 = 88
+    assert patterns[0]["pattern_score"] == pytest.approx(88.0)
+
+
+def test_config_score_avg_rr_caps_at_5() -> None:
+    recs = [
+        _rec(pattern_family="gartley", net_rr=10.0)
+        for _ in range(15)
+    ]
+    for r in recs:
+        signal_score(r)
+    _, _, patterns = config_score_with_patterns(recs)
+    # avg_rr=10 → min(10/5, 1) = 1.0 → 100 * 0.20 = 20
+    # = 40 + 25 + 20 + 2.25 = 87.25
+    assert patterns[0]["pattern_score"] == pytest.approx(87.25)
 
 
 # ---------- bench_total ----------
 
 def test_bench_total_combines() -> None:
-    # 0.6 × 100 + 0.4 × 50 = 60 + 20 = 80
     assert bench_total(100.0, 50.0) == pytest.approx(80.0)
 
 
@@ -133,47 +240,46 @@ def test_bench_total_no_config_falls_back() -> None:
 
 
 def test_bench_total_rounded() -> None:
-    # 0.6 × 33 + 0.4 × 25 = 19.8 + 10.0 = 29.8
-    out = bench_total(33.0, 25.0)
-    assert out == pytest.approx(29.8)
+    assert bench_total(33.0, 25.0) == pytest.approx(29.8)
 
 
 # ---------- aggregate ----------
 
 def test_aggregate_empty_returns_zero() -> None:
     result = aggregate([])
-    assert result == {
-        "signal_score": 0.0,
-        "config_score": None,
-        "bench_total": 0.0,
-        "weak_validity": False,
-        "n_signals": 0,
-    }
+    assert result["signal_score"] == 0.0
+    assert result["config_score"] is None
+    assert result["bench_total"] == 0.0
+    assert result["weak_validity"] is False
+    assert result["low_confidence"] is False
+    assert result["n_signals"] == 0
+    assert result["n_patterns"] == 0
 
 
-def test_aggregate_single_record() -> None:
+def test_aggregate_single_record_includes_penalty() -> None:
     rec = _rec()
     result = aggregate([rec])
     assert result["n_signals"] == 1
+    assert result["n_patterns"] == 1
     assert result["signal_score"] == 100.0
-    assert result["config_score"] == 100.0
-    assert result["bench_total"] == pytest.approx(100.0)
+    assert result["config_score"] == pytest.approx(65.835)
+    assert result["bench_total"] == pytest.approx(0.6 * 100 + 0.4 * 65.835)
     assert result["weak_validity"] is False
-    # record also gets config_score and bench_total written
-    assert rec.config_score == 100.0
-    assert rec.bench_total == pytest.approx(100.0)
+    assert rec.config_score == pytest.approx(65.835)
 
 
-def test_aggregate_multiple_records_averages_config() -> None:
-    r1 = _rec()                                       # 100
-    r2 = _rec(s3=0, s4a=0, s4b=0)                     # 20
-    # Avoid stage1=0 here — that triggers weak_validity and halves the score.
-    r3 = _rec(s1=MAX_STAGE1 / 2, s3=0, s4a=0)         # 10 + 0 + 0 + 10 = 20
-    result = aggregate([r1, r2, r3])
-    assert result["config_score"] == pytest.approx((100 + 20 + 20) / 3)
-    assert result["n_signals"] == 3
-    # bench_total uses first record's signal_score = 100, combined with config mean
-    assert result["bench_total"] == pytest.approx(0.6 * 100 + 0.4 * ((100 + 20 + 20) / 3))
+def test_aggregate_multiple_records_same_pattern() -> None:
+    r1 = [_rec(net_rr=2.0) for _ in range(6)]
+    r2 = [_rec(s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(3)]
+    r3 = [_rec(s1=MAX_STAGE1 / 2, s3=0, s4a=0, net_rr=1.5) for _ in range(3)]
+    recs = r1 + r2 + r3
+    result = aggregate(recs)
+    assert result["n_signals"] == 12
+    assert result["n_patterns"] == 1
+    # avg_score = 60, win_rate=1.0, avg_rr = (12+3+4.5)/12 = 1.625
+    # pattern_score = 60*0.40 + 100*0.25 + (1.625/5)*100*0.20 + (12/100)*100*0.15
+    #               = 24 + 25 + 6.5 + 1.8 = 57.3
+    assert result["config_score"] == pytest.approx(57.3)
 
 
 def test_aggregate_marks_weak_validity_if_any_record_is_weak() -> None:
@@ -184,33 +290,42 @@ def test_aggregate_marks_weak_validity_if_any_record_is_weak() -> None:
 
 
 def test_aggregate_writes_config_score_to_all_records() -> None:
-    r1 = _rec()
-    r2 = _rec(s3=0, s4a=0, s4b=0)
-    aggregate([r1, r2])
-    assert r1.config_score == r2.config_score
+    r1 = [_rec(net_rr=2.0) for _ in range(6)]
+    r2 = [_rec(s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(6)]
+    recs = r1 + r2
+    aggregate(recs)
+    assert recs[0].config_score == recs[-1].config_score
 
 
 def test_aggregate_writes_bench_total_to_all_records() -> None:
-    r1 = _rec()
-    r2 = _rec(s3=0)
-    aggregate([r1, r2])
-    assert r1.bench_total == r2.bench_total
+    r1 = [_rec(net_rr=2.0) for _ in range(6)]
+    r2 = [_rec(s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(6)]
+    recs = r1 + r2
+    aggregate(recs)
+    assert recs[0].bench_total == recs[-1].bench_total
 
 
 def test_aggregate_idempotent() -> None:
-    """Running aggregate twice yields the same config_score."""
-    r1, r2 = _rec(), _rec(s3=0)
-    aggregate([r1, r2])
-    cfg1 = r1.config_score
-    aggregate([r1, r2])  # second run
-    assert r1.config_score == cfg1
+    r1 = [_rec(net_rr=2.0) for _ in range(6)]
+    r2 = [_rec(s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(6)]
+    recs = r1 + r2
+    aggregate(recs)
+    cfg1 = recs[0].config_score
+    aggregate(recs)
+    assert recs[0].config_score == cfg1
 
 
-def test_aggregate_with_none_scores_skipped() -> None:
-    """Records with all-None scores are ignored when computing config_score."""
-    strong = _rec()
-    blank = empty_record()  # all stage scores None
-    result = aggregate([strong, blank])
-    # blank's signal_score becomes 0, so config_score = (100 + 0) / 2 = 50
-    assert result["config_score"] == pytest.approx(50.0)
-    assert result["n_signals"] == 2
+def test_aggregate_per_pattern_breakdown_in_result() -> None:
+    gartley = [_rec(pattern_family="gartley") for _ in range(15)]
+    bat = [_rec(pattern_family="bat", s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(15)]
+    result = aggregate(gartley + bat)
+    assert result["n_patterns"] == 2
+    families = [p["pattern_family"] for p in result["pattern_scores"]]
+    assert families == ["bat", "gartley"]
+
+
+def test_aggregate_low_confidence_flag_propagates() -> None:
+    gartley = [_rec(pattern_family="gartley") for _ in range(15)]
+    bat = [_rec(pattern_family="bat", s3=0, s4a=0, s4b=0, net_rr=1.0) for _ in range(5)]
+    result = aggregate(gartley + bat)
+    assert result["low_confidence"] is True
