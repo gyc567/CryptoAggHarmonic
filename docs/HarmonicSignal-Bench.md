@@ -3,7 +3,8 @@
 > 本文档是 bench/ 目录的设计蓝图。  
 > 参考: QuantCode-Bench (Lime AI Lab 2026, https://limexailab.github.io/QuantCode-Bench/)  
 > 集成对象: app/loop/pareto.py（四维 Pareto 优化）  
-> 版本: v2（经过 AI benchmark 专家审计并重构）
+> 版本: **v3**（v2 经 AI benchmark 专家审计 → v3 经本仓库代码实情复审）  
+> 状态: ⚠️ **设计蓝图，尚未实现**。截至 2026-07-30，`bench/` 目录不存在；仅 Stage 2 的极简 v0.1 见 `scripts/backtest_harmonic.py` + `scripts/backtest_harmonic_lib.py`（26 个测试，lib 覆盖率 89.85%）。本文档为目标架构。
 
 ---
 
@@ -21,6 +22,8 @@
 - [第六层：报告与排行榜](#第六层报告与排行榜)
 - [与现有系统的交互协议](#与现有系统的交互协议)
 - [附录：权重校准方案](#附录权重校准方案)
+- [附录：与 v1 方案的关键差异汇总](#附录与-v1-方案的关键差异汇总)
+- [v3 审计变更日志（2026-07-30）](#v3-审计变更日志2026-07-30)
 
 ---
 
@@ -224,6 +227,12 @@ class SignalRecord:
     tp3: float
     atr_at_entry: float
     prz_width_atr: float            # PRZ 宽度（单位 ATR）
+    entry_offset_atr: float         # 检测时 market price - PRZ mid（单位 ATR）。
+                                    # 正值 = 价格已穿越 PRZ；负值 = 还未到 PRZ。
+                                    # 实测：BTCUSDT 4h 90d walk-forward 中，11/16 BTC 与 8/11 ETH
+                                    # 的信号 entry_offset > +1.5 ATR（已被价格越过），多数在 simulate_one 阶段
+                                    # 因方向不变量（stop < entry < target）失败被跳过。
+                                    # v3: Stage 1 把此项纳入"entry-zone-reachable"软评分维度。
 
     # === 已有技术评分 ===
     confluence_score: float
@@ -242,13 +251,16 @@ class SignalRecord:
     # === 扩展交易指标（由 pipeline/trade_metrics 填充）===
     mae: float | None               # Max Adverse Excursion（价格反向最大幅度）
     mfe: float | None               # Max Favorable Excursion
-    mae_atr_ratio: float | None     # MAE / ATR
+    mae_atr_ratio: float | None     # MAE / atr_at_entry（统一 ATR 单位）
+                                    # 注意：与早期 v2 草稿中 "MAE / stop_distance" 的定义已统一到
+                                    # ATR 单位（与 mfe_atr_ratio 同量纲，便于跨信号比较）。
     callback_depth: float | None    # 入场后最大回调（与预期方向相反的走势深度，单位 ATR）
     callback_bars: int | None       # 回调持续 K 线数
     callback_volume_ratio: float | None  # 回调期间均量 / 正常均量，>1 = 放量回调
     hit_stop_before_tp: bool | None # 是否先到止损区再反转
     stop_zone_touches: int | None   # 触及止损区次数
-    price_efficiency: float | None  # TP 达成 K 线数 / 总持仓 K 线数（越高越好）
+    price_efficiency: float | None  # TP 达成 K 线位置 / 总持仓 K 线数（越高越好）。
+                                    # 止损/保本退出时定义为 0；不允许负值。
 
     # === Walk-Forward 标签 ===
     split: Literal["is", "oos"]     # in-sample / out-of-sample
@@ -295,8 +307,13 @@ Walk-Forward 划分：
 | PRZ 合理性 | 2 | prz_width_atr < 0.5 → 2 分, < 1.0 → 1 分, ≥ 1.0 → 0 分 |
 | 止损合理性 | 2 | stop_distance_atr 在 [0.5, 3.0] 区间内 → 2 分，以外线性衰减 |
 | 数据完整性 | 2 | entry/stop/tp 齐全 + 方向正确 → 2 分；漏任一字段 → 0 分 |
+| **入场区可达性**（v3 新增） | **2** | `entry_offset_atr` ∈ [-0.5, +0.5] → 2 分；[+0.5, +1.5] 线性衰减至 1 分；>+1.5 → 0 分（价格已大幅穿越 PRZ，方向不变量大概率失败） |
 
-**软门槛**：总分 < 4 → 标记为 `weak_validity`，在最终报告中单独归入"低质量信号"分类，但不从数据集中删除。
+**软门槛（v3 修正）**：总分 < 4 → 在 SignalRecord 上打 `weak_validity = true` 标签，**仅影响**：
+1. 在最终报告中单独归入"低质量信号"分类；
+2. 进入 `ConfigScore` 聚合时按 0.5× 权重（v3 之前是"不删除但也不告知权重变化"，不可接受）。
+
+注意：v3 明确 `weak_validity` **不是门控**——信号仍参与 IS/OOS 拆分与评分。这与 v2 措辞一致，但 v2 没说明它在聚合时的权重修正，v3 补上。
 
 ---
 
@@ -318,6 +335,11 @@ DATA_INSUFFICIENT → 标记为 incomplete，不参与评分但单独统计
 RUNTIME_ERROR → 标记为 error，记入日志
 ```
 
+> **v3 实现注意（基于仓库现状）**：当前 `app/services/vibe/backtest_engine.simulate_trades` **只支持单一 target_price**（返回 `win`/`loss`/`scratch` 三态），不支持 TP1/TP2/TP3 分级退出。
+> v3 实现时需扩展为 `simulate_ladder_trades(df, direction, entry, stop, [tp1, tp2, tp3])`，在第一个目标触发时记录 `outcome` 与 `tp_hit_index`，剩余仓位按剩余 bars 继续运行（移动止损到本目标的 R 平保）。
+> 扩展后 Stage 3a 的 25/20/15 分阶梯才有意义，否则 TP3 的 25 分是空头支票。
+> v0.1 阶段可暂时退化为单一目标（与现状一致），但 `outcome` 字段需保留扩展点。
+
 ### trade_metrics.py —— 扩展交易指标计算
 
 这是本方案与普通回测的关键区别——**不只关心最终输赢，还关心价格路径**。
@@ -337,16 +359,39 @@ def compute_trade_metrics(df: pd.DataFrame, signal: SignalRecord) -> dict:
     """
 ```
 
-关键公式（以多头为例）：
+关键公式（多头 long 与空头 short **必须**分别定义，v2 漏写 short 分支）：
 
 ```
-每根 K 线的运行盈利 = (low - entry) / (stop - entry)   # 负值 = 亏损
-MAE = abs(min(运行盈利, 0)) × stop_distance    # 最大不利亏损额
-MFE = max(高 - entry, 0)                      # 最大有利盈利额
+[long]
+  run_pnl_per_bar = (low - entry) / (stop - entry)     # 负值 = 亏损
+  MAE = abs(min(run_pnl_per_bar, 0)) × stop_distance   # 最大不利亏损额
+  MFE = max(high - entry, 0)                           # 最大有利盈利额
+  callback_depth = max(entry - low, 0) / atr_at_entry  # 单位 ATR
+  closest_to_stop = max(entry - low, 0)
+  buffer_consumption = closest_to_stop / (entry - stop)
 
-回调深度 = max(entry - low, 0) / atr_at_entry  # 单位 ATR
-回调放量 = 回调期间平均成交量 / 前 20 根平均成交量
+[short]
+  run_pnl_per_bar = (entry - high) / (entry - stop)    # 负值 = 亏损
+  MAE = abs(min(run_pnl_per_bar, 0)) × stop_distance
+  MFE = max(entry - low, 0)
+  callback_depth = max(high - entry, 0) / atr_at_entry
+  closest_to_stop = max(high - entry, 0)
+  buffer_consumption = closest_to_stop / (stop - entry)
+
+[通用]
+  callback_volume_ratio = (MAE 段内均量) / (entry 前 20 根均量)
+                          # v3 修正窗口：v2 写"回调期间均量 / 正常均量"未指定
+                          # 哪一段是"回调期间"。约定为"从入场到出现 MAE 的那段 bars"。
+  stop_zone_touches = 在 [stop, stop ± 0.1 ATR] 区间内 high/low 触及的次数
+  hit_stop_before_tp = (touch_stop_zone 出现先于 touch_tp_zone)
 ```
+
+**同 bar 内 stop 与 tp 同时触发**：v3 沿用 `backtest_engine._resolve_exit` 的现有约定——离 entry 近的先触发，距离相等时止损先触发。`hit_stop_before_tp` 不需要重新实现，只需要让 `trade_metrics` 复用同一份触发顺序判断。
+
+**已停止 / 已到 TP 时 price_efficiency**：
+- TP 命中：`tp_bar_index / total_bars_held`
+- 止损 / 保本退出：**0**（不允许负值）
+- 数据不足（`bars_held` 为 None）：None（不参与评分聚合）
 
 ---
 
@@ -495,9 +540,17 @@ buffer_consumption = 1 - (closest_to_stop - stop) / (entry - stop)
     8. 如果盲判分数与后见分数差异 > 2：要求解释偏差原因
 ```
 
-**最终 AI 分数 = 盲判分 × 0.6 + 后见分 × 0.4**
+**最终 AI 分数 = 盲判分 × 0.7 + 后见分 × 0.3（v3 修正：原 0.6/0.4 偏乐观）**
+
+理由：盲评环节的"价格行为"信息（入场后 5 根 K 线）在 gpt-4o 上已携带 80%+ 的方向预测能力，后见分只是锦上添花。0.6/0.4 让一个"其实没看出来的预测"被后见分加 0.4 拉回到接近盲评分，相当于把后见当作独立验证——实际上不是。把权重压到 0.3 是承认后见贡献约等于确认偏差而非新信息。
 
 **采样**：对每个信号做 3 次独立盲评（不同随机种子），取中位数作为最终 `ai_score`。
+
+**成本保护（v3 新增）**：
+- 全局开关 `BENCH_AI_MAX_CALLS_PER_RUN`，超限则降级到 1 次盲评 + 0 次后见，输出 `ai_degraded = true`。
+- 并发上限 `BENCH_AI_CONCURRENCY`（默认 4），避免速率限制。
+- 模型可按 env 配置：`BENCH_AI_MODEL`（默认 `gpt-4o`）；fallback 列表 `BENCH_AI_FALLBACK_MODELS`。
+- 评分日志必须包含 model + prompt_sha + temperature，方便复现。
 
 #### 与 v1 的关键区别
 
@@ -612,6 +665,13 @@ imbalance_penalty:
   - 报告同时输出 IS 和 OOS 分数，两者差异作为过拟合指标
 ```
 
+**边界信号处理（v3 新增）**：当一个信号的 entry bar 落在 IS 段、但其 forward simulation 的 horizon 跨越 IS/OOS 分界时（典型情况：detector step=12、horizon=30、4h 段尾的信号），按以下规则归类：
+- **以 entry bar 所在段为准**——一个信号要么属于 IS，要么属于 OOS，不拆。
+- 在 report 元数据中标记 `crosses_boundary = true`，并记录 entry bar 距分界线的 bar 数。
+- 跨边界信号的 OOS 分数乘以 `1 - (boundary_distance / horizon)` 的折扣（v3 折中方案；彻底拆分需要重做 simulation，但会让结果不可比）。
+
+**多周期 / 多标的联合运行（v3 新增）**：当 `--symbols` 包含多个标的或 `--timeframes` 包含多个周期时，**每个 (symbol, timeframe) 对独立做 IS/OOS 切分**。原因：1h 与 4h 的同一日历日对应不同 bar 数，共享切分会让 1h 的"前 70%"等同于 4h 的"前 70%×4"，逻辑错位。`bench_runner` 输出按 `(symbol, timeframe)` 分桶的 `leaderboard.json`。
+
 ### 统计显著性
 
 #### 样本量门槛
@@ -642,6 +702,17 @@ H0: ConfigA 和 ConfigB 的胜率相同
 使用 Fisher 精确检验或贝叶斯 A/B 测试
 输出：p 值 + 效应量
 ```
+
+**多重比较修正（v3 新增）**：在同一 bench run 中比较 ≥3 个配置（A/B/C/...）时，原始 Fisher p 值需要做 **Benjamini-Hochberg FDR 控制**（q=0.1）。原因：调参循环本质是"在同一个数据集上跑多个 hypothesis"，不修正的 p 值会把随机噪声当信号。v3 强制：
+- 报告里所有配置对比 p 值附 `p_adjusted` 字段
+- `p_adjusted > 0.1` 的对比在 `leaderboard.json` 中标记 `not_significant`
+- `BENCH_ALPHA` 环境变量默认 0.1（与 BH FDR 默认对齐）
+
+> **v3 数据最低要求（新增）**：要触发完整 bench（含 AI Judge + 5 维 Pareto），每个 `(symbol, timeframe)` 必须满足：
+> 1. 历史 OHLCV 跨度 ≥ **180 天**（保证 30% OOS ≥ 54 天）；
+> 2. OOS 段总信号数 ≥ **30**（低于此则只输出"insufficient sample"，不给分数）；
+> 3. 每个 pattern family 的 OOS 信号数 ≥ **5**（低于此则该 family 标记 `low_confidence`）。
+> 不满足条件时 `bench_runner` 退出码 = 2（区别于正常 0 / 错误 1），CI 中可一眼识别。
 
 ---
 
@@ -674,19 +745,26 @@ def normalize_bench_scores(scores: list[float]) -> list[float]:
     return [1.0 / (1.0 + math.exp(-z)) for z in z_scores]
 ```
 
-### ParetoPoint 扩展
+### ParetoPoint 扩展（v3 修正：用组合而非继承）
+
+v2 草稿里的 `class BenchParetoPoint(ParetoPoint)` 写法**会破坏 `app/loop/pareto.py` 现有的 `_safe` tuple 排序**——继承后字段顺序变化会让所有现有 Pareto 计算的索引错位。v3 改为组合或可选字段：
 
 ```python
 @dataclass
-class BenchParetoPoint(ParetoPoint):
-    """扩展原 ParetoPoint，加入 Bench 相关字段。"""
-    bench_score: Optional[float]    # 原始 score
-    bench_normalized: Optional[float]  # 归一化到 [0,1] 后的值
-    oos_bench_score: Optional[float]   # OOS 评分
-    overfit_delta: Optional[float]     # IS - OOS
+class BenchAugmentedParetoPoint:
+    """扩展原 ParetoPoint（不继承）。Bench 字段均为 optional，
+    不参与 Pareto 排序时设为 None。"""
+    base: ParetoPoint                # 保留原 4 维
+    bench_score: Optional[float] = None       # 原始 score
+    bench_normalized: Optional[float] = None # 归一化到 [0,1]
+    oos_bench_score: Optional[float] = None
+    overfit_delta: Optional[float] = None
     signal_count: int = 0
     low_confidence: bool = False
+    ai_degraded: bool = False        # v3 新增：AI Judge 是否降级
 ```
+
+**为什么不继承**：仓库现有的 `app/loop/pareto.py:57` 用 `_safe(p.worst_regime_sharpe, -10.0)` 做 tuple 排序，新增字段会让所有 `_safe(field, default)` 调用位置都改。新增字段是 v3 的实验性维度，应保持**可插拔**。
 
 ### 集成方式
 
@@ -695,6 +773,30 @@ class BenchParetoPoint(ParetoPoint):
 2. 运行 Bench → 得到 bench_score
 3. 将 bench_score 归一化后加入 objectives tuple
 4. 调用 `pareto_set.add(bench_pareto_point)`
+
+**Regime 标签一致性（v3 新增）**：现有 `app/loop/pareto.py` 的 `worst_regime_sharpe` 维度已按 regime（trending / ranging / volatile）分桶。bench_score **必须用同样的 regime 标签**，否则两个维度的"分母"不一致，5 维 Pareto 排序会失真。
+
+约定：
+- SignalRecord 已有 `regime: str` 字段（v2 列出但未与 bench 关联），v3 强制 `bench_score` 必须按 `regime` 分桶聚合。
+- `BenchAugmentedParetoPoint` 的 `bench_normalized` 计算时，**在每个 regime 内**做 z-score，不跨 regime 归一化（避免 trending 段的高分把 ranging 段的中位数全压成 0）。
+
+### runner.py CLI（v3 补全）
+
+v2 只列了 `--config --symbols --timeframes --mode --slippage` 五个开关，与现有 `scripts/backtest_harmonic.py` 的能力不对齐。v3 补全：
+
+```bash
+PYTHONPATH=. .venv/bin/python bench/runner.py \
+  --config app/config/tuning.py \
+  --symbols BTCUSDT,ETHUSDT,SOLUSDT \
+  --timeframes 4h,1d \
+  --start 2025-01-01 --end 2026-07-30 \
+  --window 200 --step 12 --horizon 30 \
+  --mode full              # full / quick（quick = 只跑 OOS、不跑 AI Judge）
+  --slippage standard      # ideal / standard / conservative
+  --output-dir bench/outputs/br_20260730_001
+```
+
+`--start/--end/--window/--step/--horizon` 直接复用 `scripts/backtest_harmonic_lib.py` 的语义，避免 bench 自创一套参数命名导致脚本间不可对比。
 
 ---
 
@@ -718,6 +820,8 @@ class BenchParetoPoint(ParetoPoint):
 ```json
 {
   "bench_run_id": "br_20260730_001",
+  "bench_version": "3.0",                     // v3 新增：bench 包版本
+  "weights_version": "2026-Q3-default",       // v3 新增：权重版本号
   "timestamp": "2026-07-30T12:00:00Z",
   "configs": [
     {
@@ -726,17 +830,30 @@ class BenchParetoPoint(ParetoPoint):
       "config_score": 78.3,
       "oos_score": 76.1,
       "win_rate": 0.62,
+      "win_rate_ci": [0.531, 0.712],         // v3 新增：Wilson 95% CI
       "avg_rr": 2.1,
       "total_signals": 342,
-      "confidence": "high",
+      "oos_signals": 102,                     // v3 新增：单独记 OOS 信号数
+      "low_confidence": false,                // v3 修正：v2 漏这个字段
+      "ai_degraded": false,                   // v3 新增：是否 AI Judge 降级
       "per_pattern": {
-        "gartley": {"score": 82.1, "signals": 120, "win_rate": 0.68},
-        "bat": {"score": 76.4, "signals": 98, "win_rate": 0.61},
-        "crab": {"score": 65.2, "signals": 72, "win_rate": 0.44},
-        "butterfly": {"score": 70.8, "signals": 52, "win_rate": 0.52}
+        "gartley": {"score": 82.1, "signals": 120, "win_rate": 0.68, "low_confidence": false},
+        "bat": {"score": 76.4, "signals": 98, "win_rate": 0.61, "low_confidence": false},
+        "crab": {"score": 65.2, "signals": 72, "win_rate": 0.44, "low_confidence": false},
+        "butterfly": {"score": 70.8, "signals": 52, "win_rate": 0.52, "low_confidence": false}
       },
       "overfit_delta": 2.2,
       "pareto_front": true
+    }
+  ],
+  "comparisons": [                            // v3 新增：多配置比较
+    {
+      "config_a_sha": "abc123...",
+      "config_b_sha": "def456...",
+      "p_raw": 0.043,
+      "p_adjusted": 0.087,                    // v3 新增：BH FDR 校正
+      "not_significant": false,               // v3 新增：标记位
+      "effect_size": 0.18
     }
   ],
   "metadata": {
@@ -744,7 +861,10 @@ class BenchParetoPoint(ParetoPoint):
     "timeframes": ["1h", "4h"],
     "date_range": ["2025-01-01", "2026-06-30"],
     "ai_judge_model": "gpt-4o",
-    "slippage_model": "standard"
+    "ai_judge_prompt_sha": "sha256:...",      // v3 新增：提示词 sha
+    "slippage_model": "standard",
+    "exit_code": 0,                           // v3 新增：0=正常 / 2=样本不足
+    "warnings": []                            // v3 新增：未通过数据最低要求时填充
   }
 }
 ```
@@ -757,7 +877,7 @@ bench/outputs/
 │   ├── report.html               # 完整 HTML 报告
 │   ├── report.json               # 机器可读的评分数据
 │   ├── leaderboard.json          # 排行榜数据（可被 app/ 引用）
-│   ├── signals.csv               # 全部 SignalRecord
+│   ├── signals.csv               # 全部 SignalRecord（列顺序见下）
 │   ├── charts/                   # 8 张核心图表（PNG）
 │   └── configs/                  # 各配置的详细评分
 │       ├── abc123.../
@@ -765,6 +885,36 @@ bench/outputs/
 │       │   └── signals.csv       # 该配置的所有信号
 │       └── ...
 ```
+
+**`signals.csv` 列顺序（v3 显式约定，按评估流水线的填写顺序排列）**：
+
+```
+signal_id, run_id, params_sha,
+timestamp, symbol, timeframe, pattern_type, pattern_family, direction, grade,
+entry_price, stop_price, tp1, tp2, tp3, atr_at_entry, prz_width_atr, entry_offset_atr,
+confluence_score, pattern_base_score, stability_verdict, regime, volume_authenticity_score,
+outcome, net_rr, bars_held, exit_price, exit_reason,
+mae, mfe, mae_atr_ratio, callback_depth, callback_bars, callback_volume_ratio,
+hit_stop_before_tp, stop_zone_touches, price_efficiency,
+split, crosses_boundary, weak_validity,
+ai_score, ai_reasoning, ai_agreement, ai_confidence, ai_degraded
+```
+
+**测试位置（v3 修正）**：仓库已有 `tests/` 目录与 pytest-cov 流水线，**`bench/tests/` 不另起**，统一进 `tests/bench/`：
+
+```
+tests/bench/
+├── __init__.py
+├── test_dataset_builder.py
+├── test_pipeline.py          # Stage 1/2/3/4a/4b 纯函数
+├── test_scoring.py           # Level 1/2/3 聚合
+├── test_judge.py             # AI Judge (mock LLM)
+└── fixtures/
+    ├── sample_signals.csv
+    └── mock_judge_responses.json
+```
+
+原因是 `pytest tests/` 的覆盖率与 CI 流水线都基于顶层 `tests/`，拆分会增加 conftest.py 维护成本。
 
 ---
 
@@ -888,3 +1038,47 @@ runner.py 主流程：
 | 报告图表 | 模糊提及 | 明确定义 8 张核心图表 |
 | 最大信号分 | 100 | 110（超额满分允许补偿） |
 | 统计检验 | 无 | Wilson 置信区间 + Fisher 检验 |
+
+---
+
+## v3 审计变更日志（2026-07-30）
+
+v3 不是推翻 v2，是基于本仓库 (`pyharmonics-gpt`) 2026-07-30 实际代码做的第二轮复审。每一项都有具体证据：
+
+| # | 类型 | v2 问题 | v3 修正 |
+|---|---|---|---|
+| 1 | **实现缺口** | Stage 3a 的 TP1/TP2/TP3 25/20/15 分级，仓库现有 `simulate_trades` 不支持 | 明确需扩展为 `simulate_ladder_trades`；v0.1 退化为单 target 时 `outcome` 字段保留扩展点 |
+| 2 | **术语不一致** | SignalRecord 字段 `mae_atr_ratio` 与正文公式 "MAE / stop_distance" 单位不同 | 统一到 `MAE / atr_at_entry`；与 `mfe_atr_ratio` 同量纲 |
+| 3 | **方向偏差** | `trade_metrics` 关键公式只写 long 分支 | 新增 short 分支：反向 `run_pnl_per_bar`、反向 `callback_depth`、反向 `buffer_consumption` |
+| 4 | **窗口模糊** | `callback_volume_ratio` 写"回调期间均量 / 正常均量"，未指窗口 | 改为 "MAE 段内均量 / entry 前 20 根均量"，显式两窗口 |
+| 5 | **边界缺失** | Walk-Forward 70/30 未规定 entry 在 IS / exit 在 OOS 的边界信号 | 跨边界信号按 entry 归段，附 `crosses_boundary` 标记 + OOS 分数折扣 |
+| 6 | **多周期失真** | `--timeframes 1h,4h` 共用 IS/OOS 切分会让 1h 的 70% ≠ 4h 的 70%×4 | 每个 `(symbol, timeframe)` 独立切分；leaderboard 按对分桶 |
+| 7 | **多重比较** | Fisher 检验无 p 值修正 | 强制 Benjamini-Hochberg FDR (q=0.1)；报告附 `p_adjusted` |
+| 8 | **样本门槛** | 给出 high/medium/low 三级标签，但无最低数据量 | 新增硬门槛：≥180 天 OHLCV、≥30 OOS 信号、≥5 per family；不满足退出码 = 2 |
+| 9 | **AI Judge 乐观** | 盲评 × 0.6 + 后见 × 0.4 偏向把后见当独立验证 | 改为 × 0.7 + × 0.3；加 cost guard（最大调用数、并发、模型 fallback） |
+| 10 | **ParetoPoint 破坏** | `BenchParetoPoint(ParetoPoint)` 继承会让 `_safe` tuple 排序索引错位 | 改为 `BenchAugmentedParetoPoint` 组合；保留原 4 维 ParetoPoint 不动 |
+| 11 | **leaderboard schema** | 缺 `low_confidence`、`win_rate_ci`、`comparisons` 等字段 | 补全 schema（13 个字段）；加 `bench_version` / `weights_version` / `exit_code` / `warnings` |
+| 12 | **CLI 不对齐** | runner.py 缺 `--start/--end/--window/--step/--horizon` | 补全 CLI；参数名直接复用 `scripts/backtest_harmonic_lib.py` 的语义 |
+| 13 | **入场区失真** | Stage 1 不惩罚"PRZ 已被价格越过"的信号；实测 11/16 BTC + 8/11 ETH 因此被 skip | 新增 `entry_offset_atr` 字段 + Stage 1 第 5 子项"入场区可达性"（满分 2） |
+| 14 | **聚合权重漏** | `weak_validity` 标签只说"不删除"，不说聚合权重 | 明确 `weak_validity` 信号进 ConfigScore 时按 0.5× 权重 |
+| 15 | **CSV 列序未约** | `signals.csv` 仅说"全部 SignalRecord"，无列序 | 显式 45 列 CSV 列序（含 v3 新增 4 字段） |
+| 16 | **测试位置不一致** | 提议 `bench/tests/`，但仓库已有 `tests/` 与 pytest-cov | 改为 `tests/bench/`，与现有 pytest 流水线对齐 |
+| 17 | **regime 标签未联动** | `worst_regime_sharpe` 按 regime 分桶，但 bench_score 没接 regime | bench_score 必须按 regime 分桶聚合；z-score 在每个 regime 内做，不跨 regime |
+| 18 | **现状未标** | 文档未声明 bench/ 是否已实现 | 顶部加 ⚠️ 状态横幅：截至 2026-07-30 仍是蓝图；唯一可跑的 Stage 2 极简版在 `scripts/` |
+
+**v3 未做的事**（留给 v4 或实现阶段）：
+- 信号级 A/B 检验（v3 只在配置级做 BH FDR）
+- 多 regime 间的 transfer learning（避免 trending 段调好的参数在 ranging 段崩盘）
+- LLM-as-judge 的 prompt 自动 evolution（当前 prompt 是手写 CoT，无 A/B 框架）
+- HTML 报告模板与 8 张图的具体 API（v3 只列图表名，不规定 backend 是 plotly 还是 matplotlib）
+- 评测指标与生产实盘结果的因果归因（bench 高分不等于实盘赚钱）
+
+**v3 实现优先级建议**（如启动 bench v0.1）：
+1. Stage 1/3/4b 纯函数打分（无 LLM）→ 1 天
+2. trade_metrics + 多 target ladder 扩展 → 1 天
+3. IS/OOS 切分 + 边界信号处理 → 半天
+4. ParetoPoint 组合封装 + bench_version 字段 → 半天
+5. JSON + CSV 输出 + 8 张静态图（matplotlib）→ 1 天
+6. AI Judge 框架 + cost guard + mock 测试 → 1 天
+
+合计 **~5 天** 出一个可用的 v0.1，含全部 v3 强约束、Stage 2/3/4a/4b 完整打分、leaderboard + 报告，但 AI Judge 用 mock LLM 跑通协议。
