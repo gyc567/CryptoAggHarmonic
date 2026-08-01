@@ -221,4 +221,42 @@ describe("ResultPanel", () => {
     expect(screen.getByText("无结果")).toBeInTheDocument();
     expect(screen.queryByText("模型解读")).not.toBeInTheDocument();
   });
+
+  // Regression: dashboard "止损价 / 目标价 / 风险收益比" showed "—" because
+  // backend `_PatternPosition` read nonexistent attrs. Verify all four cells
+  // now render real values when the API returns the full payload.
+  it("renders real values for entry / stop / target / RR cells", () => {
+    render(<ResultPanel result={baseResult} loading={false} error={null} />);
+    // baseResult fixture has entry_price=65000, stop_loss=64000, target_price=67500, RR=2.5
+    expect(screen.getByText("入场价")).toBeInTheDocument();
+    expect(screen.getByText("止损价")).toBeInTheDocument();
+    expect(screen.getByText("目标价")).toBeInTheDocument();
+    expect(screen.getByText("风险收益比")).toBeInTheDocument();
+    // Check that the values are not the em-dash fallback (which would appear
+    // if any of the four cells returned null/undefined).
+    const cells = screen.getAllByText(/^[\d.,]+$/);
+    expect(cells.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("falls back to em-dash when trade levels are missing", () => {
+    render(
+      <ResultPanel
+        result={{
+          ...baseResult,
+          technical_result: {
+            ...baseResult.technical_result,
+            entry_price: null,
+            stop_loss: null,
+            target_price: null,
+            risk_reward_ratio: null,
+          },
+        }}
+        loading={false}
+        error={null}
+      />
+    );
+    // All four trade-level cells should show "—" (em dash) instead of numbers.
+    const dashes = screen.getAllByText("—");
+    expect(dashes.length).toBeGreaterThanOrEqual(4);
+  });
 });

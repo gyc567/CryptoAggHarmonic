@@ -3,7 +3,6 @@
 import logging
 import time
 import uuid
-from types import SimpleNamespace
 from typing import Optional
 
 from app.api.errors import AppError
@@ -15,14 +14,7 @@ from app.domain.schemas import (
     Interpretation,
     TimingInfo,
 )
-from app.domain.signals import resolve_analysis_type
-from app.domain.validators import (
-    validate_analysis_type,
-    validate_bounds,
-    validate_interval,
-    validate_market,
-    validate_symbol,
-)
+from app.domain.signals import net_rr, resolve_analysis_type
 from app.infra.analysis_cache import AnalysisCache, get_analysis_cache
 from app.infra.pyharmonics_adapter import (
     detect_patterns,
@@ -98,12 +90,22 @@ class AnalysisOrchestrator:
         self.prompt_context = prompt_context or {}
         self.cache = cache or get_analysis_cache()
 
-    def _restore_cached(self, cached: dict, analysis_id: str, user_id: Optional[str], start_time: float) -> AnalysisData:
+    def _restore_cached(self, cached: dict, analysis_id: str, user_id: Optional[str], start_time: float) -> Optional[AnalysisData]:
         """Reconstruct AnalysisData from cache without re-running analysis.
+
+        Returns None when the cached payload is "dirty" (e.g. v1 cache written
+        before stop_loss/target_price existed); callers are expected to delete
+        the stale key and re-run detection in that case.
 
         This is used for idempotent requests and GET /analysis/:id.
         """
         data = AnalysisData.model_validate_json(cached["analysis_json"])
+        # Dirty-cache guard: a v1 cached result has entry_price but no stop_loss,
+        # which would re-render the broken dashboard. Surface that as a cache miss
+        # so the orchestrator re-runs detection with the v2 schema.
+        tech = data.technical_result
+        if tech is None or (tech.entry_price is not None and tech.stop_loss is None):
+            return None
         data.analysis_id = analysis_id
         # Restore timing from cache (may be stale but gives approximate duration)
         if data.timing:
@@ -116,6 +118,7 @@ class AnalysisOrchestrator:
         request: AnalyzeRequest,
         user_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        analysis_id: Optional[str] = None,
     ) -> AnalysisData:
         """Run full technical analysis.
 
@@ -130,6 +133,8 @@ class AnalysisOrchestrator:
             request: Validated analysis request.
             user_id: Authenticated user ID (optional, enables caching & quota).
             idempotency_key: Request deduplication key.
+            analysis_id: Optional analysis ID from the API layer. When omitted a
+                new UUID is generated.
 
         Returns:
             Complete AnalysisData response.
@@ -139,7 +144,7 @@ class AnalysisOrchestrator:
                 detection failure.
         """
         start_time = time.time()
-        analysis_id = str(uuid.uuid4())
+        analysis_id = analysis_id or str(uuid.uuid4())
 
         # Unpack validated request fields
         market = request.market
@@ -150,14 +155,27 @@ class AnalysisOrchestrator:
         percent_complete = request.percent_complete or 0.8
         candles = request.candles or 1000
 
-        # Check cache for idempotent requests
-        cache_key = f"{market.value}:{symbol}:{interval.value}:{analysis_type.value}"
+        # Check cache for idempotent requests. Cache keys carry a schema version
+        # so older payloads (e.g. v1 entries without stop_loss) are naturally
+        # missed instead of being served stale and re-rendering the bug.
+        cache_key = f"v2:{market.value}:{symbol}:{interval.value}:{analysis_type.value}"
         if user_id and idempotency_key:
-            cache_key = f"{user_id}:{idempotency_key}"
+            cache_key = f"v2:{user_id}:{idempotency_key}"
             cached = self.cache.get(cache_key)
             if cached:
-                logger.info("Cache hit for idempotent request %s", idempotency_key)
-                return self._restore_cached(cached, analysis_id, user_id, start_time)
+                restored = self._restore_cached(cached, analysis_id, user_id, start_time)
+                if restored is not None:
+                    logger.info("Cache hit for idempotent request %s", idempotency_key)
+                    return restored
+                # Dirty cache (v1 schema or malformed payload) — drop it and
+                # fall through to the live detection path below.
+                logger.warning("Dropping dirty cache key %s; re-running detection", cache_key)
+                # AnalysisCache has no delete(); the re-run below overwrites the
+                # key via cache.set() at the end of analyze(), which achieves the
+                # same invalidation. Guard anyway in case a backend gains delete.
+                delete = getattr(self.cache, "delete", None)
+                if delete is not None:
+                    delete(cache_key)
 
         # Step 1 is done by the API layer (parse_request decorator)
         # Step 2: Fetch market data
@@ -215,6 +233,7 @@ class AnalysisOrchestrator:
 
         # Step 4: Signal evaluation (forming type only)
         forming_view: list[CandidateWithMetrics] = []
+        scored: list = []
         signal = None
         if analysis_type == AnalysisType.FORMING:
             try:
@@ -222,7 +241,6 @@ class AnalysisOrchestrator:
                 forming_view = candidates[:limit_to]
                 if forming_view:
                     # Score and rank with discipline + macro filters
-                    scored = []
                     for c in forming_view:
                         disc = discipline_evaluate(c)
                         macro = macro_compute(candle_data, c)
@@ -240,42 +258,62 @@ class AnalysisOrchestrator:
                 logger.warning("Signal evaluation failed: %s", e)
                 # Non-fatal: continue without signal
 
-        # Convert to schema
-        forming_signal_dict = None
-        if forming_view:
-            top = forming_view[0]
+        # Convert to schema. forming_signal_dict is the fallback that technical_result_to_schema
+        # uses when the signal engine raised or returned no signal; it must mirror what
+        # ``build_signal(top).to_dict()`` would have produced for the SAME top candidate
+        # the engine selected, otherwise the dashboard would render levels from a
+        # different candidate than the one shown in the forming list.
+        forming_signal_dict: Optional[dict] = None
+        top = scored[0][0] if scored else None  # signal engine's chosen candidate
+        if top is not None:
+            targets_list = [
+                {
+                    "label": t.label,
+                    "price": float(t.price),
+                    "fib_basis": t.fib_basis,
+                    "close_pct": t.close_pct,
+                    "move_stop_to": t.move_stop_to,
+                }
+                for t in (top.targets or [])
+            ]
             forming_signal_dict = {
-                "status": "forming",
+                "status": "formed" if top.formed else "forming",
                 "grade": "C",
                 "direction": top.direction or "long",
                 "pattern_name": top.pattern_name or "unknown",
                 "family": top.family or "XABCD",
-                "formed": False,
-                "entry_zone": [top.entry_price * 0.99, top.entry_price * 1.01] if top.entry_price else [0, 0],
+                "formed": bool(top.formed),
+                "entry_zone": (
+                    [top.entry_price * 0.99, top.entry_price * 1.01]
+                    if top.entry_price
+                    else [0, 0]
+                ),
                 "entry_reference": top.entry_price,
                 "stop_loss": top.stop_loss,
-                "targets": (
-                    [{"label": "TP1", "price": t}] for t in (top.targets or [])
+                "targets": targets_list,
+                "net_rr_tp1": (
+                    net_rr(top.entry_price, top.stop_loss, top.targets[0].price)
+                    if top.targets
+                    else None
+                ),
+                "net_rr_tp2": (
+                    net_rr(top.entry_price, top.stop_loss, top.targets[1].price)
+                    if len(top.targets or []) >= 2
+                    else None
                 ),
                 "confluence_score": int((top.metrics.confidence or 0) * 100),
-                "macro": {
-                    "size_mult": top.macro.size_mult if top.macro else 1.0,
-                    "advice": top.macro.advice if top.macro else "neutral",
-                },
+                "macro": (
+                    {"size_mult": top.macro.size_mult, "advice": top.macro.advice}
+                    if top.macro
+                    else None
+                ),
                 "width_pct": top.width_pct,
                 "bars_since_c": top.metrics.bars_since_c,
                 "stale": top.metrics.stale,
                 "past_tp2": top.metrics.past_tp2,
                 "in_prz": top.metrics.in_prz,
                 "dist_pct": top.metrics.dist_pct,
-                "macro": (
-                    {
-                        "size_mult": top.macro.size_mult,
-                        "advice": top.macro.advice,
-                    }
-                    if top.macro
-                    else None
-                ),
+                "confidence": "raw-forming-c",
             }
         technical = technical_result_to_schema(
             detection_result,
