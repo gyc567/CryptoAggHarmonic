@@ -21,6 +21,7 @@ from app.infra.supabase_client import (
     reserve_user_quota,
 )
 from app.services import rsi_trend_service
+from app.services.rsi_trend_plan_service import build_plan
 
 logger = logging.getLogger(__name__)
 
@@ -91,3 +92,32 @@ def backtest(user):
         {"symbol": req.symbol, "interval": req.interval, "lookback_days": req.lookback_days},
     )
     return _success(data)
+
+
+@rsi_trend_bp.route("/plan", methods=["GET"])
+@require_auth
+def plan(user):
+    """Generate a trading plan with market analysis, decision, position sizing, and AI insight."""
+    req, err = parse_request(RsiTrendScanRequest, request.args.to_dict())
+    if err is not None:
+        return err
+
+    ref_id = str(uuid.uuid4())
+    ledger_id = _reserve_quota(user["id"], ref_id)
+    if ledger_id is False:
+        return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429)
+
+    try:
+        data = build_plan(req, user["id"])
+    except Exception:
+        if ledger_id:
+            release_ledger_quota(ledger_id)
+        raise
+    if ledger_id:
+        consume_ledger_quota(ledger_id)
+    log_audit_event(
+        user["id"], "rsi_trend_plan", "strategy", ref_id,
+        {"symbol": req.symbol, "interval": req.interval},
+    )
+    return _success(data)
+

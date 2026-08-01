@@ -8,10 +8,14 @@ data access happens here, reusing the existing infra adapters unchanged.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from typing import Any
+
+import pandas as pd
 
 from app.api.errors import AppError
 from app.domain.enums import ErrorCode, Interval, Market
-from app.domain.rsi_trend import WARMUP_BARS, current_state, detect_signals
+from app.domain.rsi_trend import WARMUP_BARS, StrategySignal, current_state, detect_signals
 from app.domain.rsi_trend_backtest import run_backtest
 from app.domain.rsi_trend_schemas import RsiTrendBacktestRequest, RsiTrendScanRequest
 from app.infra.historical_data import fetch_historical_data
@@ -20,6 +24,7 @@ from app.infra.pyharmonics_adapter import fetch_market_data
 logger = logging.getLogger(__name__)
 
 SCAN_CANDLES = 500
+PLAN_CANDLES = 1000
 RECENT_SIGNALS_LIMIT = 10
 
 
@@ -31,13 +36,22 @@ def _require_enough_bars(rows: int, symbol: str) -> None:
         )
 
 
-def scan(req: RsiTrendScanRequest) -> dict:
-    """Current trend/momentum state plus the most recent entry signals."""
+@dataclass(frozen=True)
+class _ScanCore:
+    """Raw output of the shared scan pipeline — consumed by plan() and scan()."""
+
+    df: pd.DataFrame
+    state: dict[str, Any] | None
+    signals: list[StrategySignal]
+
+
+def _scan_core(req: RsiTrendScanRequest, candles: int) -> _ScanCore:
+    """Shared fetch → detect pipeline. Plan and Scan both call this."""
     candle_data = fetch_market_data(
         market=Market(req.market),
         symbol=req.symbol.upper(),
         interval=Interval(req.interval),
-        candles=SCAN_CANDLES,
+        candles=candles,
     )
     df = candle_data.df
     if df is None or df.empty:
@@ -58,23 +72,32 @@ def scan(req: RsiTrendScanRequest) -> dict:
         reward_risk=req.reward_risk,
         min_quality_score=req.min_quality_score,
     )
-    recent = [s.to_dict() for s in signals[-RECENT_SIGNALS_LIMIT:]][::-1]
-    latest = recent[0] if recent else None
+    return _ScanCore(df=df, state=state, signals=signals)
+
+
+def _build_filters(req: RsiTrendScanRequest) -> dict:
+    return {
+        "use_ema50": req.use_ema50,
+        "require_candle_color": req.require_candle_color,
+        "atr_mult": req.atr_mult,
+        "rsi_zone": req.rsi_zone,
+        "reward_risk": req.reward_risk,
+        "min_quality_score": req.min_quality_score,
+    }
+
+
+def scan(req: RsiTrendScanRequest) -> dict:
+    """Current trend/momentum state plus the most recent entry signals."""
+    core = _scan_core(req, candles=SCAN_CANDLES)
+    recent = [s.to_dict() for s in core.signals[-RECENT_SIGNALS_LIMIT:]][::-1]
     return {
         "market": req.market,
         "symbol": req.symbol.upper(),
         "interval": req.interval,
-        "filters": {
-            "use_ema50": req.use_ema50,
-            "require_candle_color": req.require_candle_color,
-            "atr_mult": req.atr_mult,
-            "rsi_zone": req.rsi_zone,
-            "reward_risk": req.reward_risk,
-            "min_quality_score": req.min_quality_score,
-        },
-        "bars": len(df),
-        "state": state,
-        "latest_signal": latest,
+        "filters": _build_filters(req),
+        "bars": len(core.df),
+        "state": core.state,
+        "latest_signal": recent[0] if recent else None,
         "recent_signals": recent,
     }
 
@@ -116,12 +139,7 @@ def backtest(req: RsiTrendBacktestRequest) -> dict:
         "interval": req.interval,
         "lookback_days": req.lookback_days,
         "filters": {
-            "use_ema50": req.use_ema50,
-            "require_candle_color": req.require_candle_color,
-            "atr_mult": req.atr_mult,
-            "rsi_zone": req.rsi_zone,
-            "reward_risk": req.reward_risk,
-            "min_quality_score": req.min_quality_score,
+            **_build_filters(req),
             "partial_mode": req.partial_mode,
             "trailing_stop": req.trailing_stop,
         },
