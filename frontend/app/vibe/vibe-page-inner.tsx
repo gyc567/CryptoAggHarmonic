@@ -10,7 +10,7 @@ export function VibePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading, getToken } = useAuth();
-  const { messages, loading, error, sendMessage, stopRun } = useVibe({
+  const { messages, loading, error, initialized, sendMessage, stopRun } = useVibe({
     getToken,
     userId: user?.id,
   });
@@ -24,15 +24,15 @@ export function VibePageInner() {
 
   useEffect(() => {
     const prompt = searchParams.get("prompt");
-    if (prompt && !autoSent.current && user) {
+    if (prompt && !autoSent.current && user && initialized) {
       autoSent.current = true;
       sendMessage(prompt);
       // Clean the query param without reloading.
       router.replace("/vibe", { scroll: false });
     }
-  }, [searchParams, user, sendMessage, router]);
+  }, [searchParams, user, initialized, sendMessage, router]);
 
-  if (authLoading || !user) {
+  if (authLoading || !user || !initialized) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -46,7 +46,7 @@ export function VibePageInner() {
         <VibeChat
           messages={messages}
           loading={loading}
-          error={error}
+          error={error ?? undefined}
           onSend={sendMessage}
           onStop={stopRun}
         />

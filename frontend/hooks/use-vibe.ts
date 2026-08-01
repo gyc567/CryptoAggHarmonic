@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import {
   createVibeSession,
+  listVibeSessions,
   sendVibeMessage,
   pollVibeEvents,
   cancelVibeRun,
@@ -99,23 +100,59 @@ export function useVibe({ getToken, userId }: UseVibeOptions) {
     };
   }, [getToken]);
 
-  // Initialize sessions from localStorage for the current user.
+  // Reconcile the local cache with the backend. The backend owns session
+  // validity; localStorage only keeps transcripts and provides an offline
+  // fallback when the session list cannot be fetched.
   useEffect(() => {
+    let cancelled = false;
+
     if (!userId) {
+      sessionsRef.current = [];
+      setSessions([]);
+      setCurrentSessionId(null);
+      dispatch({ type: "RESET" });
       setInitialized(true);
       return;
     }
-    const stored = readSessions(userId);
-    setSessions(stored);
-    if (stored.length > 0) {
-      const latest = stored[0];
-      setCurrentSessionId(latest.id);
+
+    setInitialized(false);
+    const cached = readSessions(userId);
+
+    const initialize = async () => {
+      let available = cached;
+      let serverConfirmed = false;
+      const token = await getToken();
+      if (token) {
+        const res = await listVibeSessions(token);
+        if ("data" in res) {
+          available = res.data.items;
+          serverConfirmed = true;
+        }
+      }
+
+      if (cancelled) return;
+
+      sessionsRef.current = available;
+      setSessions(available);
+      setCurrentSessionId(available[0]?.id ?? null);
       dispatch({ type: "RESET" });
-      const msgs = readMessages(userId, latest.id);
-      msgs.forEach((msg) => dispatch({ type: "ADD_MESSAGE", message: msg }));
-    }
-    setInitialized(true);
-  }, [userId]);
+
+      if (available.length > 0) {
+        const msgs = readMessages(userId, available[0].id);
+        msgs.forEach((msg) => dispatch({ type: "ADD_MESSAGE", message: msg }));
+      }
+
+      // Only replace the cache after a successful server response. On a
+      // network failure, keep the original offline cache intact.
+      if (serverConfirmed) writeSessions(userId, available);
+      setInitialized(true);
+    };
+
+    void initialize();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken, userId]);
 
   // Persist messages whenever they change.
   useEffect(() => {
@@ -137,6 +174,7 @@ export function useVibe({ getToken, userId }: UseVibeOptions) {
       if ("data" in res) {
         const session = res.data;
         const next = [session, ...sessionsRef.current];
+        sessionsRef.current = next;
         setSessions(next);
         if (userId) writeSessions(userId, next);
         setCurrentSessionId(session.id);
@@ -256,6 +294,41 @@ export function useVibe({ getToken, userId }: UseVibeOptions) {
         sessionId = session.id;
       }
 
+      let res = await sendVibeMessage(token, sessionId, { content });
+
+      // A locally cached session can outlive the backend record after a store
+      // reset or migration. Remove it, create a replacement, and retry exactly
+      // once so the user's first message heals the conversation automatically.
+      if (
+        "error" in res &&
+        res.error.code === "NOT_FOUND" &&
+        res.error.status === 404
+      ) {
+        const remaining = sessionsRef.current.filter(
+          (session) => session.id !== sessionId
+        );
+        sessionsRef.current = remaining;
+        setSessions(remaining);
+        setCurrentSessionId(null);
+        if (userId) writeSessions(userId, remaining);
+
+        const replacement = await createSession();
+        if (!replacement) {
+          runningRef.current = false;
+          dispatch({ type: "SET_ERROR", error: res.error });
+          return;
+        }
+
+        sessionId = replacement.id;
+        res = await sendVibeMessage(token, sessionId, { content });
+      }
+
+      if ("error" in res) {
+        runningRef.current = false;
+        dispatch({ type: "SET_ERROR", error: res.error });
+        return;
+      }
+
       const userMessage: VibeMessage = {
         id: `user-${Date.now()}`,
         session_id: sessionId,
@@ -265,18 +338,11 @@ export function useVibe({ getToken, userId }: UseVibeOptions) {
       };
       dispatch({ type: "ADD_MESSAGE", message: userMessage });
 
-      const res = await sendVibeMessage(token, sessionId, { content });
-      if ("error" in res) {
-        runningRef.current = false;
-        dispatch({ type: "SET_ERROR", error: res.error });
-        return;
-      }
-
       const { run_id } = res.data;
       dispatch({ type: "START_RUN", runId: run_id });
       startPolling(token, run_id);
     },
-    [getToken, currentSessionId, createSession, startPolling]
+    [getToken, currentSessionId, createSession, startPolling, userId]
   );
 
   useEffect(() => {

@@ -37,7 +37,12 @@ class VibeEventStore:
     """
 
     def __init__(self, redis_url: Optional[str] = None, ttl_seconds: int = 3600):
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "")
+        # ``redis_url=""`` is the explicit test-only switch for memory mode.
+        # ``None`` means auto-detect any configured shared backend, including
+        # Upstash REST when REDIS_URL itself is intentionally absent.
+        self._force_memory = redis_url == ""
+        self._auto_detect = redis_url is None
+        self.redis_url = os.getenv("REDIS_URL", "") if redis_url is None else redis_url
         self.ttl_seconds = ttl_seconds
         self._redis: Optional[Any] = None
         # Bounded in-memory fallback for events.
@@ -47,16 +52,42 @@ class VibeEventStore:
         self._connect()
 
     def _connect(self) -> None:
-        if not self.redis_url or redis is None:
-            logger.warning("Redis not configured; using in-memory event store")
+        # Tests can force in-memory by passing redis_url="".
+        if self._force_memory:
             return
-        try:
-            self._redis = redis.from_url(self.redis_url, decode_responses=True)
-            self._redis.ping()
-            logger.info("VibeEventStore connected to Redis")
-        except Exception as e:
-            logger.warning("Failed to connect to Redis: %s; using in-memory store", e)
-            self._redis = None
+
+        # Prefer the shared Redis client factory (supports Upstash REST, redis-py, etc.).
+        if self._auto_detect:
+            try:
+                from app.infra.redis_client import get_redis_client
+
+                client = get_redis_client()
+                if client is not None:
+                    self._redis = client
+                    logger.info("VibeEventStore connected via shared Redis client")
+                    return
+            except Exception as e:
+                logger.warning("Shared Redis client failed for VibeEventStore: %s", e)
+
+        # Fallback to a direct redis-py connection when REDIS_URL is explicit.
+        if self.redis_url and redis is not None:
+            try:
+                self._redis = redis.from_url(self.redis_url, decode_responses=True)
+                self._redis.ping()
+                logger.info("VibeEventStore connected to Redis")
+                return
+            except Exception as e:
+                logger.warning("Failed to connect to Redis: %s; using in-memory store", e)
+
+        logger.warning("Redis not configured; using in-memory event store")
+
+    def _pipeline(self):
+        """Return a pipeline/context manager if the Redis client supports it."""
+        if self._redis is None:
+            return None
+        if hasattr(self._redis, "pipeline"):
+            return self._redis.pipeline()
+        return None
 
     def _key(self, run_id: str) -> str:
         return f"vibe:run:{run_id}:events"
@@ -73,7 +104,9 @@ class VibeEventStore:
         """
         if self._redis:
             try:
-                seq = int(self._redis.incr(self._seq_key(run_id)))
+                # Redis INCR returns 1 for a missing key; event sequences are
+                # deliberately zero-based so seq maps directly to LRANGE index.
+                seq = int(self._redis.incr(self._seq_key(run_id))) - 1
                 self._redis.expire(self._seq_key(run_id), self.ttl_seconds)
                 return seq
             except Exception as e:  # noqa: BLE001 - degrade to memory
@@ -110,10 +143,21 @@ class VibeEventStore:
         if self._redis:
             try:
                 key = self._key(run_id)
-                with self._redis.pipeline() as pipe:
-                    pipe.rpush(key, payload)
-                    pipe.expire(key, self.ttl_seconds)
-                    pipe.execute()
+                pipe = self._pipeline()
+                if pipe is not None:
+                    with pipe:
+                        pipe.rpush(key, payload)
+                        pipe.expire(key, self.ttl_seconds)
+                        # upstash-redis queues commands through ``execute`` and
+                        # commits them with ``exec``; redis-py commits with
+                        # ``execute`` directly.
+                        if hasattr(pipe, "exec"):
+                            pipe.exec()
+                        else:
+                            pipe.execute()
+                else:
+                    self._redis.rpush(key, payload)
+                    self._redis.expire(key, self.ttl_seconds)
                 return event["event_id"]
             except Exception as e:
                 logger.warning("Redis publish failed, falling back to memory: %s", e)

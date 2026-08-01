@@ -7,6 +7,7 @@ gunicorn==23.0.0  # 23.x 起不再依赖 pkg_resources（python:3.12+ 镜像无 
 pydantic==2.13.4
 supabase==2.15.0
 redis==5.0.8
+upstash-redis==1.7.0
 rq==1.16.2
 socksio==1.0.0  # Required when httpx uses a SOCKS proxy (all_proxy)
 
