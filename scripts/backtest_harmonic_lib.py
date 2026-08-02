@@ -338,6 +338,7 @@ def walk_forward(
     extract: Optional[callable] = None,  # type: ignore[valid-type]
     forward_sim: Optional[callable] = None,  # type: ignore[valid-type]
     signal_time_offset: str = "close",
+    entry_mode: str = "market",
 ) -> list[BacktestSignalRecord]:
     """Roll a window forward. Return one record per step (drop None slots).
 
@@ -349,6 +350,11 @@ def walk_forward(
         horizon: Forward bars used to evaluate each signal.
         detect/extract/forward_sim: Optional injection seams for tests.
         signal_time_offset: ``"close"`` to label signals by window-close ts.
+        entry_mode: ``"market"`` enters at the window's last close (current
+            behaviour: many signals skip because price has already run past
+            the PRZ). ``"prz"`` enters at ``signal.entry_reference`` (the PRZ
+            mid the harmonic engine was waiting for); matches the live trader
+            semantic of waiting for a pullback into the zone.
 
     Records are not produced when ``extract`` returns None or when the forward
     window is unavailable (i.e., last ``horizon`` bars of the dataset).
@@ -372,12 +378,23 @@ def walk_forward(
         signal = extract(window_df, symbol, interval)
         if signal is None:
             continue
-        # Entry at the window's last close — the price the trader actually
-        # had available at signal time. The PRZ from the harmonic engine is
-        # where the engine was waiting, but a backtest is asking "what would
-        # have happened if I bought right now?".
+        # Entry semantics (see ``entry_mode`` doc):
+        #   - "market": enter at the window's last close — the price the
+        #     trader had available at signal time. Most signals in trending
+        #     markets skip because price has already run past the PRZ.
+        #   - "prz": enter at ``signal.entry_reference`` (the PRZ mid), which
+        #     matches the live trader semantic of waiting for a pullback into
+        #     the zone. Trades execute whenever the PRZ is touched within the
+        #     forward window (or after, depending on the engine's simulate_trades
+        #     logic).
         current_price = float(window_df["close"].iloc[-1])
-        result = forward_sim(forward_df, signal, current_price=current_price)
+        prz_entry = float(signal.entry_reference) if entry_mode == "prz" else None
+        result = forward_sim(
+            forward_df,
+            signal,
+            current_price=current_price,
+            entry_price=prz_entry,
+        )
         if result is None:
             continue
 

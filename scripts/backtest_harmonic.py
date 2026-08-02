@@ -21,7 +21,7 @@ from pathlib import Path
 # Make ``app.*`` importable when invoked from the repo root without install.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.infra.historical_data import fetch_historical_data
+from scripts._binance_stdlib import fetch_binance_klines as _fetch_binance_stdlib
 from scripts.backtest_harmonic_lib import (
     aggregate_records,
     markdown_summary,
@@ -45,6 +45,25 @@ def _parse_args(argv=None) -> argparse.Namespace:
         help="directory to write JSON + Markdown artifacts into",
     )
     parser.add_argument("--silent", action="store_true")
+    parser.add_argument(
+        "--data-loader",
+        choices=["prod", "stdlib"],
+        default="stdlib",
+        help=(
+            "prod = app.infra.historical_data (uses curl_cffi; may hang on TLS in "
+            "some envs); stdlib = urllib-only Binance fetch (default, more portable)."
+        ),
+    )
+    parser.add_argument(
+        "--entry-mode",
+        choices=["market", "prz"],
+        default="prz",
+        help=(
+            "market = enter at window-close (most signals skip when price has "
+            "already run past the PRZ). prz = enter at signal.entry_reference "
+            "(matches live trader semantic of waiting for pullback; default)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -62,13 +81,25 @@ def main(argv=None) -> int:
             f"(window={args.window} step={args.step} horizon={args.horizon})"
         )
     t0 = time.time()
-    df = fetch_historical_data("binance", args.symbol, args.interval, fetch_days)
+    if args.data_loader == "prod":
+        from app.infra.historical_data import fetch_historical_data
+
+        df = fetch_historical_data("binance", args.symbol, args.interval, fetch_days)
+    else:
+        from datetime import datetime, timedelta, timezone
+
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=fetch_days)
+        df = _fetch_binance_stdlib(args.symbol, args.interval, start, end)
     elapsed_fetch = time.time() - t0
     if df is None or df.empty:
         raise SystemExit("No historical data returned")
 
     if not args.silent:
-        print(f"[backtest] {len(df)} candles: {df.index[0]} -> {df.index[-1]} ({elapsed_fetch:.1f}s)")
+        print(
+            f"[backtest] {len(df)} candles: {df.index[0]} -> {df.index[-1]} "
+            f"({elapsed_fetch:.1f}s, loader={args.data_loader})"
+        )
 
     t0 = time.time()
     records = walk_forward(
@@ -78,6 +109,7 @@ def main(argv=None) -> int:
         window=args.window,
         step=args.step,
         horizon=args.horizon,
+        entry_mode=args.entry_mode,
     )
     elapsed_walk = time.time() - t0
 
@@ -97,6 +129,8 @@ def main(argv=None) -> int:
         "elapsed_fetch_seconds": round(elapsed_fetch, 2),
         "elapsed_walk_seconds": round(elapsed_walk, 2),
         "llm_disabled": True,
+        "data_loader": args.data_loader,
+        "entry_mode": args.entry_mode,
     }
     rep = report(config=config, summary=summary, records=records)
     slug = f"{args.symbol}_{args.interval}_{args.days}d"
