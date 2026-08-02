@@ -1,0 +1,96 @@
+{
+  "config": {
+    "market": "binance",
+    "symbol": "ETHUSDT",
+    "interval": "1d",
+    "days": 900,
+    "window": 45,
+    "step": 15,
+    "horizon": 45,
+    "fetch_days": 907,
+    "candles_fetched": 908,
+    "data_start": "2024-02-06T00:00:00+00:00",
+    "data_end": "2026-08-01T00:00:00+00:00",
+    "elapsed_fetch_seconds": 1.56,
+    "elapsed_walk_seconds": 0.63,
+    "llm_disabled": true,
+    "data_loader": "stdlib",
+    "entry_mode": "prz"
+  },
+  "summary": {
+    "total_signals": 2,
+    "skipped_signals": 0,
+    "decisions": 2,
+    "wins": 2,
+    "losses": 0,
+    "scratches": 0,
+    "win_rate": 1.0,
+    "avg_r": 0.8823411214551297,
+    "total_r": 1.7646822429102593,
+    "profit_factor": null,
+    "by_grade": {
+      "C(参考)": {
+        "count": 2,
+        "wins": 2,
+        "losses": 0,
+        "r": 1.7646822429102593
+      }
+    },
+    "by_family": {
+      "ABC": {
+        "count": 2,
+        "wins": 2,
+        "losses": 0,
+        "r": 1.7646822429102593
+      }
+    }
+  },
+  "signals": [
+    {
+      "step_index": 254,
+      "signal_time": "2024-10-17T00:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.414",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 2605.8,
+      "stop_loss": 2774.17321429,
+      "tp1": 2661.75,
+      "rr1": 1.0912,
+      "entry_reference": 2728.6,
+      "entry_zone": [
+        2728.6,
+        2728.6
+      ],
+      "horizon": 45,
+      "result": "win",
+      "r_multiple": 1.46687042030012,
+      "exit_time": "2024-10-20T00:00:00+00:00",
+      "bars_held": 0
+    },
+    {
+      "step_index": 269,
+      "signal_time": "2024-11-01T00:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.13",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 2511.49,
+      "stop_loss": 2821.91633333,
+      "tp1": 2753.86384,
+      "rr1": 0.1203,
+      "entry_reference": 2769.48,
+      "entry_zone": [
+        2769.48,
+        2769.48
+      ],
+      "horizon": 45,
+      "result": "win",
+      "r_multiple": 0.29781182261013933,
+      "exit_time": "2024-11-07T00:00:00+00:00",
+      "bars_held": 0
+    }
+  ]
+}

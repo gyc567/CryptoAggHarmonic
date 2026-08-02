@@ -1,0 +1,73 @@
+{
+  "config": {
+    "market": "binance",
+    "symbol": "SOLUSDT",
+    "interval": "1d",
+    "days": 900,
+    "window": 45,
+    "step": 15,
+    "horizon": 45,
+    "fetch_days": 907,
+    "candles_fetched": 908,
+    "data_start": "2024-02-06T00:00:00+00:00",
+    "data_end": "2026-08-01T00:00:00+00:00",
+    "elapsed_fetch_seconds": 1.08,
+    "elapsed_walk_seconds": 0.6,
+    "llm_disabled": true,
+    "data_loader": "stdlib",
+    "entry_mode": "prz"
+  },
+  "summary": {
+    "total_signals": 1,
+    "skipped_signals": 1,
+    "decisions": 0,
+    "wins": 0,
+    "losses": 0,
+    "scratches": 0,
+    "win_rate": 0.0,
+    "avg_r": 0.0,
+    "total_r": 0.0,
+    "profit_factor": 0.0,
+    "by_grade": {
+      "C(参考)": {
+        "count": 1,
+        "wins": 0,
+        "losses": 0,
+        "r": 0.0
+      }
+    },
+    "by_family": {
+      "ABC": {
+        "count": 1,
+        "wins": 0,
+        "losses": 0,
+        "r": 0.0
+      }
+    }
+  },
+  "signals": [
+    {
+      "step_index": 449,
+      "signal_time": "2025-04-30T00:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "2",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 147.54,
+      "stop_loss": 91.56214286,
+      "tp1": 105.383,
+      "rr1": 2.4694,
+      "entry_reference": 95.26,
+      "entry_zone": [
+        95.26,
+        95.26
+      ],
+      "horizon": 45,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    }
+  ]
+}

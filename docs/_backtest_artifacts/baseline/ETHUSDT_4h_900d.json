@@ -1,0 +1,263 @@
+{
+  "config": {
+    "market": "binance",
+    "symbol": "ETHUSDT",
+    "interval": "4h",
+    "days": 900,
+    "window": 60,
+    "step": 20,
+    "horizon": 60,
+    "fetch_days": 907,
+    "candles_fetched": 5443,
+    "data_start": "2024-02-06T00:00:00+00:00",
+    "data_end": "2026-08-01T00:00:00+00:00",
+    "elapsed_fetch_seconds": 5.33,
+    "elapsed_walk_seconds": 4.35,
+    "llm_disabled": true,
+    "data_loader": "stdlib",
+    "entry_mode": "prz"
+  },
+  "summary": {
+    "total_signals": 9,
+    "skipped_signals": 6,
+    "decisions": 3,
+    "wins": 0,
+    "losses": 3,
+    "scratches": 0,
+    "win_rate": 0.0,
+    "avg_r": -0.3333333333333333,
+    "total_r": -3.0,
+    "profit_factor": 0.0,
+    "by_grade": {
+      "C(参考)": {
+        "count": 9,
+        "wins": 0,
+        "losses": 3,
+        "r": -3.0
+      }
+    },
+    "by_family": {
+      "ABC": {
+        "count": 8,
+        "wins": 0,
+        "losses": 2,
+        "r": -2.0
+      },
+      "ABCD": {
+        "count": 1,
+        "wins": 0,
+        "losses": 1,
+        "r": -1.0
+      }
+    }
+  },
+  "signals": [
+    {
+      "step_index": 79,
+      "signal_time": "2024-02-19T04:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.414",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 2926.38,
+      "stop_loss": 2950.18571429,
+      "tp1": 2906.8003,
+      "rr1": 0.5507,
+      "entry_reference": 2931.0,
+      "entry_zone": [
+        2931.0,
+        2931.0
+      ],
+      "horizon": 60,
+      "result": "loss",
+      "r_multiple": -1.0,
+      "exit_time": "2024-02-19T16:00:00+00:00",
+      "bars_held": 0
+    },
+    {
+      "step_index": 119,
+      "signal_time": "2024-02-25T20:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "ABCD-786-1.272",
+      "family": "ABCD",
+      "formed": true,
+      "entry_price": 3112.59,
+      "stop_loss": 3135.71152334,
+      "tp1": 3021.47373714,
+      "rr1": 2.9775,
+      "entry_reference": 3116.33938048,
+      "entry_zone": [
+        3116.33938048,
+        3116.33938048
+      ],
+      "horizon": 60,
+      "result": "loss",
+      "r_multiple": -1.0,
+      "exit_time": "2024-02-26T12:00:00+00:00",
+      "bars_held": 0
+    },
+    {
+      "step_index": 479,
+      "signal_time": "2024-04-25T20:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.618",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 3155.8,
+      "stop_loss": 3321.02928571,
+      "tp1": 3230.3199,
+      "rr1": 1.4286,
+      "entry_reference": 3293.56,
+      "entry_zone": [
+        3293.56,
+        3293.56
+      ],
+      "horizon": 60,
+      "result": "loss",
+      "r_multiple": -1.0,
+      "exit_time": "2024-04-28T00:00:00+00:00",
+      "bars_held": 0
+    },
+    {
+      "step_index": 1379,
+      "signal_time": "2024-09-22T20:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.618",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 2581.0,
+      "stop_loss": 2233.9725,
+      "tp1": 2284.84472,
+      "rr1": 1.0208,
+      "entry_reference": 2252.39,
+      "entry_zone": [
+        2252.39,
+        2252.39
+      ],
+      "horizon": 60,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 1599,
+      "signal_time": "2024-10-29T12:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.618",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 2648.52,
+      "stop_loss": 2363.46916667,
+      "tp1": 2408.34062,
+      "rr1": 0.7082,
+      "entry_reference": 2382.59,
+      "entry_zone": [
+        2382.59,
+        2382.59
+      ],
+      "horizon": 60,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 3819,
+      "signal_time": "2025-11-03T12:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.414",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 3588.89,
+      "stop_loss": 3549.04535714,
+      "tp1": 3619.61522,
+      "rr1": 0.6042,
+      "entry_reference": 3582.29,
+      "entry_zone": [
+        3582.29,
+        3582.29
+      ],
+      "horizon": 60,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 3899,
+      "signal_time": "2025-11-16T20:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.414",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 3095.29,
+      "stop_loss": 2966.54285714,
+      "tp1": 3076.6564,
+      "rr1": 1.3696,
+      "entry_reference": 3004.0,
+      "entry_zone": [
+        3004.0,
+        3004.0
+      ],
+      "horizon": 60,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 4939,
+      "signal_time": "2026-05-09T04:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.618",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 2314.69,
+      "stop_loss": 2436.99321429,
+      "tp1": 2394.40622,
+      "rr1": 1.0749,
+      "entry_reference": 2423.74,
+      "entry_zone": [
+        2423.74,
+        2423.74
+      ],
+      "horizon": 60,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 5079,
+      "signal_time": "2026-06-01T12:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.414",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 1968.45,
+      "stop_loss": 1946.06,
+      "tp1": 1976.38532,
+      "rr1": 0.9135,
+      "entry_reference": 1956.04,
+      "entry_zone": [
+        1956.04,
+        1956.04
+      ],
+      "horizon": 60,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    }
+  ]
+}
