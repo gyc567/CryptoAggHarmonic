@@ -29,10 +29,11 @@ const RSI_ZONE_OPTIONS: { value: RsiTrendZone; label: string; hint: string }[] =
 interface ParamsFormProps {
   params: RsiTrendRequestParams;
   loading: boolean;
+  intervalHint?: string;
   onChange: <K extends keyof RsiTrendRequestParams>(key: K, value: RsiTrendRequestParams[K]) => void;
 }
 
-export function ParamsForm({ params, loading, onChange }: ParamsFormProps) {
+export function ParamsForm({ params, loading, onChange, intervalHint }: ParamsFormProps) {
   const isCrypto = params.market === "binance";
   const intervalOptions = isCrypto ? CRYPTO_INTERVALS : STOCK_INTERVALS;
   const symbolOptions = isCrypto ? CRYPTO_SYMBOLS : STOCK_SYMBOLS;
@@ -77,7 +78,7 @@ export function ParamsForm({ params, loading, onChange }: ParamsFormProps) {
       </div>
 
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground">周期</label>
+        <label className="text-xs font-medium text-muted-foreground">周期{intervalHint && <span className="ml-1 text-primary font-normal">{intervalHint}</span>}</label>
         <select
           value={params.interval}
           onChange={(e) => onChange("interval", e.target.value as RsiTrendInterval)}

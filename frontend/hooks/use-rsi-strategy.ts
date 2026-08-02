@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   backtestRsiTrend,
+  planRsiTrend,
   scanRsiTrend,
   type RsiTrendBacktestParams,
   type RsiTrendBacktestResponse,
+  type RsiTrendPlan,
   type RsiTrendRequestParams,
   type RsiTrendScanResponse,
 } from "@/lib/api-rsi-strategy";
@@ -23,12 +25,16 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestError, setBacktestError] = useState<string | null>(null);
 
+  const [planResult, setPlanResult] = useState<RsiTrendPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+
   const scanAbortRef = useRef<AbortController | null>(null);
   const backtestAbortRef = useRef<AbortController | null>(null);
+  const planAbortRef = useRef<AbortController | null>(null);
 
   const runScan = useCallback(
     async (params: RsiTrendRequestParams) => {
-      // Cancel any pending scan before starting a new one.
       scanAbortRef.current?.abort();
       const controller = new AbortController();
       scanAbortRef.current = controller;
@@ -37,22 +43,15 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
       setScanError(null);
       try {
         const token = await getToken();
-        if (!token) {
-          setScanError("未登录或会话已过期");
-          return;
-        }
+        if (!token) { setScanError("未登录"); return; }
         const res = await scanRsiTrend(token, params, controller.signal);
-        if (controller.signal.aborted) return;
-        if (res.success) {
-          setScanResult(res.data);
-        } else {
-          setScanError(res.error.message);
-          setScanResult(null);
-        }
+        if (res.success && res.data) setScanResult(res.data);
+        else setScanError(res.error || "扫描失败");
+      } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setScanError(e instanceof Error ? e.message : "扫描失败");
       } finally {
-        if (!controller.signal.aborted) {
-          setScanLoading(false);
-        }
+        setScanLoading(false);
       }
     },
     [getToken]
@@ -68,43 +67,56 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
       setBacktestError(null);
       try {
         const token = await getToken();
-        if (!token) {
-          setBacktestError("未登录或会话已过期");
-          return;
-        }
+        if (!token) { setBacktestError("未登录"); return; }
         const res = await backtestRsiTrend(token, params, controller.signal);
-        if (controller.signal.aborted) return;
-        if (res.success) {
-          setBacktestResult(res.data);
-        } else {
-          setBacktestError(res.error.message);
-          setBacktestResult(null);
-        }
+        if (res.success && res.data) setBacktestResult(res.data);
+        else setBacktestError(res.error || "回测失败");
+      } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setBacktestError(e instanceof Error ? e.message : "回测失败");
       } finally {
-        if (!controller.signal.aborted) {
-          setBacktestLoading(false);
-        }
+        setBacktestLoading(false);
       }
     },
     [getToken]
   );
 
-  // Abort pending requests when the component/hook unmounts.
+  const runPlan = useCallback(
+    async (params: RsiTrendRequestParams) => {
+      planAbortRef.current?.abort();
+      const controller = new AbortController();
+      planAbortRef.current = controller;
+
+      setPlanLoading(true);
+      setPlanError(null);
+      try {
+        const token = await getToken();
+        if (!token) { setPlanError("未登录"); return; }
+        const res = await planRsiTrend(token, params, controller.signal);
+        if (res.success && res.data) setPlanResult(res.data);
+        else setPlanError(res.error || "分析失败");
+      } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setPlanError(e instanceof Error ? e.message : "分析失败");
+      } finally {
+        setPlanLoading(false);
+      }
+    },
+    [getToken]
+  );
+
+  // Cancel all on unmount
   useEffect(() => {
     return () => {
       scanAbortRef.current?.abort();
       backtestAbortRef.current?.abort();
+      planAbortRef.current?.abort();
     };
   }, []);
 
   return {
-    scanResult,
-    scanLoading,
-    scanError,
-    runScan,
-    backtestResult,
-    backtestLoading,
-    backtestError,
-    runBacktest,
+    scanResult, scanLoading, scanError, runScan,
+    backtestResult, backtestLoading, backtestError, runBacktest,
+    planResult, planLoading, planError, runPlan,
   };
 }

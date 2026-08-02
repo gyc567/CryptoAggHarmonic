@@ -134,3 +134,103 @@ export function backtestRsiTrend(
     ...(signal ? { signal } : {}),
   });
 }
+
+// --- Trading Plan types ------------------------------------------------------
+
+export interface RsiTrendPlanEntry {
+  price: number;
+  trigger: string;
+  entry_type: string;
+}
+
+export interface RsiTrendPlanStop {
+  price: number;
+  logic: string;
+  distance_atr: number;
+}
+
+export interface RsiTrendPlanTarget {
+  level: string;
+  price: number;
+  rr: number;
+  weight: number;
+}
+
+export interface RsiTrendPlanPosition {
+  risk_per_trade_pct: number | null;
+  total_capital_wu: number | null;
+  risk_amount_wu: number | null;
+  position_size_wu: number | null;
+  position_size_u: number | null;
+  sizing_note: string;
+  configured: boolean;
+}
+
+export interface RsiTrendPlanManagement {
+  breakeven_after: string;
+  trailing_stop: boolean;
+  time_stop: string;
+}
+
+export interface RsiTrendPlanDecision {
+  action: "trade" | "watch" | "no_trade";
+  direction: "long" | "short" | null;
+  confidence: number;
+  reasons: string[];
+  warnings: string[];
+  watch_for?: string;
+}
+
+export interface RsiTrendPlanMarketOverview {
+  trend: string;
+  trend_strength: number;
+  close: number;
+  ema200: number;
+  ema50: number;
+  deviation_pct: number;
+  rsi: number | null;
+  atr: number | null;
+  atr_pct: number | null;
+  volatility_regime: string;
+  entangled: boolean;
+  notes: string[];
+}
+
+export interface RsiTrendPlan {
+  symbol: string;
+  interval: string;
+  generated_at: string;
+  plan_non_prod: boolean;
+  market_overview: RsiTrendPlanMarketOverview;
+  decision: RsiTrendPlanDecision;
+  plan?: {
+    entry: RsiTrendPlanEntry;
+    stop: RsiTrendPlanStop;
+    targets: RsiTrendPlanTarget[];
+    risk_reward: number;
+    position: RsiTrendPlanPosition;
+    management: RsiTrendPlanManagement;
+  } | null;
+  multi_tf: unknown;
+  invalidation: string[];
+  history?: Record<string, unknown> | null;
+  ai_insight?: {
+    summary: string;
+    risk_note: string;
+    disclaimer: string;
+    cached: boolean;
+  } | null;
+}
+
+// --- Plan API ----------------------------------------------------------------
+
+export function planRsiTrend(
+  token: string | null,
+  params: RsiTrendRequestParams,
+  signal?: AbortSignal
+): Promise<ApiResponse<RsiTrendPlan>> {
+  return request<RsiTrendPlan>(
+    `/api/rsi-trend/plan?${toQuery(params)}`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : undefined, signal }
+  );
+}
