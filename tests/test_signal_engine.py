@@ -5,6 +5,7 @@ import pytest
 
 from app.domain.signals import Candidate
 from app.services.signal_engine import (
+    _compute_swing_anchor,
     _is_reversal_candle,
     _to_candidate,
     build_signal,
@@ -75,6 +76,42 @@ def gartley_candidate(entry_area=None, **overrides):
 
 
 # --- extract_candidates --------------------------------------------------------
+
+
+class TestComputeSwingAnchor:
+    """Carney 3-layer stop: swing layer = recent extreme on entry-correct side.
+
+    The lookback is ATR-normalized so 1H and 1D cover comparable volatility
+    windows (bounded to 20..120 bars).
+    """
+
+    def test_bullish_returns_min_low(self):
+        closes = [100, 102, 98, 105, 110, 108, 112, 115] * 5  # 40 bars
+        df = make_df(closes)
+        swing = _compute_swing_anchor(df, atr=2.0, bullish=True, entry=115.0)
+        assert swing == float(df["low"].min())
+
+    def test_bearish_returns_max_high(self):
+        closes = [100, 102, 98, 105, 110, 108, 112, 95] * 5  # 40 bars
+        df = make_df(closes)
+        swing = _compute_swing_anchor(df, atr=2.0, bullish=False, entry=95.0)
+        assert swing == float(df["high"].max())
+
+    def test_short_dataframe_returns_none(self):
+        df = make_df([100.0, 101.0])  # < 20 bars
+        assert _compute_swing_anchor(df, atr=2.0, bullish=True, entry=101.0) is None
+
+    def test_zero_atr_returns_none(self):
+        df = make_df([100 + i for i in range(50)])
+        assert _compute_swing_anchor(df, atr=0.0, bullish=True, entry=120.0) is None
+
+    def test_degenerate_bar_range_returns_none(self):
+        """If high - low = 0 (impossibly flat) → division by zero protection."""
+        df = make_df([100.0] * 60)
+        # Override to all-flat
+        df["high"] = 100.0
+        df["low"] = 100.0
+        assert _compute_swing_anchor(df, atr=2.0, bullish=True, entry=100.0) is None
 
 
 class TestExtractCandidates:

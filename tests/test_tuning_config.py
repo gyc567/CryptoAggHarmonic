@@ -100,6 +100,29 @@ class TestConstraints:
         with pytest.raises(ValueError, match="must be > 0"):
             dataclasses.replace(TUNING, atr_window=0)
 
+    def test_atr_stop_buffer_standard_upper_bound(self):
+        """Guard against silent regression of the standard stop buffer above 0.5 ATR.
+
+        The standard buffer was tightened from 0.5 to 0.3 ATR in the
+        stop-loss-expert-tuning plan; this validation rejects any future override
+        that would silently re-introduce the wider default without explicit
+        intent. ``validate()`` enforces 0.2 <= standard <= 0.5.
+        """
+        with pytest.raises(ValueError, match="atr_stop_buffer..standard"):
+            dataclasses.replace(
+                TUNING,
+                atr_stop_buffer={"conservative": 1.0, "standard": 0.7, "aggressive": 0.25},
+            )
+
+    def test_atr_stop_buffer_standard_lower_bound(self):
+        """Refuse an absurdly tight standard (< 0.2 ATR) which would shake out
+        every healthy pullback."""
+        with pytest.raises(ValueError, match="atr_stop_buffer..standard"):
+            dataclasses.replace(
+                TUNING,
+                atr_stop_buffer={"conservative": 1.0, "standard": 0.1, "aggressive": 0.25},
+            )
+
 
 # --- Round-trip --------------------------------------------------------------
 

@@ -62,6 +62,44 @@ class TestMutateField:
         t = mutate_field("confluence_weights", "dict_per_key", {"per_key": 0.10}, TUNING, rng, sigma_scale=1.0)
         assert set(t.confluence_weights.keys()) == set(TUNING.confluence_weights.keys())
 
+    def test_dict_per_key_per_key_bounds_enforced(self):
+        """``keys_bounds`` overrides the global min/max for named keys.
+
+        Used by ``atr_stop_buffer`` so the standard key cannot regress above
+        0.5 ATR (the deliberate tightening; see stop-loss-expert-tuning plan).
+        """
+        rng = random.Random(0)
+        kwargs = {
+            "per_key": 0.20,
+            "keys_bounds": {
+                "conservative": (0.5, 2.0),
+                "standard": (0.2, 0.5),
+                "aggressive": (0.1, 0.4),
+            },
+        }
+        # Run many trials; every perturbed standard value must stay in [0.2, 0.5].
+        for seed in range(50):
+            rng_i = random.Random(seed)
+            t = mutate_field("atr_stop_buffer", "dict_per_key", kwargs, TUNING, rng_i, sigma_scale=10.0)
+            assert 0.5 <= t.atr_stop_buffer["conservative"] <= 2.0, t.atr_stop_buffer
+            assert 0.2 <= t.atr_stop_buffer["standard"] <= 0.5, t.atr_stop_buffer
+            assert 0.1 <= t.atr_stop_buffer["aggressive"] <= 0.4, t.atr_stop_buffer
+
+    def test_dict_per_key_unchanged_keys_use_global_bounds(self):
+        """Keys not listed in ``keys_bounds`` fall back to the global min/max."""
+        rng = random.Random(0)
+        kwargs = {
+            "per_key": 0.20,
+            "min": 0.0,
+            "max": 5.0,
+            "keys_bounds": {"standard": (0.2, 0.5)},
+        }
+        t = mutate_field("atr_stop_buffer", "dict_per_key", kwargs, TUNING, rng, sigma_scale=10.0)
+        # standard was bounded; conservative/aggressive follow global max=5.
+        assert 0.2 <= t.atr_stop_buffer["standard"] <= 0.5
+        assert t.atr_stop_buffer["conservative"] <= 5.0
+        assert t.atr_stop_buffer["aggressive"] <= 5.0
+
     def test_unknown_kind_raises(self):
         rng = random.Random(0)
         with pytest.raises(ValueError):

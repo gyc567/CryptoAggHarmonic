@@ -51,7 +51,17 @@ DEFAULT_CLUSTER_MAP: dict[str, list[tuple[str, str, dict]]] = {
         ("atr_prz_sweep", "abs_small", {"min": 0.05, "max": 1.0}),
         ("fee_rate", "abs_small", {"min": 0.0002, "max": 0.005}),
         ("slippage_rate", "abs_small", {"min": 0.0001, "max": 0.005}),
-        ("atr_stop_buffer", "dict_per_key", {"per_key": 0.20}),
+        ("atr_stop_buffer", "dict_per_key", {
+            "per_key": 0.20,
+            "keys_bounds": {
+                "conservative": (0.5, 2.0),
+                "standard": (0.2, 0.5),       # bounded per the standard-buffer
+                                              # tightening (Carney/Woods crypto
+                                              # default); see stop-loss-expert
+                                              # -tuning-plan §2.1.
+                "aggressive": (0.1, 0.4),
+            },
+        }),
     ],
     # C2 Discipline — risk gates, regime thresholds, ATR sizing, TTLs
     "C2 Discipline": [
@@ -193,10 +203,17 @@ def _apply_one_mutation(name, kind, kwargs, t, rng, sigma_scale):
         per_key = sigma_scale * kwargs.get("per_key", 0.10)
         lo = kwargs.get("min", -50.0)
         hi = kwargs.get("max", 200.0)
+        # Optional per-key bounds: {key: (lo, hi)}.  When supplied each key is
+        # clipped to its own (lo, hi); when absent the global (lo, hi) applies.
+        # Used by fields whose values are individually constrained (e.g.
+        # atr_stop_buffer has 3 keys each with their own valid range per the
+        # tightening in docs/plans/stop-loss-expert-tuning-plan.md).
+        keys_bounds: dict[str, tuple[float, float]] = kwargs.get("keys_bounds", {})
         new = {}
         for k, v in cur.items():
+            klo, khi = keys_bounds.get(k, (lo, hi))
             nv = v + _gauss(rng, per_key)
-            new[k] = _clip(nv, lo, hi)
+            new[k] = _clip(nv, klo, khi)
         # Optional renormalisation for fields that must sum to a constant.
         target_sum = kwargs.get("target_sum")
         if target_sum is not None:

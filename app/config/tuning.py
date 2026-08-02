@@ -86,7 +86,13 @@ class TuningConstants:
     )
 
     # Tunable — ATR buffer for the 3 stop-loss levels. Higher = wider stop.
-    atr_stop_buffer: Mapping[str, float] = field(default_factory=lambda: {"conservative": 1.0, "standard": 0.5, "aggressive": 0.25})
+    #
+    # Defaults follow Carney (Vol.1 Ch.4) and Galen Woods (Profitable Harmonic
+    # Trading): "0.25-0.5 ATR depending on volatility; crypto lean tight (0.3),
+    # FX/US equities lean wide (0.5)".  Tighter standard cuts per-trade risk
+    # ~40% on BTC 4H; ``validate()`` enforces the standard upper bound so the
+    # buffer cannot silently regress to the legacy 0.5 default.
+    atr_stop_buffer: Mapping[str, float] = field(default_factory=lambda: {"conservative": 1.0, "standard": 0.3, "aggressive": 0.25})
 
     # Tunable — within this ATR distance of the PRZ mid counts as "at the zone"
     # for the structure-confluence factor.
@@ -256,6 +262,18 @@ class TuningConstants:
         missing_levels = _REQUIRED_STOP_LOSS_LEVELS - set(self.atr_stop_buffer.keys())
         if missing_levels:
             raise ValueError(f"atr_stop_buffer missing levels: {sorted(missing_levels)}")
+
+        # C1 — guard against silent regression to the legacy 0.5 default.  The
+        # standard stop buffer was deliberately tightened from 0.5 to 0.3 ATR
+        # (Carney/Woods default for crypto); reject any future override > 0.5
+        # that would re-introduce the wider buffer without explicit intent.
+        std = self.atr_stop_buffer.get("standard")
+        if std is not None and (std < 0.2 or std > 0.5):
+            raise ValueError(
+                f"atr_stop_buffer['standard']={std} out of bounds [0.2, 0.5]; "
+                f"if a wider standard stop is genuinely required, also update "
+                f"docs/plans/stop-loss-expert-tuning-plan.md"
+            )
 
         # C1 — htf_rule must cover every supported interval.
         missing_intervals = _REQUIRED_HTF_KEYS - set(self.htf_rule.keys())
