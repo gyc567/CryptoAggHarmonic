@@ -16,6 +16,7 @@ export default defineConfig({
         "app/position/**/*",
         "components/position/**/*",
         "components/ui/progress-stacked.tsx",
+        "components/layout/sidebar.tsx",
         "hooks/use-position.ts",
         "lib/position/**/*",
         "lib/symbols.ts",

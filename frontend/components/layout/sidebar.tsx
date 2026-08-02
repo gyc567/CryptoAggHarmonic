@@ -24,7 +24,7 @@ interface SidebarProps {
 const NAV_ITEMS = [
   { href: "/watchlist", label: "自选币种", icon: Star },
   { href: "/rsi-strategy", label: "趋势RSI策略", icon: TrendingUp },
-  { href: "/dashboard", label: "分析", icon: BarChart3 },
+  { href: "/dashboard", label: "谐波分析", icon: BarChart3 },
   { href: "/position", label: "仓位", icon: Wallet },
   { href: "/vibe", label: "AI 交易助手", icon: Sparkles },
   { href: "/history", label: "历史记录", icon: Clock },
