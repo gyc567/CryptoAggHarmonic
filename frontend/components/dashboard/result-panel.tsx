@@ -87,23 +87,33 @@ export function ResultPanel({ result, loading, error, className }: ResultPanelPr
   const isBullish = tech.direction?.toLowerCase() === "bullish";
   const isBearish = tech.direction?.toLowerCase() === "bearish";
 
-  // Direction-relative distance to entry: bullish setups want the live price
-  // to pull DOWN toward entry (positive % = above entry, "still waiting");
-  // bearish setups want price to RISE toward entry (positive % = below entry,
-  // "still waiting"). We expose a single "距入场" badge and color it by
-  // whether price is already on the wrong side of the entry zone.
+  // Direction-relative "approaching" semantics:
+  //
+  //   bullish (long)  : trader wants price to pull DOWN to the PRZ (entry).
+  //                     Approaching = current is still ABOVE entry
+  //                     (positive % = waiting for the pullback to land).
+  //                     Negative % = price has broken below the support,
+  //                     the harmonic setup is invalidated.
+  //
+  //   bearish (short) : trader wants price to rally UP to the PRZ (entry).
+  //                     Approaching = current is still BELOW entry
+  //                     (negative % = waiting for the rally to land).
+  //                     Positive % = price has broken above the resistance,
+  //                     the harmonic setup is invalidated.
+  //
+  // Sign convention of `distanceToEntryPct`:
+  //   (current - entry) / entry
+  //   positive = current above entry, negative = current below entry.
   const distanceToEntryPct =
     tech.current_price != null && tech.entry_price != null && tech.entry_price > 0
       ? ((tech.current_price - tech.entry_price) / tech.entry_price) * 100
       : null;
-  // For longs, "approaching" = current below entry (negative pct).
-  // For shorts, "approaching" = current above entry (positive pct).
   const approachingEntry =
     distanceToEntryPct != null
       ? isBullish
-        ? distanceToEntryPct < 0
+        ? distanceToEntryPct > 0
         : isBearish
-          ? distanceToEntryPct > 0
+          ? distanceToEntryPct < 0
           : false
       : false;
 

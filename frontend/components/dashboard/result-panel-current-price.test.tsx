@@ -89,7 +89,12 @@ describe("ResultPanel current price cell", () => {
     expect(screen.getByText("65,500.00")).toBeInTheDocument();
   });
 
-  it("flips the approaching flag for bearish setups (current above entry is approaching)", () => {
+  it("renders the bearish flag with the right sign convention", () => {
+    // For a bearish setup, current 0.77% ABOVE entry means price has
+    // already broken above the resistance — the harmonic setup is
+    // invalidated, so the badge should NOT render as 'approaching'
+    // (i.e. should use the warning color, not success). The signed %
+    // rendering is unchanged.
     const bearish: AnalysisData = {
       ...baseResult,
       technical_result: {
@@ -102,6 +107,67 @@ describe("ResultPanel current price cell", () => {
     render(<ResultPanel result={bearish} loading={false} error={null} />);
     const badge = screen.getByTestId("entry-distance");
     expect(badge.textContent).toMatch(/\+0\.77%/);
+    // Warning class, not success — bearish + above entry is invalidated.
+    expect(badge.className).toMatch(/text-warning/);
+    expect(badge.className).not.toMatch(/text-success/);
+  });
+
+  it("marks bearish setup with current below entry as approaching", () => {
+    // For a bearish setup, current BELOW entry means price is on its way
+    // UP toward the resistance PRZ. The badge should render as success
+    // (approaching). This is the symmetric counterpart of the bullish
+    // approaching case in the basic test above.
+    const bearishApproaching: AnalysisData = {
+      ...baseResult,
+      technical_result: {
+        ...baseResult.technical_result,
+        direction: "bearish",
+        entry_price: 65000,
+        current_price: 64500, // -0.77% below entry
+      },
+    };
+    render(<ResultPanel result={bearishApproaching} loading={false} error={null} />);
+    const badge = screen.getByTestId("entry-distance");
+    expect(badge.textContent).toMatch(/-0\.77%/);
+    expect(badge.className).toMatch(/text-success/);
+    expect(badge.className).not.toMatch(/text-warning/);
+  });
+
+  it("marks bullish setup with current above entry as approaching", () => {
+    // For a bullish setup, current ABOVE entry means price is on its way
+    // DOWN toward the support PRZ — the trader is waiting for the pullback.
+    const bullishApproaching: AnalysisData = {
+      ...baseResult,
+      technical_result: {
+        ...baseResult.technical_result,
+        direction: "bullish",
+        entry_price: 65000,
+        current_price: 65500, // +0.77% above entry
+      },
+    };
+    render(<ResultPanel result={bullishApproaching} loading={false} error={null} />);
+    const badge = screen.getByTestId("entry-distance");
+    expect(badge.textContent).toMatch(/\+0\.77%/);
+    expect(badge.className).toMatch(/text-success/);
+  });
+
+  it("marks bullish setup with current below entry as warning (invalidated)", () => {
+    // For a bullish setup, current BELOW entry means price has already
+    // broken below the support — the harmonic setup is invalidated.
+    const bullishInvalidated: AnalysisData = {
+      ...baseResult,
+      technical_result: {
+        ...baseResult.technical_result,
+        direction: "bullish",
+        entry_price: 65000,
+        current_price: 64500, // -0.77% below entry
+      },
+    };
+    render(<ResultPanel result={bullishInvalidated} loading={false} error={null} />);
+    const badge = screen.getByTestId("entry-distance");
+    expect(badge.textContent).toMatch(/-0\.77%/);
+    expect(badge.className).toMatch(/text-warning/);
+    expect(badge.className).not.toMatch(/text-success/);
   });
 
   it("does not show entry-distance badge when entry_price is missing", () => {
