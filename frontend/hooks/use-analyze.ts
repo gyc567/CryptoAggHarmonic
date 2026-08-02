@@ -18,7 +18,11 @@ const DEFAULT_MARKET =
 const DEFAULT_FORM: AnalyzeRequest = {
   market: DEFAULT_MARKET,
   symbol: "",
-  interval: DEFAULT_MARKET === "yahoo" ? "1d" : "1h",
+  // Default to 4h for crypto (matches the dashboard URL `/dashboard` so a fresh
+  // page load opens with the same period the URL deep-link implies). Yahoo
+  // defaults stay at 1d because sub-daily candles are not always available for
+  // every ticker on the legacy Yahoo adapter.
+  interval: DEFAULT_MARKET === "yahoo" ? "1d" : "4h",
   analysis_type: "auto",
   limit_to: 10,
   percent_complete: 0.8,

@@ -222,6 +222,14 @@ class TechnicalResult(_StrictModel):
     # The analysis type the engine actually used ("formed"/"forming"/None).
     # Distinct from pattern_type, which is raw detection info.
     resolved_type: Annotated[Optional[str], Field(default=None, max_length=16)] = None
+    # Latest close price from the fetched candle window, surfaced so the
+    # dashboard can render "current realtime price" alongside the actionable
+    # trade levels (entry / stop / target). Populated by the orchestrator
+    # from ``candle_data.df.iloc[-1]["close"]`` after fetch_market_data.
+    current_price: Annotated[Optional[float], Field(default=None, gt=0)] = None
+    # UTC ISO timestamp of the candle ``current_price`` came from, so the UI
+    # can render "as of <time>" without re-deriving from the candle window.
+    current_price_at: Annotated[Optional[str], Field(default=None, max_length=32)] = None
 
 
 class Interpretation(_StrictModel):

@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Info, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Info, Loader2, TrendingUp, TrendingDown } from "lucide-react";
 import { SignalCard } from "@/components/dashboard/signal-card";
-import { cn, formatNumber } from "@/lib/utils";
+import { cn, formatNumber, formatPriceDistance } from "@/lib/utils";
 import type { AnalysisData, ApiError } from "@/types";
 
 interface ResultPanelProps {
@@ -87,6 +87,26 @@ export function ResultPanel({ result, loading, error, className }: ResultPanelPr
   const isBullish = tech.direction?.toLowerCase() === "bullish";
   const isBearish = tech.direction?.toLowerCase() === "bearish";
 
+  // Direction-relative distance to entry: bullish setups want the live price
+  // to pull DOWN toward entry (positive % = above entry, "still waiting");
+  // bearish setups want price to RISE toward entry (positive % = below entry,
+  // "still waiting"). We expose a single "距入场" badge and color it by
+  // whether price is already on the wrong side of the entry zone.
+  const distanceToEntryPct =
+    tech.current_price != null && tech.entry_price != null && tech.entry_price > 0
+      ? ((tech.current_price - tech.entry_price) / tech.entry_price) * 100
+      : null;
+  // For longs, "approaching" = current below entry (negative pct).
+  // For shorts, "approaching" = current above entry (positive pct).
+  const approachingEntry =
+    distanceToEntryPct != null
+      ? isBullish
+        ? distanceToEntryPct < 0
+        : isBearish
+          ? distanceToEntryPct > 0
+          : false
+      : false;
+
   return (
     <section className={cn("glass-card overflow-hidden", className)}>
       <div className="border-b border-border-subtle bg-elevated/50 px-5 py-4 sm:px-6">
@@ -114,6 +134,48 @@ export function ResultPanel({ result, loading, error, className }: ResultPanelPr
       </div>
 
       <div className="space-y-5 p-5 sm:p-6">
+        {tech.current_price != null && (
+          <div
+            className="rounded-xl border border-primary/20 bg-primary/5 p-4"
+            data-testid="current-price-card"
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <div>
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  {approachingEntry ? (
+                    <TrendingDown className="h-3.5 w-3.5 text-success" />
+                  ) : (
+                    <TrendingUp className="h-3.5 w-3.5 text-warning" />
+                  )}
+                  当前实时价 (Latest close)
+                </p>
+                <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-foreground">
+                  {formatNumber(tech.current_price)}
+                </p>
+              </div>
+              {tech.entry_price != null && (
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">距入场参考</p>
+                  <p
+                    className={cn(
+                      "mt-0.5 font-mono text-sm font-medium tabular-nums",
+                      approachingEntry ? "text-success" : "text-warning"
+                    )}
+                    data-testid="entry-distance"
+                  >
+                    {formatPriceDistance(tech.current_price, tech.entry_price)}
+                  </p>
+                </div>
+              )}
+            </div>
+            {tech.current_price_at && (
+              <p className="mt-2 text-[11px] text-muted-foreground/70">
+                数据截至 {tech.current_price_at}
+              </p>
+            )}
+          </div>
+        )}
+
         {tech.signal && <SignalCard signal={tech.signal} />}
         <div>
           <h3 className="text-base font-semibold text-foreground">技术结果</h3>

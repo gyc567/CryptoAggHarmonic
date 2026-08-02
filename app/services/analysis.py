@@ -3,6 +3,7 @@
 import logging
 import time
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from app.api.errors import AppError
@@ -12,6 +13,7 @@ from app.domain.schemas import (
     AnalysisData,
     AnalyzeRequest,
     Interpretation,
+    TechnicalResult,
     TimingInfo,
 )
 from app.domain.signals import net_rr, resolve_analysis_type
@@ -193,6 +195,34 @@ class AnalysisOrchestrator:
                 original_error=e,
             ) from e
 
+        # Extract the latest known price from the fetched window. This is the
+        # most recent bar's close — TradingView / Binance both return the
+        # candle that closed most recently as the last row, so this is the
+        # closest available "current realtime price" without spinning up an
+        # extra ticker round-trip. Failures are non-fatal: the dashboard will
+        # simply omit the realtime cell when the underlying df is empty or
+        # the close column is missing.
+        current_price: Optional[float] = None
+        current_price_at: Optional[str] = None
+        try:
+            last_row = candle_data.df.iloc[-1]
+            # Use .get() so a missing "close" column falls back to None
+            # instead of raising KeyError — MagicMock test fixtures also
+            # have a ``get`` that returns a MagicMock, so we coerce to float
+            # and validate > 0 below.
+            raw_close = last_row.get("close") if hasattr(last_row, "get") else last_row["close"]
+            close_val = float(raw_close)
+            if close_val > 0:
+                current_price = close_val
+            raw_dts = last_row.get("dts") if hasattr(last_row, "get") else last_row["dts"]
+            # Only accept real datetime objects — MagicMock / arbitrary
+            # strings would otherwise sneak through ``hasattr(.isoformat)``
+            # and trigger pydantic's string_type validation downstream.
+            if isinstance(raw_dts, datetime):
+                current_price_at = raw_dts.isoformat()
+        except Exception as exc:
+            logger.warning("Failed to extract current_price from candle data: %s", exc)
+
         # Step 3: Pattern detection
         try:
             detection_result = detect_patterns(
@@ -217,6 +247,16 @@ class AnalysisOrchestrator:
             logger.info("No patterns detected for %s %s", symbol, interval.value)
             timing.duration_ms = int((time.time() - start_time) * 1000)
             timing.completed_at = str(int(time.time()))
+            # Even with no pattern we still surface the latest known close so
+            # the dashboard can show "current price: X" instead of an empty
+            # section. technical_result starts with current_price pre-filled
+            # because no other trade-level fields exist on this branch.
+            empty_tech = TechnicalResult(
+                divergences={},
+                raw_patterns={},
+                current_price=current_price,
+                current_price_at=current_price_at,
+            )
             return AnalysisData(
                 analysis_id=analysis_id,
                 status=Status.NO_RESULT,
@@ -225,7 +265,7 @@ class AnalysisOrchestrator:
                 interval=interval,
                 analysis_type=analysis_type,
                 parameters=request.model_dump(),
-                technical_result={},
+                technical_result=empty_tech,
                 interpretation=Interpretation(summary="未检测到明显的谐波形态。"),
                 timing=timing,
                 forming_candidates=[],
@@ -322,6 +362,11 @@ class AnalysisOrchestrator:
         # resolved_type: what the engine actually used (auto mode's answer).
         # request value stays in AnalysisData.analysis_type unchanged.
         technical.resolved_type = resolve_analysis_type(signal)
+        # Attach the latest known close as the dashboard's "current realtime
+        # price". See the Step 2 block above for the data source / failure
+        # semantics — both fields default to None when extraction fails.
+        technical.current_price = current_price
+        technical.current_price_at = current_price_at
 
         # Step 5: Interpretation (optional - can fail without failing whole analysis)
         interpretation = Interpretation()

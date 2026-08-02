@@ -90,6 +90,16 @@ export interface TechnicalResult {
   raw_patterns?: Record<string, unknown>;
   signal?: Signal | null;
   resolved_type?: "formed" | "forming" | null;
+  /**
+   * Latest close from the fetched candle window, surfaced by the backend so
+   * the dashboard can show the "current realtime price" alongside the trade
+   * levels. Populated by the orchestrator from
+   * `candle_data.df.iloc[-1]["close"]` after fetch_market_data; null when
+   * extraction failed (empty df, missing column, non-positive close).
+   */
+  current_price?: number | null;
+  /** UTC ISO timestamp of the candle `current_price` came from. */
+  current_price_at?: string | null;
 }
 
 export interface Interpretation {
