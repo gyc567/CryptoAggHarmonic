@@ -88,7 +88,11 @@ def main(argv=None) -> int:
     else:
         from datetime import datetime, timedelta, timezone
 
-        end = datetime.now(timezone.utc)
+        # Pin end-date so sliding-window backtests are reproducible across
+        # reruns (the walk_forward engine consumes the last window-end candle
+        # as the signal timestamp; using ``datetime.now()`` would make
+        # successive matrix runs see slightly different data slices).
+        end = datetime(2026, 8, 1, tzinfo=timezone.utc)
         start = end - timedelta(days=fetch_days)
         df = _fetch_binance_stdlib(args.symbol, args.interval, start, end)
     elapsed_fetch = time.time() - t0

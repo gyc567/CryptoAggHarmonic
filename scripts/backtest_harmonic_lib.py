@@ -17,10 +17,12 @@ is reproducible and cheap to re-run across markets.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import asdict, dataclass
 from typing import Iterable, Optional
 
+import icontract
 import pandas as pd
 
 from app.domain.signals import Signal, SignalTarget
@@ -35,6 +37,9 @@ from app.services.vibe.backtest_engine import (
 from pyharmonics.plotter import HarmonicPlotter
 from pyharmonics.search import DivergenceSearch, HarmonicSearch
 from pyharmonics.technicals import OHLCTechnicals
+
+
+logger = logging.getLogger(__name__)
 
 
 # --- DTOs --------------------------------------------------------------------
@@ -228,6 +233,16 @@ def extract_signal(
             candidates,
             divergences=detection.get("divergences"),
         )
+    except icontract.errors.ViolationError as e:
+        # A geometric invariant in build_signal/net_rr failed (typically
+        # cost-adjusted reward rounds to zero when stop and target land
+        # very near entry). One such signal must not abort the entire
+        # walk-forward loop — drop it and continue.
+        logger.warning(
+            "build_signal contract violation at %s %s: %s",
+            symbol, interval, str(e).splitlines()[0] if e else "?",
+        )
+        return None
     finally:
         _restore_filters(saved)
 
