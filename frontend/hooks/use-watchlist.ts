@@ -161,12 +161,32 @@ export function useWatchlist({
         setError("未登录");
         return false;
       }
+
+      // Optimistic update: insert a placeholder at the top while the POST
+      // is in flight so the UI feels instant.
+      const optimisticId = `optimistic-${symbol}-${Date.now()}`;
+      const optimisticItem: WatchlistItem = {
+        id: optimisticId,
+        user_id: "",
+        symbol,
+        market: "futures",
+        note: note ?? "",
+        sort_index: 0,
+      };
+      setItems((prev) => {
+        const shifted = prev.map((it) => ({ ...it, sort_index: it.sort_index + 1 }));
+        return [optimisticItem, ...shifted];
+      });
+
       const res = await addToWatchlist(token, symbol, note);
       if (res.success) {
         onSuccess?.(`${symbol} 已添加到自选`);
         await reload();
         return true;
       }
+
+      // Roll back on failure.
+      setItems((prev) => prev.filter((it) => it.id !== optimisticId));
       onError?.(res.error.message);
       setError(res.error.message);
       return false;

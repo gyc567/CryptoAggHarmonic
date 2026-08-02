@@ -13,6 +13,9 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from app.infra.watchlist_store import (
     DEFAULT_MARKET,
@@ -24,6 +27,7 @@ from app.infra.watchlist_store import (
     SymbolMeta,
     UnknownSymbolError,
     WatchlistStore,
+    _redis_key,
     symbol_meta_from_cache,
 )
 
@@ -31,6 +35,16 @@ from app.infra.watchlist_store import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_memory_db():
+    """Clear the process-local fallback dict so tests are isolated."""
+    from app.infra.watchlist_store import _MEMORY_DB
+
+    _MEMORY_DB.clear()
+    yield
+    _MEMORY_DB.clear()
 
 
 @pytest.fixture
@@ -109,17 +123,19 @@ def whitelist(sample_meta, second_meta, crypto_meta):
 
 @pytest.fixture
 def store(whitelist) -> WatchlistStore:
-    """A store with no Supabase client (forces memory fallback)."""
+    """A store with no Supabase client and no Redis (forces memory fallback)."""
     s = WatchlistStore(whitelist_resolver=whitelist)
     s._client = None  # explicit; __init__ already tries Supabase
+    s._redis = None   # explicit; keep tests offline
     return s
 
 
 @pytest.fixture
 def supabase_store(whitelist):
-    """A store with a controllable Supabase stub."""
+    """A store with a controllable Supabase stub and no Redis."""
     s = WatchlistStore(whitelist_resolver=whitelist)
     s._client = _StubClient()
+    s._redis = None
     return s
 
 
@@ -369,6 +385,7 @@ class TestMemoryValidation:
             is_tradfi=False,
         ))
         store._client = None
+        store._redis = None
         for i in range(MAX_ITEMS_PER_USER):
             meta = SymbolMeta(
                 symbol=f"SYM{i:02d}USDT",
@@ -399,6 +416,7 @@ class TestMemoryValidation:
     def test_unknown_symbol_raises(self, sample_meta):
         s = WatchlistStore(whitelist_resolver=lambda symbol: None)
         s._client = None
+        s._redis = None
         with pytest.raises(UnknownSymbolError):
             s.create_item("u1", DEFAULT_MARKET, sample_meta)
 
@@ -421,12 +439,14 @@ class TestMemoryValidation:
 
         s = WatchlistStore(whitelist_resolver=resolve)
         s._client = None
+        s._redis = None
         with pytest.raises(UnknownSymbolError):
             s.create_item("u1", DEFAULT_MARKET, sample_meta)
 
     def test_no_resolver_skips_whitelist_check(self, sample_meta):
         s = WatchlistStore(whitelist_resolver=None)
         s._client = None
+        s._redis = None
         row = s.create_item("u1", DEFAULT_MARKET, sample_meta)
         assert row["symbol"] == "MUUSDT"
 
@@ -562,6 +582,7 @@ class TestSupabaseFallback:
         s = WatchlistStore(whitelist_resolver=whitelist)
         # Fresh stub client with persistent-always-error set to the violation.
         s._client = _StubClient()
+        s._redis = None
         s._client._always_error = _UniqueViolation()
         with pytest.raises(DuplicateError):
             s.create_item("u1", DEFAULT_MARKET, sample_meta)
@@ -574,6 +595,7 @@ class TestSupabaseFallback:
 
         s = WatchlistStore(whitelist_resolver=whitelist)
         s._client = _StubClient()
+        s._redis = None
         s._client._always_error = _P2002()
         with pytest.raises(DuplicateError):
             s.create_item("u1", DEFAULT_MARKET, sample_meta)
@@ -581,6 +603,7 @@ class TestSupabaseFallback:
     def test_create_translates_generic_message_violation(self, whitelist, sample_meta):
         s = WatchlistStore(whitelist_resolver=whitelist)
         s._client = _StubClient()
+        s._redis = None
         s._client._always_error = RuntimeError("duplicate key value violates unique constraint")
         with pytest.raises(DuplicateError):
             s.create_item("u1", DEFAULT_MARKET, sample_meta)
@@ -751,4 +774,93 @@ class TestValidateNote:
         only sort_index is being changed)."""
         s = WatchlistStore(whitelist_resolver=None)
         s._client = None
+        s._redis = None
         s._validate_note(None)  # should not raise
+
+# ---------------------------------------------------------------------------
+# Redis backend — cross-instance / cross-request persistence
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def redis_store(whitelist):
+    """A store using the real Redis configured in the environment.
+
+    Skips the test if Redis is not available.
+    """
+    from app.infra.redis_client import get_redis_client
+
+    client = get_redis_client()
+    if client is None:
+        pytest.skip("Redis not available")
+
+    # Wipe any leftover data from previous runs or the running backend.
+    for suffix in ("redis-test-user", "redis-test-user-2", "redis-test-user-3"):
+        client.delete(_redis_key(suffix))
+
+    s = WatchlistStore(whitelist_resolver=whitelist)
+    s._client = None
+    s._redis = client
+    return s
+
+
+class TestRedisPersistence:
+    def test_create_with_one_store_and_list_with_another(self, redis_store, sample_meta):
+        """Data must survive across independent WatchlistStore instances
+        (the real-world case: each HTTP request creates a fresh store)."""
+        user_id = "redis-test-user"
+        created = redis_store.create_item(user_id, DEFAULT_MARKET, sample_meta, note="cross")
+        assert created["symbol"] == "MUUSDT"
+
+        # Fresh instance, same Redis.
+        second = WatchlistStore(whitelist_resolver=lambda symbol: None)
+        second._client = None
+        second._redis = redis_store._redis
+        listed = second.list_items(user_id)
+        assert len(listed) == 1
+        assert listed[0]["symbol"] == "MUUSDT"
+        assert listed[0]["note"] == "cross"
+
+        # Cleanup.
+        redis_store._redis.delete(_redis_key(user_id))
+
+    def test_update_and_delete_persist(self, redis_store, sample_meta, second_meta):
+        user_id = "redis-test-user-2"
+        a = redis_store.create_item(user_id, DEFAULT_MARKET, sample_meta)
+        b = redis_store.create_item(user_id, DEFAULT_MARKET, second_meta)
+
+        fresh = WatchlistStore(whitelist_resolver=lambda symbol: None)
+        fresh._client = None
+        fresh._redis = redis_store._redis
+
+        fresh.update_item(a["id"], user_id, note="updated")
+        listed = fresh.list_items(user_id)
+        assert {r["symbol"] for r in listed} == {"MUUSDT", "ORCLUSDT"}
+        mu = next(r for r in listed if r["symbol"] == "MUUSDT")
+        assert mu["note"] == "updated"
+
+        fresh.delete_item(b["id"], user_id)
+        assert len(fresh.list_items(user_id)) == 1
+
+        # Cleanup.
+        redis_store._redis.delete(_redis_key(user_id))
+
+    def test_reorder_persists(self, redis_store, sample_meta, second_meta, crypto_meta):
+        user_id = "redis-test-user-3"
+        a = redis_store.create_item(user_id, DEFAULT_MARKET, sample_meta)
+        b = redis_store.create_item(user_id, DEFAULT_MARKET, second_meta)
+        c = redis_store.create_item(user_id, DEFAULT_MARKET, crypto_meta)
+
+        fresh = WatchlistStore(whitelist_resolver=lambda symbol: None)
+        fresh._client = None
+        fresh._redis = redis_store._redis
+
+        reordered = fresh.reorder(user_id, DEFAULT_MARKET, [c["id"], a["id"], b["id"]])
+        assert [r["symbol"] for r in reordered] == ["BTCUSDT", "MUUSDT", "ORCLUSDT"]
+        assert [r["sort_index"] for r in reordered] == [0, 1, 2]
+
+        listed = fresh.list_items(user_id)
+        assert [r["symbol"] for r in listed] == ["BTCUSDT", "MUUSDT", "ORCLUSDT"]
+
+        # Cleanup.
+        redis_store._redis.delete(_redis_key(user_id))

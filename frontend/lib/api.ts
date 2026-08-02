@@ -8,7 +8,10 @@ import type {
   MarketsResponse,
 } from "@/types";
 
-const BASE = process.env.NEXT_PUBLIC_BACKEND_API_BASE || "http://127.0.0.1:5001";
+// NEXT_PUBLIC_API_BASE is used when the frontend must talk directly to a
+// remote backend (e.g. Vercel → Railway). In local dev it is left empty so
+// requests stay same-origin and are proxied by next.config.mjs rewrites.
+const BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
 
 /**
  * Build an ApiError from a parsed backend error body, falling back to a
@@ -53,13 +56,32 @@ function toApiError(body: unknown, status: number): ApiError {
   };
 }
 
-/**
- * Single-shot request wrapper. Always returns the parsed JSON envelope
- * (or an ApiFailure with the parsed error details) instead of throwing
- * for HTTP error codes. Network failures still throw so the hook can
- * surface a distinct "offline" UX.
- */
-export async function request<T>(
+interface RequestOptions extends RequestInit {
+  /** Number of retries for retryable failures (network or 5xx). Defaults to 0. */
+  retry?: number;
+  /** Base delay between retries in ms; doubled each attempt. Defaults to 300. */
+  retryDelayMs?: number;
+}
+
+function isRetryableFailure(res: ApiResponse<unknown>): res is ApiFailure {
+  return !res.success && (res.error.code === "NETWORK" || res.error.retryable);
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    });
+  });
+}
+
+async function requestOnce<T>(
   path: string,
   token: string | null,
   init?: RequestInit
@@ -103,23 +125,63 @@ export async function request<T>(
   return { success: true, data: body as T };
 }
 
-export async function analyze(token: string | null, payload: AnalyzeRequest): Promise<ApiResponse<AnalysisData>> {
+/**
+ * Request wrapper with optional retries for transient failures.
+ *
+ * Always returns the parsed JSON envelope (or an ApiFailure with the parsed
+ * error details) instead of throwing for HTTP error codes. Network failures
+ * are captured as a retryable ApiFailure so callers can surface a distinct
+ * "offline" UX.
+ */
+export async function request<T>(
+  path: string,
+  token: string | null,
+  init?: RequestOptions
+): Promise<ApiResponse<T>> {
+  const { retry = 0, retryDelayMs = 300, ...fetchInit } = init ?? {};
+  let last = await requestOnce<T>(path, token, fetchInit);
+  let attempt = 0;
+  while (attempt < retry && isRetryableFailure(last)) {
+    attempt += 1;
+    const delay = retryDelayMs * 2 ** (attempt - 1);
+    await sleep(delay, fetchInit.signal);
+    last = await requestOnce<T>(path, token, fetchInit);
+  }
+  return last;
+}
+
+export async function analyze(
+  token: string | null,
+  payload: AnalyzeRequest,
+  init?: RequestOptions
+): Promise<ApiResponse<AnalysisData>> {
   return request<AnalysisData>("/api/analyze", token, {
     method: "POST",
     body: JSON.stringify(payload),
+    ...init,
   });
 }
 
-export async function getMarkets(token: string | null): Promise<ApiResponse<MarketsResponse>> {
-  return request<MarketsResponse>("/api/markets", token);
+export async function getMarkets(
+  token: string | null,
+  init?: RequestOptions
+): Promise<ApiResponse<MarketsResponse>> {
+  return request<MarketsResponse>("/api/markets", token, init);
 }
 
-export async function getHistory(token: string | null): Promise<ApiResponse<unknown>> {
-  return request<unknown>("/api/history", token);
+export async function getHistory(
+  token: string | null,
+  init?: RequestOptions
+): Promise<ApiResponse<unknown>> {
+  return request<unknown>("/api/history", token, init);
 }
 
-export async function getAnalysis(token: string | null, id: string): Promise<ApiResponse<unknown>> {
-  return request<unknown>(`/api/analysis/${id}`, token);
+export async function getAnalysis(
+  token: string | null,
+  id: string,
+  init?: RequestOptions
+): Promise<ApiResponse<unknown>> {
+  return request<unknown>(`/api/analysis/${id}`, token, init);
 }
 
 export async function appendLocalHistory(item: { id: string; [key: string]: unknown }) {

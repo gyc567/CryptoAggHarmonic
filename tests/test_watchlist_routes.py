@@ -115,6 +115,7 @@ def stub_store():
 
     store = WatchlistStore(whitelist_resolver=resolve)
     store._client = None  # force memory
+    store._redis = None   # keep route tests offline
     return store
 
 

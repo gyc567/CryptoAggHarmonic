@@ -22,13 +22,9 @@ from typing import Any, Optional
 import pandas as pd
 
 from app.infra.memory_cache import MemoryCache
+from app.infra.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
-
-try:
-    import redis
-except ImportError:  # pragma: no cover
-    redis = None  # type: ignore
 
 _DEFAULT_TTL_SECONDS = 6 * 3600
 _KEY_PREFIX = "analysis:v1:"
@@ -48,13 +44,10 @@ class AnalysisCache:
             self._connect()
 
     def _connect(self) -> None:
-        if not self.redis_url or redis is None:
-            logger.info("Analysis cache: Redis not configured, using in-memory cache")
-            return
         try:
-            self._redis = redis.from_url(self.redis_url, decode_responses=True)
-            self._redis.ping()
-            logger.info("Analysis cache: Redis connected")
+            self._redis = get_redis_client()
+            if self._redis is None:
+                logger.info("Analysis cache: Redis not configured, using in-memory cache")
         except Exception as e:
             logger.warning("Analysis cache: Redis unavailable (%s), using in-memory cache", e)
             self._redis = None

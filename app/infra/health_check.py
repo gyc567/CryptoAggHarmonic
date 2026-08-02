@@ -27,15 +27,18 @@ def _check_supabase() -> dict[str, Any]:
 
 
 def _check_redis() -> dict[str, Any]:
-    """Check Redis connectivity."""
-    redis_url = os.getenv("REDIS_URL")
-    if not redis_url:
+    """Check Redis connectivity (redis-py or Upstash REST)."""
+    has_upstash = bool(os.getenv("UPSTASH_REDIS_REST_URL") and os.getenv("UPSTASH_REDIS_REST_TOKEN"))
+    has_redis_url = bool(os.getenv("REDIS_URL", "").startswith(("redis://", "rediss://")))
+    if not has_upstash and not has_redis_url:
         return {"status": "skipped", "message": "Redis not configured"}
 
     try:
-        import redis as redis_lib
+        from app.infra.redis_client import get_redis_client
 
-        r = redis_lib.from_url(redis_url)
+        r = get_redis_client()
+        if r is None:
+            return {"status": "error", "message": "Redis client creation failed"}
         r.ping()
         return {"status": "ok"}
     except Exception as e:

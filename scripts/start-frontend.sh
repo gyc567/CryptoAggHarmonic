@@ -24,25 +24,31 @@ export BACKEND_API_BASE="${BACKEND_API_BASE:-http://127.0.0.1:5000}"
 
 cd "$FRONTEND"
 
-if [[ "${1:-}" == "restart" ]] && [[ -f "$PIDFILE" ]]; then
-  OLDPID="$(cat "$PIDFILE" 2>/dev/null || true)"
-  if [[ -n "$OLDPID" ]] && kill -0 "$OLDPID" 2>/dev/null; then
-    echo "Stopping existing next dev (pid=$OLDPID)..."
-    kill "$OLDPID" || true
-    # next-server child may take a moment to exit
-    for _ in 1 2 3 4 5; do
-      kill -0 "$OLDPID" 2>/dev/null || break
-      sleep 1
-    done
+if [[ "${1:-}" == "restart" ]]; then
+  # Stop the tracked npm wrapper (if still alive) and anything holding port 3000.
+  if [[ -f "$PIDFILE" ]]; then
+    OLDPID="$(cat "$PIDFILE" 2>/dev/null || true)"
+    if [[ -n "$OLDPID" ]] && kill -0 "$OLDPID" 2>/dev/null; then
+      echo "Stopping existing next dev (pid=$OLDPID)..."
+      kill "$OLDPID" 2>/dev/null || true
+      for _ in 1 2 3 4 5; do
+        kill -0 "$OLDPID" 2>/dev/null || break
+        sleep 1
+      done
+    fi
+  fi
+  PORT_PID="$(lsof -ti:3000 2>/dev/null || true)"
+  if [[ -n "$PORT_PID" ]]; then
+    echo "Killing process holding port 3000 (pid=$PORT_PID)..."
+    kill -9 "$PORT_PID" 2>/dev/null || true
+    sleep 1
   fi
 fi
 
-if [[ -f "$PIDFILE" ]]; then
-  CUR="$(cat "$PIDFILE" 2>/dev/null || true)"
-  if [[ -n "$CUR" ]] && kill -0 "$CUR" 2>/dev/null; then
-    echo "next dev already running (pid=$CUR). Use 'restart' or stop it first."
-    exit 0
-  fi
+PORT_PID="$(lsof -ti:3000 2>/dev/null || true)"
+if [[ -n "$PORT_PID" ]]; then
+  echo "next dev already running on port 3000 (pid=$PORT_PID). Use 'restart' or stop it first."
+  exit 0
 fi
 
 if [[ ! -d "$FRONTEND/node_modules" ]]; then
@@ -51,10 +57,26 @@ if [[ ! -d "$FRONTEND/node_modules" ]]; then
 fi
 
 nohup npm run dev >"$LOG" 2>&1 </dev/null &
-PID=$!
-echo "$PID" >"$PIDFILE"
-disown "$PID" 2>/dev/null || true
+WRAPPER_PID=$!
+disown "$WRAPPER_PID" 2>/dev/null || true
 
-echo "next dev started: pid=$PID (BACKEND_API_BASE=$BACKEND_API_BASE)"
+# Wait for the actual next-server process to bind port 3000.
+SERVER_PID=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  SERVER_PID="$(lsof -ti:3000 2>/dev/null || true)"
+  if [[ -n "$SERVER_PID" ]]; then
+    break
+  fi
+  sleep 1
+done
+
+if [[ -z "$SERVER_PID" ]]; then
+  echo "ERROR: Next.js dev server did not start on port 3000 (wrapper pid=$WRAPPER_PID)." >&2
+  exit 1
+fi
+
+echo "$SERVER_PID" >"$PIDFILE"
+
+echo "next dev started: server pid=$SERVER_PID (BACKEND_API_BASE=$BACKEND_API_BASE)"
 echo "  log:  $LOG"
 echo "  stop: kill \$(cat $PIDFILE)"

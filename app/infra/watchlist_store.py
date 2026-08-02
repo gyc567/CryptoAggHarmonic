@@ -3,12 +3,13 @@
 Each user has up to ``MAX_ITEMS_PER_USER`` rows in ``watchlist_items``,
 one per persisted symbol, ordered by ``sort_index`` then ``created_at``.
 
-Two backends are supported:
+Three backends are supported, in order of preference:
 - **Supabase**: used in production. The service-role client bypasses RLS so
   the routes can enforce ownership in Python before/after each call.
-- **In-memory dict**: used when Supabase isn't configured (local dev with
-  ``DISABLE_AUTH=1``) or when a Supabase call fails. The semantics mirror
-  Supabase closely enough that route logic does not care which is live.
+- **Redis**: shared fallback used in local dev when Supabase is unavailable.
+  Survives across gunicorn workers because it lives outside the process.
+- **In-memory dict**: last-resort fallback when neither Supabase nor Redis is
+  available (unit tests, totally offline setups).
 
 A small set of typed exceptions signals validation failures to the route
 layer (``LimitReachedError``, ``DuplicateError``, ``NotFoundError``,
@@ -18,7 +19,9 @@ these expected cases.
 
 from __future__ import annotations
 
+import json
 import logging
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -31,6 +34,22 @@ logger = logging.getLogger(__name__)
 MAX_ITEMS_PER_USER = 50
 MAX_NOTE_LENGTH = 280
 DEFAULT_MARKET = "futures"
+
+# ---------------------------------------------------------------------------
+# In-memory last-resort fallback.
+#
+# Used by unit tests and when neither Supabase nor Redis is configured. It is
+# process-local, so it does NOT survive across gunicorn workers; Redis is the
+# real shared fallback for multi-worker local dev.
+# ---------------------------------------------------------------------------
+_MEMORY_DB: dict[str, dict[str, dict[str, Any]]] = {}
+_MEMORY_LOCK = threading.RLock()
+
+
+def _redis_key(user_id: str, market: str = "") -> str:
+    if market:
+        return f"watchlist:{user_id}:{market}"
+    return f"watchlist:{user_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -144,19 +163,110 @@ class WatchlistStore:
             logger.warning("Supabase unavailable for WatchlistStore: %s", exc)
             self._client = None
 
-        # Memory fallback: user_id -> dict[item_id -> row]
-        self._memory: dict[str, dict[str, dict[str, Any]]] = {}
+        # Shared Redis fallback (survives across gunicorn workers).
+        try:
+            from app.infra.redis_client import get_redis_client
+
+            self._redis = get_redis_client()
+        except Exception as exc:  # pragma: no cover - env-driven fallback
+            logger.warning("Redis unavailable for WatchlistStore: %s", exc)
+            self._redis = None
+
+        # Memory fallback: last-resort process-local store for tests.
+        self._memory: dict[str, dict[str, dict[str, Any]]] = _MEMORY_DB
 
     # -- backend selection ------------------------------------------------
 
+    def _use_redis(self) -> bool:
+        return self._client is None and self._redis is not None
+
     def _use_memory(self) -> bool:
-        return self._client is None
+        return self._client is None and self._redis is None
+
+    def _create_fallback(self, user_id: str, payload: dict) -> dict:
+        """Create in Redis (if available) or memory."""
+        if self._redis is not None:
+            return self._create_redis(user_id, payload)
+        return self._create_memory(user_id, payload)
+
+    def _mirror_create(self, user_id: str, payload: dict) -> None:
+        """Best-effort mirror a Supabase create to the fallback backend."""
+        try:
+            self._create_fallback(user_id, payload)
+        except DuplicateError:
+            # Already mirrored; not a failure.
+            pass
+        except Exception as exc:
+            logger.warning("Watchlist create_item mirror failed: %s", exc)
+
+    def _update_fallback(self, item_id: str, user_id: str, updates: dict) -> dict:
+        """Update in Redis (if available) or memory."""
+        if self._redis is not None:
+            return self._update_redis(item_id, user_id, updates)
+        return self._update_memory(item_id, user_id, updates)
+
+    def _mirror_update(self, item_id: str, user_id: str, updated: dict) -> None:
+        """Best-effort mirror a Supabase update to the fallback backend."""
+        try:
+            if self._redis is not None:
+                self._update_redis(item_id, user_id, {
+                    k: v for k, v in updated.items()
+                    if k not in ("id", "user_id", "market")
+                })
+            else:
+                self._update_memory(item_id, user_id, {
+                    k: v for k, v in updated.items()
+                    if k not in ("id", "user_id")
+                })
+        except Exception as exc:
+            logger.warning("Watchlist update_item mirror failed: %s", exc)
+
+    def _delete_fallback(self, item_id: str, user_id: str) -> bool:
+        """Delete in Redis (if available) or memory."""
+        if self._redis is not None:
+            return self._delete_redis(item_id, user_id)
+        return self._delete_memory(item_id, user_id)
+
+    def _mirror_delete(self, item_id: str, user_id: str) -> None:
+        """Best-effort mirror a Supabase delete to the fallback backend."""
+        try:
+            self._delete_fallback(item_id, user_id)
+        except NotFoundError:
+            # Already gone; not a failure.
+            pass
+        except Exception as exc:
+            logger.warning("Watchlist delete_item mirror failed: %s", exc)
+
+    def _reorder_fallback(self, user_id: str, market: str, updates: list[dict]) -> list[dict]:
+        """Reorder in Redis (if available) or memory."""
+        if self._redis is not None:
+            return self._reorder_redis(user_id, market, updates)
+        return self._reorder_memory(user_id, market, updates)
+
+    def _mirror_reorder(self, user_id: str, market: str, rows: list[dict]) -> None:
+        """Best-effort mirror a Supabase reorder to the fallback backend."""
+        try:
+            if self._redis is not None:
+                data = self._load_redis_data(user_id)
+                data[market] = [dict(r) for r in rows]
+                self._save_redis_data(user_id, data)
+            else:
+                for r in rows:
+                    self._update_memory(
+                        r["id"],
+                        user_id,
+                        {"sort_index": r["sort_index"], "updated_at": r["updated_at"]},
+                    )
+        except Exception as exc:
+            logger.warning("Watchlist reorder mirror failed: %s", exc)
 
     # -- public API -------------------------------------------------------
 
     def list_items(self, user_id: str, market: str = DEFAULT_MARKET) -> list[dict]:
         """Return the user's items, sorted by ``sort_index`` ascending then
-        ``created_at`` ascending. Memory backend returns the same order."""
+        ``created_at`` ascending. Fallback backends return the same order."""
+        if self._use_redis():
+            return self._list_redis(user_id, market)
         if self._use_memory():
             return self._list_memory(user_id, market)
 
@@ -172,7 +282,9 @@ class WatchlistStore:
             )
             return list(result.data or [])
         except Exception as exc:
-            logger.warning("Watchlist list_items failed, falling back to memory: %s", exc)
+            logger.warning("Watchlist list_items failed, falling back to Redis: %s", exc)
+            if self._redis is not None:
+                return self._list_redis(user_id, market)
             return self._list_memory(user_id, market)
 
     def create_item(
@@ -214,26 +326,28 @@ class WatchlistStore:
             "updated_at": now,
         }
 
+        if self._use_redis():
+            return self._create_redis(user_id, payload)
         if self._use_memory():
             return self._create_memory(user_id, payload)
 
         try:
             result = self._client.table("watchlist_items").insert(payload).execute()
             if result.data:
-                # Mirror to memory so a later Supabase outage can still
-                # fall back without losing the row we just wrote.
-                self._create_memory(user_id, payload)
+                # Mirror to the active fallback so a later Supabase outage
+                # can still serve the row we just wrote.
+                self._mirror_create(user_id, payload)
                 return result.data[0]
-            # Insert returned nothing but didn't raise — fall back to memory
-            # so callers always see the row they just wrote.
-            return self._create_memory(user_id, payload)
+            # Insert returned nothing but didn't raise — fall back so callers
+            # always see the row they just wrote.
+            return self._create_fallback(user_id, payload)
         except Exception as exc:
             # Supabase unique-violation surfaces as an exception. Translate
             # it into DuplicateError so the route can return 409.
             if _is_unique_violation(exc):
                 raise DuplicateError(meta.symbol, market) from exc
-            logger.warning("Watchlist create_item failed, falling back to memory: %s", exc)
-            return self._create_memory(user_id, payload)
+            logger.warning("Watchlist create_item failed, falling back: %s", exc)
+            return self._create_fallback(user_id, payload)
 
     def update_item(
         self,
@@ -259,6 +373,8 @@ class WatchlistStore:
         if sort_index is not None:
             updates["sort_index"] = int(sort_index)
 
+        if self._use_redis():
+            return self._update_redis(item_id, user_id, updates)
         if self._use_memory():
             return self._update_memory(item_id, user_id, updates)
 
@@ -273,16 +389,20 @@ class WatchlistStore:
             rows = list(result.data or [])
             if not rows:
                 raise NotFoundError(item_id)
-            return rows[0]
+            updated = rows[0]
+            self._mirror_update(item_id, user_id, updated)
+            return updated
         except NotFoundError:
             raise
         except Exception as exc:
-            logger.warning("Watchlist update_item failed, falling back to memory: %s", exc)
-            return self._update_memory(item_id, user_id, updates)
+            logger.warning("Watchlist update_item failed, falling back: %s", exc)
+            return self._update_fallback(item_id, user_id, updates)
 
     def delete_item(self, item_id: str, user_id: str) -> bool:
         """Remove an item. Returns False (and raises :class:`NotFoundError`)
         if the id doesn't exist or belongs to another user."""
+        if self._use_redis():
+            return self._delete_redis(item_id, user_id)
         if self._use_memory():
             return self._delete_memory(item_id, user_id)
 
@@ -297,12 +417,13 @@ class WatchlistStore:
             rows = list(result.data or [])
             if not rows:
                 raise NotFoundError(item_id)
+            self._mirror_delete(item_id, user_id)
             return True
         except NotFoundError:
             raise
         except Exception as exc:
-            logger.warning("Watchlist delete_item failed, falling back to memory: %s", exc)
-            return self._delete_memory(item_id, user_id)
+            logger.warning("Watchlist delete_item failed, falling back: %s", exc)
+            return self._delete_fallback(item_id, user_id)
 
     def reorder(
         self,
@@ -344,6 +465,8 @@ class WatchlistStore:
             }
             updates.append(patch)
 
+        if self._use_redis():
+            return self._reorder_redis(user_id, market, updates)
         if self._use_memory():
             return self._reorder_memory(user_id, market, updates)
 
@@ -366,11 +489,12 @@ class WatchlistStore:
             except NotFoundError:
                 raise
             except Exception as exc:
-                logger.warning("Watchlist reorder failed, falling back to memory: %s", exc)
-                return self._reorder_memory(user_id, market, updates)
+                logger.warning("Watchlist reorder failed, falling back: %s", exc)
+                return self._reorder_fallback(user_id, market, updates)
 
         # Re-sort by new sort_index to match the requested order.
         new_rows.sort(key=lambda r: r["sort_index"])
+        self._mirror_reorder(user_id, market, new_rows)
         return new_rows
 
     # -- validation -------------------------------------------------------
@@ -394,44 +518,131 @@ class WatchlistStore:
             return 0
         return max(int(row.get("sort_index", 0)) for row in existing) + 1
 
-    # -- memory backend ---------------------------------------------------
+    # -- Redis backend ----------------------------------------------------
 
-    def _list_memory(self, user_id: str, market: str) -> list[dict]:
-        rows = [
-            row
-            for row in self._memory.get(user_id, {}).values()
-            if row.get("market") == market
-        ]
+    def _load_redis_data(self, user_id: str) -> dict[str, list[dict]]:
+        """Load and parse the user's watchlist from Redis.
+
+        The value is a JSON object mapping ``market -> list[item]`` so all
+        markets for a user live under one key and update/delete can locate an
+        item without relying on ``scan`` support.
+        """
+        raw = self._redis.get(_redis_key(user_id, ""))
+        if raw is None or raw == "":
+            return {}
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                return {k: [dict(r) for r in v] for k, v in data.items() if isinstance(v, list)}
+        except Exception as exc:
+            logger.warning("Watchlist Redis parse failed for %s: %s", user_id, exc)
+        return {}
+
+    def _save_redis_data(self, user_id: str, data: dict[str, list[dict]]) -> None:
+        """Serialize and store the user's watchlist in Redis."""
+        self._redis.set(_redis_key(user_id, ""), json.dumps(data))
+
+    def _list_redis(self, user_id: str, market: str) -> list[dict]:
+        data = self._load_redis_data(user_id)
+        rows = [dict(r) for r in data.get(market, [])]
         rows.sort(key=lambda r: (int(r.get("sort_index", 0)), r.get("created_at") or ""))
         return rows
 
-    def _create_memory(self, user_id: str, payload: dict) -> dict:
-        user_rows = self._memory.setdefault(user_id, {})
-        if any(
-            r.get("market") == payload["market"] and r.get("symbol") == payload["symbol"]
-            for r in user_rows.values()
-        ):
-            raise DuplicateError(payload["symbol"], payload["market"])
-        if len(user_rows) >= MAX_ITEMS_PER_USER:
+    def _create_redis(self, user_id: str, payload: dict) -> dict:
+        data = self._load_redis_data(user_id)
+        market = payload["market"]
+        rows = [dict(r) for r in data.get(market, [])]
+        if any(r.get("symbol") == payload["symbol"] for r in rows):
+            raise DuplicateError(payload["symbol"], market)
+        if len(rows) >= MAX_ITEMS_PER_USER:
             raise LimitReachedError(MAX_ITEMS_PER_USER)
-        user_rows[payload["id"]] = dict(payload)
+        rows.append(dict(payload))
+        data[market] = rows
+        self._save_redis_data(user_id, data)
         return dict(payload)
 
+    def _update_redis(self, item_id: str, user_id: str, updates: dict) -> dict:
+        data = self._load_redis_data(user_id)
+        for market, rows in data.items():
+            for r in rows:
+                if r.get("id") == item_id:
+                    r.update(updates)
+                    self._save_redis_data(user_id, data)
+                    return dict(r)
+        raise NotFoundError(item_id)
+
+    def _delete_redis(self, item_id: str, user_id: str) -> bool:
+        data = self._load_redis_data(user_id)
+        for market, rows in data.items():
+            new_rows = [r for r in rows if r.get("id") != item_id]
+            if len(new_rows) != len(rows):
+                data[market] = new_rows
+                self._save_redis_data(user_id, data)
+                return True
+        raise NotFoundError(item_id)
+
+    def _reorder_redis(
+        self,
+        user_id: str,
+        market: str,
+        updates: list[dict],
+    ) -> list[dict]:
+        data = self._load_redis_data(user_id)
+        rows = data.get(market, [])
+        rows_by_id = {r.get("id"): r for r in rows}
+        for patch in updates:
+            row = rows_by_id.get(patch["id"])
+            if row is None:
+                raise NotFoundError(patch["id"])
+            row["sort_index"] = patch["sort_index"]
+            row["updated_at"] = patch["updated_at"]
+        self._save_redis_data(user_id, data)
+        rows.sort(key=lambda r: r["sort_index"])
+        return [dict(r) for r in rows]
+
+    # -- memory backend ---------------------------------------------------
+
+    def _list_memory(self, user_id: str, market: str) -> list[dict]:
+        with _MEMORY_LOCK:
+            rows = [
+                row
+                for row in self._memory.get(user_id, {}).values()
+                if row.get("market") == market
+            ]
+            rows.sort(key=lambda r: (int(r.get("sort_index", 0)), r.get("created_at") or ""))
+            return [dict(r) for r in rows]
+
+    def _create_memory(self, user_id: str, payload: dict) -> dict:
+        with _MEMORY_LOCK:
+            user_rows = self._memory.setdefault(user_id, {})
+            if any(
+                r.get("market") == payload["market"] and r.get("symbol") == payload["symbol"]
+                for r in user_rows.values()
+            ):
+                raise DuplicateError(payload["symbol"], payload["market"])
+            if len(user_rows) >= MAX_ITEMS_PER_USER:
+                raise LimitReachedError(MAX_ITEMS_PER_USER)
+            user_rows[payload["id"]] = dict(payload)
+            return dict(payload)
+
     def _update_memory(self, item_id: str, user_id: str, updates: dict) -> dict:
-        user_rows = self._memory.get(user_id, {})
-        row = user_rows.get(item_id)
-        if row is None:
-            raise NotFoundError(item_id)
-        row.update(updates)
-        user_rows[item_id] = row
-        return dict(row)
+        with _MEMORY_LOCK:
+            user_rows = self._memory.get(user_id, {})
+            row = user_rows.get(item_id)
+            if row is None:
+                raise NotFoundError(item_id)
+            row = dict(row)
+            row.update(updates)
+            user_rows[item_id] = row
+            return dict(row)
 
     def _delete_memory(self, item_id: str, user_id: str) -> bool:
-        user_rows = self._memory.get(user_id, {})
-        if item_id not in user_rows:
-            raise NotFoundError(item_id)
-        del user_rows[item_id]
-        return True
+        with _MEMORY_LOCK:
+            user_rows = self._memory.get(user_id, {})
+            if item_id not in user_rows:
+                raise NotFoundError(item_id)
+            del user_rows[item_id]
+            return True
 
     def _reorder_memory(
         self,
@@ -439,16 +650,17 @@ class WatchlistStore:
         market: str,
         updates: list[dict],
     ) -> list[dict]:
-        rows: list[dict] = []
-        for patch in updates:
-            updated = self._update_memory(
-                patch["id"],
-                user_id,
-                {"sort_index": patch["sort_index"], "updated_at": patch["updated_at"]},
-            )
-            rows.append(updated)
-        rows.sort(key=lambda r: r["sort_index"])
-        return rows
+        with _MEMORY_LOCK:
+            rows: list[dict] = []
+            for patch in updates:
+                updated = self._update_memory(
+                    patch["id"],
+                    user_id,
+                    {"sort_index": patch["sort_index"], "updated_at": patch["updated_at"]},
+                )
+                rows.append(updated)
+            rows.sort(key=lambda r: r["sort_index"])
+            return rows
 
 
 # ---------------------------------------------------------------------------

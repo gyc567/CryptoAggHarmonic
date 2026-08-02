@@ -153,5 +153,51 @@ describe("api.request", () => {
       const headers = call[1]?.headers as Record<string, string>;
       expect(headers.Authorization).toBeUndefined();
     });
+
+    it("retries retryable failures up to the configured count", async () => {
+      global.fetch = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ success: true, data: { items: [] } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        ) as unknown as typeof fetch;
+      const res = await getHistory(null, { retry: 2, retryDelayMs: 10 });
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(res.success).toBe(true);
+    });
+
+    it("does not retry non-retryable HTTP errors", async () => {
+      global.fetch = vi.fn(async () =>
+        new Response(JSON.stringify({ success: false, error: { code: "INVALID_PARAMS", message: "bad", retryable: false } }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      ) as unknown as typeof fetch;
+      const res = await getHistory(null, { retry: 2, retryDelayMs: 10 });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(res.success).toBe(false);
+      if (res.success) throw new Error("expected failure");
+      expect(res.error.code).toBe("INVALID_PARAMS");
+    });
+
+    it("aborts retry when the signal is aborted", async () => {
+      const controller = new AbortController();
+      global.fetch = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ success: true, data: {} }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        ) as unknown as typeof fetch;
+      const promise = getHistory(null, { retry: 2, retryDelayMs: 50, signal: controller.signal });
+      controller.abort();
+      await expect(promise).rejects.toThrow();
+    });
   });
 });

@@ -15,18 +15,16 @@ socksio==1.0.0  # Required when httpx uses a SOCKS proxy (all_proxy)
 # a websockets version conflict:
 #   - yfinance>=0.2.59 requires websockets>=11 (uses websockets.sync/asyncio).
 #   - yfinance>=1.0 requires websockets>=13.
-#   - alpaca-trade-api requires websockets<11.
+#   - alpaca-trade-api declares websockets<11, but imports OK with 11.0.3 in practice.
 #   - pyharmonics 1.4.3 uses TimeFrameUnit.Week/Month, which needs
 #     alpaca-trade-api>=2.0.0 (3.x is the installable range on Python 3.11).
 #   - supabase>=2.15.0 (via realtime) requires websockets>=11.
-# Pin these so both packages can coexist. Note: supabase may upgrade
-# websockets at install time; local dev has been observed to work, but
-# this is a known tension that should be revisited for production.
-# TODO: evaluate upgrading alpaca-trade-api / replacing yfinance to lift
-#       websockets to >=11 and align with supabase realtime requirements.
+# Pin to 11.0.3 so supabase realtime imports successfully while keeping
+# pyharmonics/alpaca functional.
 alpaca-trade-api==3.2.0
+curl-cffi==0.10.0
 yfinance==0.2.57
-websockets==10.4
+websockets==11.0.3
 
 # Development / test dependencies (install with: pip install -r requirements-dev.txt)
 # pytest==9.1.1

@@ -102,7 +102,7 @@ export async function addToWatchlist(
 ): Promise<ApiResponse<WatchlistItemResponse>> {
   return request<WatchlistItemResponse>("/api/watchlist", token, {
     method: "POST",
-    body: JSON.stringify({ symbol, note: note ?? null }),
+    body: JSON.stringify({ symbol, note: note ?? "" }),
   });
 }
 

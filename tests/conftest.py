@@ -16,6 +16,16 @@ if not hasattr(werkzeug, "__version__"):
         werkzeug.__version__ = "3.0.0"
 
 
+@pytest.fixture(autouse=True)
+def _reset_watchlist_memory_db():
+    """Clear the process-local watchlist fallback dict between tests."""
+    from app.infra.watchlist_store import _MEMORY_DB
+
+    _MEMORY_DB.clear()
+    yield
+    _MEMORY_DB.clear()
+
+
 @pytest.fixture
 def mock_yahoo_candle_data():
     """Mock YahooCandleData with sample OHLC dataframe."""

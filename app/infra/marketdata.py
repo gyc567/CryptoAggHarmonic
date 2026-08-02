@@ -7,14 +7,28 @@ network, library or rate-limit issues).
 
 import logging
 import os
+import time
 from datetime import timezone
 from typing import Optional
 
 import pandas as pd
-import requests
+from curl_cffi import requests
 from pyharmonics.marketdata.candle_base import CandleData
 
 logger = logging.getLogger(__name__)
+
+
+def _is_retryable_error(err: Exception) -> bool:
+    """Return True if ``err`` is a transient failure worth retrying."""
+    if isinstance(err, requests.exceptions.Timeout):
+        return True
+    if isinstance(err, requests.exceptions.ConnectionError):
+        return True
+    if isinstance(err, requests.exceptions.HTTPError) and err.response is not None:
+        status = err.response.status_code
+        # 429 rate-limit, 451 geo-block, and 5xx server errors are often transient.
+        return status in (429, 451) or status >= 500
+    return False
 
 
 class DirectBinanceCandleData(CandleData):
@@ -115,6 +129,61 @@ class DirectBinanceCandleData(CandleData):
         self.df = self._to_dataframe(rows)
         self.reset_index()
 
+    def _to_dataframe(self, rows: list) -> pd.DataFrame:
+        df = pd.DataFrame(data=rows, columns=self.columns)
+        for col in self.schema:
+            df[col["name"]] = df[col["name"]].astype(col["type"])
+
+        # Binance returns milliseconds
+        df[self.CLOSE_TIME] = (df[self.CLOSE_TIME] // 1000).astype("int64")
+        df[self.DTS] = pd.to_datetime(df[self.CLOSE_TIME], unit="s", utc=True).dt.tz_convert(self.time_zone)
+        return df[self.COLUMNS]
+
+    def _request_with_retry(
+        self,
+        url: str,
+        params: dict,
+        max_retries: int = 3,
+        base_delay: float = 0.5,
+    ) -> requests.Response:
+        """Call ``requests.get`` with retries for transient failures.
+
+        Retries on timeout, connection errors, 429, 451, and 5xx with
+        exponential backoff. Raises the last error on exhaustion.
+        Sends ``BINANCE_API_KEY`` in the ``X-MBX-APIKEY`` header when configured.
+        """
+        last_err: Optional[Exception] = None
+        headers: dict[str, str] = {}
+        api_key = os.getenv("BINANCE_API_KEY")
+        if api_key:
+            headers["X-MBX-APIKEY"] = api_key
+        for attempt in range(max_retries + 1):
+            try:
+                resp = requests.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=60,
+                    impersonate="chrome124",
+                )
+                resp.raise_for_status()
+                return resp
+            except Exception as e:
+                last_err = e
+                if attempt == max_retries or not _is_retryable_error(e):
+                    raise
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    "Binance request failed (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1,
+                    max_retries + 1,
+                    delay,
+                    e,
+                )
+                time.sleep(delay)
+        # Unreachable, but keeps type checkers happy.
+        raise last_err  # type: ignore[misc]
+
     def _fetch_paginated(
         self,
         url: str,
@@ -145,8 +214,7 @@ class DirectBinanceCandleData(CandleData):
             if end_time is not None:
                 params["endTime"] = end_time
 
-            resp = requests.get(url, params=params, timeout=30)
-            resp.raise_for_status()
+            resp = self._request_with_retry(url, params)
             batch = resp.json()
 
             if not batch:
@@ -168,12 +236,49 @@ class DirectBinanceCandleData(CandleData):
 
         return collected
 
-    def _to_dataframe(self, rows: list) -> pd.DataFrame:
-        df = pd.DataFrame(data=rows, columns=self.columns)
-        for col in self.schema:
-            df[col["name"]] = df[col["name"]].astype(col["type"])
 
-        # Binance returns milliseconds
-        df[self.CLOSE_TIME] = (df[self.CLOSE_TIME] // 1000).astype("int64")
-        df[self.DTS] = pd.to_datetime(df[self.CLOSE_TIME], unit="s", utc=True).dt.tz_convert(self.time_zone)
-        return df[self.COLUMNS]
+class DirectBinanceFuturesCandleData(DirectBinanceCandleData):
+    """Fetch Binance USD-M futures klines directly from the REST API.
+
+    Uses the same kline schema as the spot endpoint, but hits ``/fapi/v1/klines``.
+    The base URL is configurable via ``BINANCE_FUTURES_API_BASE_URL`` so testnet
+    or region-specific mirrors can be used.
+    """
+
+    SOURCE = "BinanceFuturesDirect"
+    BASE_URL = os.getenv("BINANCE_FUTURES_API_BASE_URL", "https://fapi.binance.com")
+
+    def get_candles(
+        self,
+        symbol: str,
+        interval: str,
+        num_candles: Optional[int] = None,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+    ) -> None:
+        """Fetch futures candles from Binance and populate self.df."""
+        if interval not in self.INTERVALS:
+            from pyharmonics.marketdata.candle_base import InvalidTimeframe
+
+            raise InvalidTimeframe(f"Binance futures intervals must be one of {list(self.INTERVALS.values())}")
+
+        self.symbol = symbol
+        self.interval = interval
+        self.num_candles = num_candles or self.MAX_CANDLES
+        self.start = start
+        self.end = end
+
+        binance_interval = self.INTERVALS[interval]
+        url = f"{self.BASE_URL}/fapi/v1/klines"
+        try:
+            rows = self._fetch_paginated(url, symbol.upper(), binance_interval, self.num_candles)
+        except Exception as e:
+            logger.exception("Binance futures direct API request failed for %s", symbol)
+            raise RuntimeError(f"Binance futures API request failed: {e}") from e
+
+        if not rows:
+            raise RuntimeError(f"Binance futures returned no data for {symbol}")
+
+        rows = rows[-self.num_candles :]
+        self.df = self._to_dataframe(rows)
+        self.reset_index()

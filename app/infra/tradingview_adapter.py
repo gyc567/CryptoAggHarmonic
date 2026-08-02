@@ -103,6 +103,8 @@ def _map_market(market: str) -> str:
     market = market.lower()
     if market == "binance":
         return "BINANCE"
+    if market == "futures":
+        return "BINANCE"
     if market == "yahoo":
         # Yahoo symbols in TV are often on NASDAQ/NYSE/OTC; try prefixing
         # with the default US exchange and let the bridge resolve.

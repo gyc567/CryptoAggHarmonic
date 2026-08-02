@@ -49,7 +49,7 @@ export function useAnalyze(getToken: () => Promise<string | null>) {
   const loadMarkets = useCallback(async () => {
     const token = await getToken();
     if (!token) return;
-    const res = await getMarkets(token);
+    const res = await getMarkets(token, { retry: 2, retryDelayMs: 300 });
     // The backend may return either a wrapped ApiResponse or a plain MarketsResponse.
     const next: MarketsResponse | null =
       "data" in res ? res.data : "markets" in res ? (res as unknown as MarketsResponse) : null;
@@ -89,7 +89,7 @@ export function useAnalyze(getToken: () => Promise<string | null>) {
       idempotency_key: generateIdempotencyKey(),
     };
 
-    const res = await analyze(token, payload);
+    const res = await analyze(token, payload, { retry: 2, retryDelayMs: 500 });
     setLoading(false);
 
     if ("error" in res) {

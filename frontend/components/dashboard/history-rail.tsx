@@ -19,7 +19,7 @@ export function HistoryRail({ getToken, onRerun, className }: HistoryRailProps) 
   useEffect(() => {
     let mounted = true;
     getToken()
-      .then((token) => (token ? getHistory(token) : null))
+      .then((token) => (token ? getHistory(token, { retry: 2, retryDelayMs: 300 }) : null))
       .then((res) => {
         if (!mounted || !res) return;
         if ("data" in res) {
