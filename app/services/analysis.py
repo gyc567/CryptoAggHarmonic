@@ -3,7 +3,7 @@
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.api.errors import AppError
@@ -203,7 +203,6 @@ class AnalysisOrchestrator:
         # simply omit the realtime cell when the underlying df is empty or
         # the close column is missing.
         current_price: Optional[float] = None
-        current_price_at: Optional[str] = None
         try:
             last_row = candle_data.df.iloc[-1]
             # Use .get() so a missing "close" column falls back to None
@@ -214,14 +213,18 @@ class AnalysisOrchestrator:
             close_val = float(raw_close)
             if close_val > 0:
                 current_price = close_val
-            raw_dts = last_row.get("dts") if hasattr(last_row, "get") else last_row["dts"]
-            # Only accept real datetime objects — MagicMock / arbitrary
-            # strings would otherwise sneak through ``hasattr(.isoformat)``
-            # and trigger pydantic's string_type validation downstream.
-            if isinstance(raw_dts, datetime):
-                current_price_at = raw_dts.isoformat()
         except Exception as exc:
             logger.warning("Failed to extract current_price from candle data: %s", exc)
+        # Record the analysis run moment (UTC) instead of ``df.iloc[-1]["dts"]``
+        # because the Binance adapter sets dts = close_time (end of the
+        # in-progress candle — e.g. "11:59:59" for the 08:00–12:00 4h bar)
+        # while the TradingView adapter sets dts = open_time; the raw value
+        # was ambiguous across vendors. ``datetime.now`` is unambiguous and
+        # conveys "this price is current as of HH:MM:SS UTC". Only emit a
+        # timestamp when we actually have a price to anchor it to.
+        current_price_at: Optional[str] = (
+            datetime.now(timezone.utc).isoformat() if current_price is not None else None
+        )
 
         # Step 3: Pattern detection
         try:

@@ -202,7 +202,9 @@ class TestCurrentPriceExtraction:
         self, mock_detect, mock_fetch, orchestrator, basic_request
     ):
         """If the candle frame has a close but no dts column, current_price
-        should still be populated and only the timestamp should be missing."""
+        should still be populated. ``current_price_at`` is anchored to the
+        analysis run moment (UTC) — not the candle dts — so it is set as long
+        as we have a valid price, even when the candle row has no timestamp."""
         df = pd.DataFrame([{"close": 123.45}])
         mock_fetch.return_value = MagicMock(df=df)
         mock_detect.return_value = {
@@ -214,7 +216,11 @@ class TestCurrentPriceExtraction:
         result = orchestrator.analyze(basic_request)
 
         assert result.technical_result.current_price == 123.45
-        assert result.technical_result.current_price_at is None
+        # current_price_at is ``datetime.now(timezone.utc).isoformat()`` —
+        # assert it parses cleanly and carries tzinfo, rather than asserting
+        # a hard-coded string (the value drifts with every test run).
+        parsed = datetime.fromisoformat(result.technical_result.current_price_at)
+        assert parsed.tzinfo is not None
 
     @patch("app.services.analysis.fetch_market_data")
     @patch("app.services.analysis.detect_patterns")
@@ -236,3 +242,47 @@ class TestCurrentPriceExtraction:
 
         assert result.technical_result.current_price is None
         assert result.technical_result.current_price_at is None
+
+    @patch("app.services.analysis.fetch_market_data")
+    @patch("app.services.analysis.detect_patterns")
+    def test_current_price_at_reflects_run_moment_not_candle_dts(
+        self, mock_detect, mock_fetch, orchestrator, basic_request
+    ):
+        """``current_price_at`` is anchored to ``datetime.now(timezone.utc)``
+        (the analysis run moment) — NOT to ``df.iloc[-1]["dts"]``.
+
+        The candle row carries a dts that is misleading on Binance (it's the
+        close_time of the in-progress candle, e.g. "11:59:59" for a 4h bar
+        still open) and inconsistent with TradingView (which uses open_time).
+        Anchoring to now keeps the dashboard's "数据截至" cell unambiguous
+        across vendors and matches what a trader expects ("this price is
+        as of right now").
+
+        We compare within a ±5s window to absorb scheduler jitter.
+        """
+        # Candle dts deliberately pinned to a stale / future-looking value to
+        # prove we are NOT echoing it.
+        candle_dts = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        rows = [
+            {"close": 100.0, "dts": candle_dts},
+            {"close": 101.5, "dts": candle_dts},
+        ]
+        mock_fetch.return_value = _make_cd(rows)
+        mock_detect.return_value = {
+            "position": None,
+            "patterns": {},
+            "divergences": {},
+        }
+
+        before = datetime.now(timezone.utc)
+        result = orchestrator.analyze(basic_request)
+        after = datetime.now(timezone.utc)
+
+        assert result.technical_result.current_price == 101.5
+        stamped = datetime.fromisoformat(result.technical_result.current_price_at)
+        # tz-aware + within the test wall-clock window — proves it is now,
+        # not the 2020 candle dts we supplied.
+        assert stamped.tzinfo is not None
+        assert before <= stamped <= after, (
+            f"current_price_at={stamped} not within [{before}, {after}]"
+        )
