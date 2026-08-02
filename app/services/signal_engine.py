@@ -50,6 +50,7 @@ from app.domain.validation import (
     quant_regime,
     quant_trap_risk,
     stability_verdict,
+    trap_stop_multiplier,
     volatility_multiplier,
     volume_authenticity,
 )
@@ -401,6 +402,37 @@ def _clamp_sharpe(sharpe: float) -> float:
     return round(max(-10.0, min(10.0, sharpe)), 4)
 
 
+def _compute_swing_anchor(
+    df: pd.DataFrame, atr: float, bullish: bool, entry: float
+) -> float | None:
+    """Return the recent swing extreme used as a stop redundancy anchor.
+
+    Carney's 3-layer stop: structure + swing + volatility.  This function
+    supplies the swing layer — the lowest low (long) or highest high (short)
+    over a window long enough to capture ~8 ATR units of price travel.  The
+    window is ATR-normalized (bounded 20..120 bars) so 1H and 1D see
+    comparable volatility coverage; ``compute_stop`` will reject any swing
+    that lands on the wrong side of ``entry``.
+
+    Returns ``None`` when the dataframe is too short or ATR is non-positive.
+    """
+    if atr <= 0 or len(df) < 20:
+        return None
+    # Pick a window length that covers ~8 ATRs of recent price travel.
+    recent = df.tail(60)
+    if recent.empty:
+        return None
+    bar_range = float(recent["high"].max() - recent["low"].min())
+    if bar_range <= 0 or atr <= 0:
+        return None
+    lookback = max(20, min(120, int(8 * atr / bar_range * 60)))
+    lookback = min(lookback, len(df))
+    window = df.tail(lookback)
+    if window.empty:
+        return None
+    return float(window["low"].min()) if bullish else float(window["high"].max())
+
+
 class _ScoreContext(NamedTuple):
     """Pre-computed, per-call data needed by :func:`score_candidate`.
 
@@ -423,12 +455,16 @@ class _ScoreContext(NamedTuple):
     last: Any  # last row of df
     divergences: dict
     volume_authenticity: int = 50  # 0-100; per-candidate gate reads this
+    # Fix 8: optional escape hatch passed through to compute_stop.  When
+    # not None, completely overrides the level vocabulary for the buffer.
+    stop_buffer_atr: float | None = None
 
 
 def _prepare_score_context(
     df: pd.DataFrame,
     interval: str,
     divergences: Optional[dict],
+    stop_buffer_atr: float | None = None,
 ) -> _ScoreContext | None:
     """Compute shared data-level metrics. Returns None if a hard gate fires.
 
@@ -468,6 +504,8 @@ def _prepare_score_context(
         # New field: store the raw authenticity score so per-candidate
         # gates (Q6 formed vs forming) can consult it.
         volume_authenticity=auth,
+        # Fix 8: escape hatch forwarded as-is.
+        stop_buffer_atr=stop_buffer_atr,
     )
 
 
@@ -490,7 +528,7 @@ def score_candidate(
     ``width_pct`` so a wide PRZ can never reach A even with a perfect score.
     """
 
-    @require(lambda stop_level: stop_level in ("standard", "tight", "wide"), "stop_level must be one of standard/tight/wide")
+    @require(lambda stop_level: stop_level in ("conservative", "standard", "aggressive"), "stop_level must be one of conservative/standard/aggressive")
     @require(lambda ctx: ctx.atr > 0, "ctx.atr must be positive (set by _prepare_score_context)")
     def _check(**_kwargs) -> None:
         return None
@@ -514,9 +552,35 @@ def score_candidate(
         )
         return None
 
-    stop, stop_basis, invalidation_point = compute_stop(candidate, atr, stop_level)
+    # PRZ state — needed to derive entry price, which validates swing_anchor.
+    swept = is_swept(
+        float(last["low"]),
+        float(last["high"]),
+        ctx.price,
+        candidate.prz_low,
+        candidate.prz_high,
+    )
+    status = prz_state(ctx.price, candidate.prz_low, candidate.prz_high, swept)
+    if status in ("in_prz", "swept") and _is_reversal_candle(last, candidate.bullish):
+        status = "confirmed"
+    entry = ctx.price if status != "approaching" else (candidate.prz_high if candidate.bullish else candidate.prz_low)
 
-    # Quant-trap veto (false breakouts, stop hunts, PRZ failure...).
+    # Swing anchor (Carney's 3-layer redundancy): recent extreme on the
+    # entry-correct side of price.  ATR-normalized lookback so 1H and 1D
+    # see comparable volatility windows.  Returns None on degenerate input.
+    swing_anchor = _compute_swing_anchor(df, atr, candidate.bullish, entry)
+
+    # First-pass stop: needed by grade() to compute rr1/rr2. No multipliers
+    # yet (grade/regime/trap all default to 1.0).  The final stop with the
+    # full multiplier chain is computed below after grade is known.
+    stop, stop_basis, invalidation_point = compute_stop(
+        candidate, atr, stop_level, swing_anchor=swing_anchor, entry=entry,
+    )
+
+    # Quant-trap veto (false breakouts, stop hunts, PRZ failure...).  Note
+    # Fix 5: a high trap_score no longer forces a None — it only widens the
+    # buffer via trap_multiplier.  trap_veto=True (structural failure) is
+    # the only signal that returns None.
     trap_score, trap_veto, _reasons = quant_trap_risk(
         df,
         candidate.prz_low,
@@ -530,18 +594,6 @@ def score_candidate(
     if adverse_momentum_veto(candidate.direction, ctx.sharpe):
         return None
 
-    swept = is_swept(
-        float(last["low"]),
-        float(last["high"]),
-        ctx.price,
-        candidate.prz_low,
-        candidate.prz_high,
-    )
-    status = prz_state(ctx.price, candidate.prz_low, candidate.prz_high, swept)
-    if status in ("in_prz", "swept") and _is_reversal_candle(last, candidate.bullish):
-        status = "confirmed"
-
-    entry = ctx.price if status != "approaching" else (candidate.prz_high if candidate.bullish else candidate.prz_low)
     targets = compute_targets(candidate, entry)
 
     # Direction geometry invariant (defense in depth).
@@ -588,6 +640,29 @@ def score_candidate(
     )
     if g is None:
         return None
+
+    # Fix 5/6/7/8: second-pass stop with the full multiplier chain.  grade
+    # widens (C/C(参考)) so the wider stop must propagate to the signal,
+    # which means RR must be re-derived.  escape hatch (stop_buffer_atr)
+    # overrides the level vocabulary entirely.
+    trap_m = trap_stop_multiplier(trap_score)
+    stop, stop_basis, invalidation_point = compute_stop(
+        candidate,
+        atr,
+        stop_level,
+        swing_anchor=swing_anchor,
+        entry=entry,
+        trap_multiplier=trap_m,
+        regime=ctx.regime,
+        grade=g,
+        stop_buffer_atr=ctx.stop_buffer_atr,
+    )
+
+    # Fix 7: RR must be re-derived with the grade-widened stop.  Plan §2.7
+    # expects "代码增加 5 行但语义正确" — re-running net_rr is the simplest
+    # way to honour the new geometry.
+    rr1 = net_rr(entry, stop, targets[0].price)
+    rr2 = net_rr(entry, stop, targets[1].price)
 
     signal = Signal(
         status=status,
@@ -678,6 +753,7 @@ def build_signal(
     divergences: Optional[dict] = None,
     stability_detector: Callable[[pd.DataFrame], str | None] | None = None,
     stop_level: str = "standard",
+    stop_buffer_atr: float | None = None,
 ) -> Signal | None:
     """Build the best executable signal from candidates, or None.
 
@@ -691,7 +767,7 @@ def build_signal(
     """
 
     @require(lambda interval: isinstance(interval, str) and len(interval) > 0, "interval must be a non-empty string")
-    @require(lambda stop_level: stop_level in ("standard", "tight", "wide"), "stop_level must be one of standard/tight/wide")
+    @require(lambda stop_level: stop_level in ("conservative", "standard", "aggressive"), "stop_level must be one of conservative/standard/aggressive")
     def _check_inputs(**_kwargs) -> None:
         return None
 
@@ -700,7 +776,7 @@ def build_signal(
     if df is None or len(df) < MIN_CANDLES or not candidates:
         return None
 
-    ctx = _prepare_score_context(df, interval, divergences)
+    ctx = _prepare_score_context(df, interval, divergences, stop_buffer_atr=stop_buffer_atr)
     if ctx is None:
         return None
 

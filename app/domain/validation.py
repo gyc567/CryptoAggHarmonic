@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import pandas as pd
+from icontract import ensure, require
 
 from app.config.tuning import TUNING
 from app.domain.signals import Candidate, compute_stop, compute_targets
@@ -218,6 +219,43 @@ def quant_trap_risk(
 
     score = min(90, max(10, score))
     return score, veto, reasons
+
+
+# --- 2b. Trap-aware stop buffer (Fix 5) -----------------------------------------
+
+
+@require(lambda trap_score: 0 <= trap_score <= 100, "trap_score must be 0-100")
+@ensure(lambda result: 1.0 <= result <= 2.0, "trap multiplier must be in [1.0, 2.0]")
+def trap_stop_multiplier(trap_score: int) -> float:
+    """Soft-knee curve mapping quant-trap score to a stop-buffer multiplier.
+
+    Plan §2.5 (Fix 5 P2) + §1.5 motivation:
+
+    | trap_score | multiplier | meaning                              |
+    |------------|------------|--------------------------------------|
+    |   0 –  50  | 1.0        | Low risk, no adjustment              |
+    |  50 –  60  | 1.0        | Neutral band, flat (no drag)         |
+    |  60 –  75  | 1.0 → 1.5  | Risk climbing, widen linearly        |
+    |  75 –  85  | 1.5 → 1.8  | High risk, widen more aggressively   |
+    |  85 – 100  | 1.8 → 2.0  | Extreme risk, cap at 2.0×            |
+
+    The neutral band 50-60 is intentionally flat — real breakouts often
+    *show* elevated trap indicators 1-3 bars before they fire; widening
+    every marginally-elevated signal would drag every neutral setup.
+
+    The curve is monotonic and piecewise linear; the cap at 2.0× protects
+    the chained multiplier (regime × grade) from blowing up the buffer.
+    """
+    if trap_score < 60:
+        return 1.0
+    if trap_score < 75:
+        # 1.0 → 1.5 over 15 points
+        return 1.0 + (trap_score - 60) / 15.0 * 0.5
+    if trap_score < 85:
+        # 1.5 → 1.8 over 10 points
+        return 1.5 + (trap_score - 75) / 10.0 * 0.3
+    # 85 → 100: 1.8 → 2.0 over 15 points, clamped at 2.0
+    return min(2.0, 1.8 + (trap_score - 85) / 5.0 * 0.2)
 
 
 # --- 3. Volume authenticity ------------------------------------------------------

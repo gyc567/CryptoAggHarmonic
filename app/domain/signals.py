@@ -58,6 +58,24 @@ EXTENDED_PATTERNS = frozenset(TUNING.extended_patterns)
 # Level 3 Aggressive:   D点内 + 0.25*ATR — 高手,低波动市场
 STOP_LOSS_LEVELS = frozenset(TUNING.atr_stop_buffer.keys())
 
+# Plan §2.6 (Fix 6 P2) — regime-aware stop buffer. high_quant 加宽 1.5×,
+# 与 position_mult × 0.6 配合，单笔风险从 1R 降到 1.5R × 0.6 = 0.9R，
+# 接近正常期间的风险预算。
+REGIME_STOP_MULTIPLIER: dict[str, float] = {"normal": 1.0, "high_quant": 1.5}
+
+# Plan §2.7 (Fix 7 P2) — grade-aware stop buffer. 修正 v1 方向错误
+# (A 紧 C 宽违反 Carney 体系)。A/B 级 1.0× 不变；C/C(参考) 加宽 1.3× / 1.5×。
+GRADE_STOP_MULTIPLIER: dict[str, float] = {
+    "A": 1.0,
+    "B": 1.0,
+    "C": 1.3,
+    "C(参考)": 1.5,
+}
+
+# Plan §5 边界 — 极端 trap+regime+grade 组合可让 multiplier 链乘到 3.9×，
+# 必须 clamp 防止止损过宽。
+MAX_STOP_BUFFER_MULT = 2.0
+
 LONG = "long"
 SHORT = "short"
 
@@ -217,7 +235,7 @@ def is_swept(low: float, high: float, close: float, prz_low: float, prz_high: fl
 # --- Stop loss ----------------------------------------------------------------
 
 
-@require(lambda candidate, atr, level="standard": atr > 0, "ATR must be positive; compute_stop is undefined for zero volatility")
+@require(lambda candidate, atr, level="standard", swing_anchor=None, entry=None: atr > 0, "ATR must be positive; compute_stop is undefined for zero volatility")
 @require(
     lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0,
     "PRZ bounds must be positive; degenerate candidates are filtered upstream",
@@ -226,51 +244,142 @@ def is_swept(low: float, high: float, close: float, prz_low: float, prz_high: fl
 @ensure(lambda result: result[0] > 0, "Returned stop price must be positive")
 @ensure(lambda result: result[2] > 0, "Returned invalidation point must be positive")
 @ensure(lambda result: len(result[1]) > 0, "stop_basis must be a non-empty human-readable string")
-def compute_stop(candidate: Candidate, atr: float, level: str = "standard") -> tuple[float, str, float]:
+def compute_stop(
+    candidate: Candidate,
+    atr: float,
+    level: str = "standard",
+    *,
+    swing_anchor: float | None = None,
+    entry: float | None = None,
+    trap_multiplier: float = 1.0,
+    regime: str = "normal",
+    grade: str | None = None,
+    stop_buffer_atr: float | None = None,
+) -> tuple[float, str, float]:
     """Stop at the structural invalidation point plus an ATR buffer.
 
     Args:
         candidate: the harmonic pattern candidate
         atr: current ATR value for the symbol/timeframe
         level: "conservative" | "standard" | "aggressive"
+        swing_anchor: optional recent swing low (long) / swing high (short)
+            providing a redundancy anchor (Carney's 3-layer stop: structure +
+            swing + volatility). When on the correct side of ``entry`` and
+            tighter than the structural anchor, the swing value overrides.
+            On the wrong side (swing above entry for long, below entry for
+            short) the parameter is silently rejected — a swing above the
+            entry would put the stop above the entry, which is meaningless.
+        entry: optional entry price used to validate ``swing_anchor``.
+        trap_multiplier: Fix 5 — quant-trap soft-knee multiplier (1.0-2.0).
+            Pre-computed by the engine via ``validation.trap_stop_multiplier``.
+        regime: Fix 6 — "normal" or "high_quant" (1.0× / 1.5×).
+        grade: Fix 7 — "A" | "B" | "C" | "C(参考)" | None (default 1.0×).
+            Multiplies on top of trap + regime.
+        stop_buffer_atr: Fix 8 — escape hatch that completely overrides the
+            level-based base. When provided, level/trap/regime/grade are
+            ignored for the buffer magnitude (but the structural anchor
+            selection still honours level).
 
     Returns (stop_price, stop_basis, invalidation_point).
         stop_basis: human-readable reason for stop placement
         invalidation_point: the structural point where the pattern is invalidated
+
+    Multiplier chain (plan §5): the final buffer is
+        ``base × trap × regime × grade × atr``
+    clamped to ``MAX_STOP_BUFFER_MULT × atr`` (default 2.0×) so a hostile
+    trap + high_quant + C grade never blows up risk.
     """
     if level not in STOP_LOSS_LEVELS:
         level = "standard"
-    buffer = ATR_STOP_BUFFER[level] * atr
+
+    # Fix 8 escape hatch takes priority: power user / backtester specifies
+    # a literal ATR multiple, skipping the level vocabulary entirely.
+    if stop_buffer_atr is not None:
+        base = stop_buffer_atr
+        multiplier_label = f"{stop_buffer_atr:.2f}*ATR"
+    else:
+        base = ATR_STOP_BUFFER[level]
+        multiplier_label = f"{base:.2f}*ATR"
+
+    # Resolve the multiplicative chain (each factor defaults to 1.0).
+    trap_m = max(1.0, float(trap_multiplier))  # caller pre-clamped to [1,2]
+    regime_m = REGIME_STOP_MULTIPLIER.get(regime, 1.0)
+    grade_m = GRADE_STOP_MULTIPLIER.get(grade, 1.0) if grade is not None else 1.0
+    effective_mult = base * trap_m * regime_m * grade_m
+    effective_mult = min(effective_mult, MAX_STOP_BUFFER_MULT)
+    buffer = effective_mult * atr
+
     extended = candidate.name.lower() in EXTENDED_PATTERNS
 
     if candidate.bullish:
         if level == "conservative":
             # Conservative: PRZ外 + 1.0*ATR（新手/高波动）
             anchor = candidate.prz_low
-            basis = f"PRZ外 invalidation - {ATR_STOP_BUFFER[level]:.2f}*ATR"
+            basis = f"PRZ外 invalidation - {multiplier_label}"
         elif level == "aggressive":
             # Aggressive: D点内（X附近）+ 0.25*ATR
             anchor = min(candidate.x_price, candidate.prz_low)
-            basis = f"X点 invalidation - {ATR_STOP_BUFFER[level]:.2f}*ATR"
+            basis = f"X点 invalidation - {multiplier_label}"
         else:
             # Standard: X点/PRZ外 + 0.5*ATR
             anchor = candidate.prz_low if extended else min(candidate.x_price, candidate.prz_low)
-            basis = f"X/PRZ invalidation - {ATR_STOP_BUFFER[level]:.2f}*ATR"
+            basis = f"X/PRZ invalidation - {multiplier_label}"
+        swing_basis_suffix = ""
+        if swing_anchor is not None and entry is not None:
+            # Long: a swing_low on the correct side is < entry.  Take the
+            # tighter (higher) of structure vs swing.
+            if swing_anchor < entry and swing_anchor > 0:
+                if swing_anchor > anchor:
+                    anchor = swing_anchor
+                    swing_basis_suffix = " + swing"
         invalidation = round(anchor, 8)
-        return round(anchor - buffer, 8), basis, invalidation
+        suffix = _chain_suffix(trap_m, regime_m, grade_m, stop_buffer_atr)
+        return round(anchor - buffer, 8), basis + suffix + swing_basis_suffix, invalidation
 
     # Bearish
     if level == "conservative":
         anchor = candidate.prz_high
-        basis = f"PRZ外 invalidation + {ATR_STOP_BUFFER[level]:.2f}*ATR"
+        basis = f"PRZ外 invalidation + {multiplier_label}"
     elif level == "aggressive":
         anchor = max(candidate.x_price, candidate.prz_high)
-        basis = f"X点 invalidation + {ATR_STOP_BUFFER[level]:.2f}*ATR"
+        basis = f"X点 invalidation + {multiplier_label}"
     else:
         anchor = candidate.prz_high if extended else max(candidate.x_price, candidate.prz_high)
-        basis = f"X/PRZ invalidation + {ATR_STOP_BUFFER[level]:.2f}*ATR"
+        basis = f"X/PRZ invalidation + {multiplier_label}"
+    swing_basis_suffix = ""
+    if swing_anchor is not None and entry is not None:
+        # Short: a swing_high on the correct side is > entry.  Take the
+        # tighter (lower) of structure vs swing.
+        if swing_anchor > entry and swing_anchor > 0:
+            if swing_anchor < anchor:
+                anchor = swing_anchor
+                swing_basis_suffix = " + swing"
     invalidation = round(anchor, 8)
-    return round(anchor + buffer, 8), basis, invalidation
+    suffix = _chain_suffix(trap_m, regime_m, grade_m, stop_buffer_atr)
+    return round(anchor + buffer, 8), basis + suffix + swing_basis_suffix, invalidation
+
+
+def _chain_suffix(
+    trap_m: float, regime_m: float, grade_m: float, stop_buffer_atr: float | None
+) -> str:
+    """Render the active multiplier chain for stop_basis.
+
+    Only includes factors that deviated from 1.0× — keeps the basis string
+    uncluttered for the common no-multiplier case while documenting every
+    factor that actually widened the stop.
+    """
+    if stop_buffer_atr is not None:
+        return ""  # escape hatch — already in the multiplier_label
+    parts: list[str] = []
+    if trap_m != 1.0:
+        parts.append(f"trap×{trap_m:.2f}")
+    if regime_m != 1.0:
+        parts.append(f"regime×{regime_m:.2f}")
+    if grade_m != 1.0:
+        parts.append(f"grade×{grade_m:.2f}")
+    if not parts:
+        return ""
+    return " · " + " · ".join(parts)
 
 
 # --- Take profits -------------------------------------------------------------

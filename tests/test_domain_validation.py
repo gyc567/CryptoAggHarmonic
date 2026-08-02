@@ -15,6 +15,7 @@ from app.domain.validation import (
     quant_trap_risk,
     rejection_reason,
     stability_verdict,
+    trap_stop_multiplier,
     volatility_multiplier,
     volume_authenticity,
 )
@@ -474,3 +475,71 @@ class TestVolatilityMultiplier:
     def test_floor_atr_pct(self):
         # tiny atr -> atr_pct < 0.5 -> uses 0.5 -> mult 5 -> clamped 1.5
         assert volatility_multiplier(0.001, 100.0) == 1.5
+
+
+class TestTrapStopMultiplier:
+    """Fix 5 P2 — soft-knee curve from quant-trap score to stop-buffer multiplier.
+
+    Plan §2.5: 50-60 neutral flat; 60-75 linear 1.0→1.5; 75-85 linear 1.5→1.8;
+    85-100 linear 1.8→2.0 (clamped).  Monotonic in [1.0, 2.0].
+    """
+
+    def test_zero_score_returns_1x(self):
+        assert trap_stop_multiplier(0) == 1.0
+
+    def test_50_lower_neutral_band(self):
+        assert trap_stop_multiplier(50) == 1.0
+
+    def test_59_top_of_neutral_band(self):
+        assert trap_stop_multiplier(59) == 1.0
+
+    def test_60_first_ramp_point(self):
+        assert trap_stop_multiplier(60) == pytest.approx(1.0)
+
+    def test_67_mid_ramp(self):
+        # (67-60)/15 * 0.5 = 7/30 ≈ 0.2333
+        assert trap_stop_multiplier(67) == pytest.approx(1.0 + 7 / 30)
+
+    def test_75_top_of_first_ramp(self):
+        # (75-60)/15 * 0.5 + 1.0 = 1.5
+        assert trap_stop_multiplier(75) == pytest.approx(1.5)
+
+    def test_80_mid_second_ramp(self):
+        # 1.5 + (80-75)/10 * 0.3 = 1.65
+        assert trap_stop_multiplier(80) == pytest.approx(1.65)
+
+    def test_85_top_of_second_ramp(self):
+        # 1.5 + (85-75)/10 * 0.3 = 1.8
+        assert trap_stop_multiplier(85) == pytest.approx(1.8)
+
+    def test_92_third_ramp(self):
+        # 1.8 + (92-85)/5 * 0.2 = 2.08 → clamped to 2.0
+        assert trap_stop_multiplier(92) == pytest.approx(2.0)
+
+    def test_100_caps_at_2x(self):
+        assert trap_stop_multiplier(100) == pytest.approx(2.0)
+
+    def test_monotonic_increasing(self):
+        """Sanity: each integer ≥ previous across the full range."""
+        prev = trap_stop_multiplier(0)
+        for s in range(1, 101):
+            cur = trap_stop_multiplier(s)
+            assert cur >= prev, f"non-monotonic at {s}: {cur} < {prev}"
+            prev = cur
+
+    def test_within_bounds(self):
+        for s in range(0, 101, 5):
+            m = trap_stop_multiplier(s)
+            assert 1.0 <= m <= 2.0
+
+    def test_negative_score_rejected(self):
+        from icontract import ViolationError
+
+        with pytest.raises(ViolationError):
+            trap_stop_multiplier(-1)
+
+    def test_above_100_rejected(self):
+        from icontract import ViolationError
+
+        with pytest.raises(ViolationError):
+            trap_stop_multiplier(101)

@@ -216,6 +216,32 @@ class TestBuildSignalRequires:
         with pytest.raises(ViolationError):
             build_signal(df, interval="15m", candidates=[cand], stop_level="nope")
 
+    def test_tight_vocabulary_now_rejected(self, df):
+        """After unifying stop_level to conservative/standard/aggressive, the
+        legacy ``tight`` token must fail the contract (not silently downgrade)."""
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError, match="stop_level"):
+            build_signal(df, interval="15m", candidates=[cand], stop_level="tight")
+
+    def test_wide_vocabulary_now_rejected(self, df):
+        """Same as ``tight`` — the legacy ``wide`` token is no longer accepted."""
+        cand = gartley_candidate()
+        with pytest.raises(ViolationError, match="stop_level"):
+            build_signal(df, interval="15m", candidates=[cand], stop_level="wide")
+
+    def test_conservative_vocabulary_accepted(self, df):
+        """The full conservative/standard/aggressive vocabulary is valid; the
+        wider level must not raise. We assert no ViolationError is raised on the
+        contract pre-check (the signal may still be None if volume veto kicks
+        in, which is the documented behaviour)."""
+        from icontract import ViolationError as _VErr
+
+        cand = gartley_candidate()
+        try:
+            build_signal(df, interval="15m", candidates=[cand], stop_level="conservative")
+        except _VErr:
+            pytest.fail("conservative stop_level must be accepted")
+
     def test_too_short_df_returns_none_not_raises(self, df):
         """Documented intentional non-contract: short df returns None, no error."""
         cand = gartley_candidate()
@@ -223,6 +249,24 @@ class TestBuildSignalRequires:
 
     def test_empty_candidates_returns_none(self, df):
         assert build_signal(df, interval="15m", candidates=[]) is None
+
+    def test_stop_buffer_atr_accepted(self, df):
+        """Fix 8: the escape hatch must accept any positive float without
+        raising the stop_level contract.  Signal may still be None for other
+        reasons (volume veto) — we only assert no contract violation."""
+        from icontract import ViolationError as _VErr
+
+        cand = gartley_candidate()
+        try:
+            build_signal(
+                df,
+                interval="15m",
+                candidates=[cand],
+                stop_level="standard",
+                stop_buffer_atr=0.45,
+            )
+        except _VErr:
+            pytest.fail("stop_buffer_atr escape hatch must not violate the contract")
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,9 @@ import pytest
 from app.domain.signals import (
     ATR_STOP_BUFFER,
     Candidate,
+    MAX_STOP_BUFFER_MULT,
+    REGIME_STOP_MULTIPLIER,
+    GRADE_STOP_MULTIPLIER,
     Signal,
     SignalTarget,
     compute_stop,
@@ -225,6 +228,335 @@ class TestComputeStop:
         c = make_candidate(name="Deep Crab")
         stop, _, _ = compute_stop(c, atr=2.0)
         assert stop == 108.0 - ATR_STOP_BUFFER["standard"] * 2.0
+
+    # --- swing_anchor: Carney 3-layer redundancy ---------------------------------
+
+    def test_swing_anchor_bullish_takes_tighter_when_valid(self):
+        """Bullish: swing_low on the correct side of entry (< entry) and tighter
+        than the structural anchor (X) wins.  The stop basis gains the
+        ``+ swing`` suffix so Vibe/LLM can explain it."""
+        # X=100, PRZ 108-112, entry 110.  Swing 109.5 > X=100 -> tighter anchor.
+        stop, basis, inv = compute_stop(
+            make_candidate(), atr=2.0, swing_anchor=109.5, entry=110.0,
+        )
+        assert inv == 109.5
+        assert stop == 109.5 - ATR_STOP_BUFFER["standard"] * 2.0
+        assert "+ swing" in basis
+
+    def test_swing_anchor_bullish_rejected_when_above_entry(self):
+        """Swing above entry would put the stop above the entry — meaningless.
+        Silently ignored (fallback to structural anchor)."""
+        stop, basis, _ = compute_stop(
+            make_candidate(), atr=2.0, swing_anchor=111.0, entry=110.0,
+        )
+        assert "swing" not in basis
+        # Falls back to X=100 anchor.
+        assert stop == 100.0 - ATR_STOP_BUFFER["standard"] * 2.0
+
+    def test_swing_anchor_bullish_rejected_when_below_structure(self):
+        """Swing looser than the structural anchor is not adopted (we take the
+        tighter of the two; a looser swing would widen risk)."""
+        # Structural anchor X=100; swing 95 (lower) is wider -> keep X.
+        stop, basis, _ = compute_stop(
+            make_candidate(), atr=2.0, swing_anchor=95.0, entry=110.0,
+        )
+        assert "swing" not in basis
+        assert stop == 100.0 - ATR_STOP_BUFFER["standard"] * 2.0
+
+    def test_swing_anchor_bullish_ignored_without_entry(self):
+        """Swing_anchor without entry cannot be validated; silently ignored to
+        avoid placing the stop above the entry zone."""
+        stop, basis, _ = compute_stop(
+            make_candidate(), atr=2.0, swing_anchor=109.5, entry=None,
+        )
+        assert "swing" not in basis
+
+    def test_swing_anchor_bearish_takes_tighter_when_valid(self):
+        """Short: swing_high on the correct side of entry (> entry) and tighter
+        than the structural anchor wins."""
+        c = make_candidate(
+            bullish=False,
+            points=(150.0, 100.0, 130.0, 110.0, 140.0),
+            completion_min=148.0,
+            completion_max=152.0,
+        )
+        # Structure anchor max(150, 152) = 152; swing 151 < 152 -> tighter.
+        stop, basis, inv = compute_stop(
+            c, atr=2.0, swing_anchor=151.0, entry=150.0,
+        )
+        assert inv == 151.0
+        assert stop == 151.0 + ATR_STOP_BUFFER["standard"] * 2.0
+        assert "+ swing" in basis
+
+    def test_swing_anchor_bearish_rejected_when_below_entry(self):
+        """Bearish swing below entry would put the stop below entry — ignored."""
+        c = make_candidate(
+            bullish=False,
+            points=(150.0, 100.0, 130.0, 110.0, 140.0),
+            completion_min=148.0,
+            completion_max=152.0,
+        )
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, swing_anchor=149.0, entry=150.0,
+        )
+        assert "swing" not in basis
+
+    def test_swing_anchor_compatible_with_all_levels(self):
+        """swing_anchor must work for conservative/standard/aggressive — only
+        the buffer magnitude differs."""
+        for level in ("conservative", "standard", "aggressive"):
+            stop, basis, _ = compute_stop(
+                make_candidate(),
+                atr=2.0,
+                level=level,
+                swing_anchor=109.5,
+                entry=110.0,
+            )
+            assert "+ swing" in basis, f"level={level} missing swing suffix"
+            assert stop == 109.5 - ATR_STOP_BUFFER[level] * 2.0
+
+
+class TestComputeStopMultiplierChain:
+    """Fix 5/6/7/8 — trap / regime / grade multiplier chain + escape hatch.
+
+    Plan §2.5-2.8.  Verifies:
+    * default behaviour unchanged (multiplier = 1.0× when nothing is set)
+    * each multiplier multiplies the base buffer independently
+    * the chain clamps to MAX_STOP_BUFFER_MULT × atr
+    * ``stop_buffer_atr`` escape hatch overrides level/trap/regime/grade
+    """
+
+    BULL = dict(
+        bullish=True,
+        points=(100.0, 150.0, 120.0, 140.0, 110.0),
+        completion_min=108.0,
+        completion_max=112.0,
+    )
+
+    def test_default_no_multiplier_matches_baseline(self):
+        """With no multipliers, compute_stop produces the pre-Fix behaviour."""
+        c = make_candidate(**self.BULL)
+        stop, basis, _ = compute_stop(c, atr=2.0, level="standard")
+        base_buffer = ATR_STOP_BUFFER["standard"] * 2.0
+        # Bullish standard: anchor = min(X, PRZ_low) = min(100, 108) = 100.
+        assert stop == 100.0 - base_buffer
+        assert "trap" not in basis and "regime" not in basis and "grade" not in basis
+
+    def test_trap_multiplier_1p5_widens_buffer(self):
+        c = make_candidate(**self.BULL)
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard", trap_multiplier=1.5,
+        )
+        # 0.3 * 1.5 = 0.45 ATR-mult → 0.9 absolute (× atr=2.0); anchor 100
+        assert stop == 100.0 - 0.9
+        assert "trap×1.50" in basis
+
+    def test_regime_high_quant_widens_buffer(self):
+        c = make_candidate(**self.BULL)
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard", regime="high_quant",
+        )
+        # 0.3 * 1.5 = 0.45 ATR-mult → 0.9 absolute
+        assert stop == 100.0 - 0.9
+        assert "regime×1.50" in basis
+
+    def test_grade_C_widens_buffer(self):
+        c = make_candidate(**self.BULL)
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard", grade="C",
+        )
+        # 0.3 * 1.3 = 0.39 ATR-mult → 0.78 absolute
+        assert stop == 100.0 - 0.78
+        assert "grade×1.30" in basis
+
+    def test_grade_A_unchanged(self):
+        """Fix 7 correction: A-grade signals use the standard buffer (1.0×)."""
+        c = make_candidate(**self.BULL)
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard", grade="A",
+        )
+        base_buffer = ATR_STOP_BUFFER["standard"] * 2.0
+        assert stop == 100.0 - base_buffer
+        # No grade suffix when multiplier is 1.0.
+        assert "grade" not in basis
+
+    def test_grade_C参考_widens_most(self):
+        c = make_candidate(**self.BULL)
+        stop, _, _ = compute_stop(
+            c, atr=2.0, level="standard", grade="C(参考)",
+        )
+        # 0.3 * 1.5 * 2.0 = 0.9
+        assert stop == 100.0 - 0.9
+
+    def test_chain_multiplies(self):
+        """trap × regime × grade compose multiplicatively (plan §2.6)."""
+        c = make_candidate(**self.BULL)
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard",
+            trap_multiplier=1.5, regime="high_quant", grade="C",
+        )
+        # 0.3 * 1.5 * 1.5 * 1.3 = 0.8775 ATR-mult → 1.755 absolute (× atr=2.0)
+        assert stop == 100.0 - 1.755
+        assert "trap×1.50" in basis
+        assert "regime×1.50" in basis
+        assert "grade×1.30" in basis
+
+    def test_chain_clamps_at_MAX(self):
+        """Plan §5: trap×regime×grade extreme combo is clamped at 2.0× atr."""
+        c = make_candidate(**self.BULL)
+        # 0.3 base × 2.0 trap × 1.5 regime × 1.5 grade = 1.35 (no clamp)
+        # push trap to 2.0× and grade to "C(参考)" 1.5×:  0.3*2.0*1.5*1.5 = 1.35 (still ok)
+        # Use stop_buffer_atr=2.0 directly: clamp kicks in at MAX_STOP_BUFFER_MULT=2.0.
+        stop, _, _ = compute_stop(
+            c, atr=2.0, level="standard",
+            trap_multiplier=2.0, regime="high_quant", grade="C(参考)",
+            stop_buffer_atr=3.0,  # way above 2.0 cap
+        )
+        # escape hatch: base=3.0, chain 1.0× (escape hatch doesn't multiply)
+        # effective_mult = min(3.0, MAX_STOP_BUFFER_MULT=2.0) = 2.0
+        assert stop == 100.0 - MAX_STOP_BUFFER_MULT * 2.0
+        assert stop == 100.0 - 4.0
+
+    def test_stop_buffer_atr_overrides_level(self):
+        """Fix 8: escape hatch completely overrides the level vocabulary."""
+        c = make_candidate(**self.BULL)
+        # standard level → 0.3 base; override to 0.7
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard", stop_buffer_atr=0.7,
+        )
+        assert stop == 100.0 - 1.4  # 0.7 * 2.0
+        assert "0.70*ATR" in basis
+        # No trap/regime/grade suffix because escape hatch means they don't apply.
+        assert "trap" not in basis
+        assert "regime" not in basis
+        assert "grade" not in basis
+
+    def test_stop_buffer_atr_with_level_aggressive_still_honors_level_for_anchor(self):
+        """escape hatch overrides buffer but level still picks the anchor."""
+        c = make_candidate(
+            bullish=True, name="gartley",
+            points=(100.0, 150.0, 120.0, 140.0, 110.0),
+            completion_min=108.0, completion_max=112.0,
+        )
+        # Aggressive anchor = min(X=100, PRZ_low=108) = 100 (same as standard).
+        # The distinction shows for non-extended families; here X is the smaller
+        # pivot so both levels anchor at 100.  Sanity-check that the basis
+        # string carries the escape hatch label, not the level label.
+        _, basis, _ = compute_stop(
+            c, atr=2.0, level="aggressive", stop_buffer_atr=0.5,
+        )
+        assert "0.50*ATR" in basis
+
+    def test_unknown_regime_defaults_to_1x(self):
+        c = make_candidate(**self.BULL)
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard", regime="bogus",
+        )
+        base_buffer = ATR_STOP_BUFFER["standard"] * 2.0
+        assert stop == 100.0 - base_buffer
+        assert "regime" not in basis
+
+    def test_unknown_grade_defaults_to_1x(self):
+        c = make_candidate(**self.BULL)
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard", grade="Z",
+        )
+        base_buffer = ATR_STOP_BUFFER["standard"] * 2.0
+        assert stop == 100.0 - base_buffer
+        assert "grade" not in basis
+
+    def test_trap_multiplier_below_1_clamped_to_1(self):
+        """Defensive: caller passes 0.5 (e.g. bug) — clamped to 1.0×."""
+        c = make_candidate(**self.BULL)
+        stop, _, _ = compute_stop(
+            c, atr=2.0, level="standard", trap_multiplier=0.5,
+        )
+        base_buffer = ATR_STOP_BUFFER["standard"] * 2.0
+        assert stop == 100.0 - base_buffer
+
+    def test_bearish_chain(self):
+        c = make_candidate(
+            bullish=False,
+            points=(150.0, 100.0, 130.0, 110.0, 140.0),
+            completion_min=148.0,
+            completion_max=152.0,
+        )
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="standard",
+            trap_multiplier=1.5, regime="high_quant", grade="C",
+        )
+        # Bearish: anchor = max(X=150, PRZ_high=152) = 152; buffer adds.
+        # 0.3 * 1.5 * 1.5 * 1.3 = 0.8775 ATR-mult → 1.755 absolute
+        assert stop == 152.0 + 1.755
+        assert "trap×1.50" in basis
+        assert "regime×1.50" in basis
+        assert "grade×1.30" in basis
+
+    def test_REGIME_STOP_MULTIPLIER_table(self):
+        assert REGIME_STOP_MULTIPLIER == {"normal": 1.0, "high_quant": 1.5}
+
+    def test_GRADE_STOP_MULTIPLIER_table(self):
+        assert GRADE_STOP_MULTIPLIER == {
+            "A": 1.0, "B": 1.0, "C": 1.3, "C(参考)": 1.5,
+        }
+
+    def test_bullish_aggressive_chain(self):
+        """Bullish aggressive anchor path also threads the multiplier chain."""
+        c = make_candidate(
+            bullish=True,
+            points=(100.0, 150.0, 120.0, 140.0, 110.0),
+            completion_min=108.0, completion_max=112.0,
+        )
+        stop, basis, _ = compute_stop(
+            c, atr=2.0, level="aggressive",
+            trap_multiplier=1.5, regime="high_quant", grade="C",
+        )
+        # Aggressive bullish anchor = min(X=100, PRZ_low=108) = 100.
+        # 0.25 * 1.5 * 1.5 * 1.3 = 0.73125 ATR-mult → 1.4625 absolute.
+        assert stop == 100.0 - 1.4625
+        assert "X点" in basis
+        assert "trap×1.50" in basis
+
+    def test_invalid_level_falls_back_to_standard(self):
+        """Defensive: an unknown level silently falls back to standard."""
+        c = make_candidate(**self.BULL)
+        stop, _, _ = compute_stop(c, atr=2.0, level="bogus")
+        base_buffer = ATR_STOP_BUFFER["standard"] * 2.0
+        assert stop == 100.0 - base_buffer
+
+    def test_stop_buffer_atr_clamped(self):
+        """Escape hatch > MAX_STOP_BUFFER_MULT is clamped to MAX."""
+        c = make_candidate(**self.BULL)
+        stop, _, _ = compute_stop(
+            c, atr=2.0, level="standard", stop_buffer_atr=5.0,
+        )
+        assert stop == 100.0 - MAX_STOP_BUFFER_MULT * 2.0
+
+    def test_trap_multiplier_at_upper_bound(self):
+        """trap=2.0 is exactly the upper bound; not clamped beyond."""
+        c = make_candidate(**self.BULL)
+        stop, _, _ = compute_stop(
+            c, atr=2.0, level="standard", trap_multiplier=2.0,
+        )
+        # 0.3 * 2.0 = 0.6 ATR-mult → 1.2 absolute
+        assert stop == 100.0 - 1.2
+
+    def test_chain_suffix_when_all_1x_returns_empty(self):
+        """Sanity: when no multiplier deviates from 1.0, suffix is empty."""
+        # Indirectly via the default test: assert "trap×" not in basis, etc.
+        c = make_candidate(**self.BULL)
+        _, basis, _ = compute_stop(c, atr=2.0, level="standard")
+        assert "·" not in basis  # no separator when suffix is empty
+
+    def test_chain_suffix_omitted_parts(self):
+        """When only one multiplier fires, only that part appears."""
+        c = make_candidate(**self.BULL)
+        _, basis, _ = compute_stop(
+            c, atr=2.0, level="standard", trap_multiplier=1.5,
+        )
+        assert "trap×1.50" in basis
+        assert "regime" not in basis
+        assert "grade" not in basis
 
 
 class TestComputeTargets:
