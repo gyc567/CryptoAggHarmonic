@@ -74,10 +74,18 @@ def load_cached(
     exchange: str = "binance",
     root: Path | None = None,
 ) -> pd.DataFrame | None:
-    """Load data from local cache. Returns None if not cached."""
+    """Load data from local cache. Returns None if not cached or corrupted."""
     path = get_data_path(symbol, interval, exchange, root)
     if path.exists():
-        return pd.read_parquet(path)
+        try:
+            return pd.read_parquet(path)
+        except Exception:
+            # File corrupted, remove and return None
+            try:
+                path.unlink()
+            except Exception:
+                pass
+            return None
     return None
 
 
@@ -353,6 +361,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"[error] Invalid pair format: {pair}, use SYMBOL:INTERVAL")
                 continue
             sym, iv = pair.split(":", 1)
+            if sym not in SUPPORTED_SYMBOLS:
+                print(f"[error] Unsupported symbol: {sym}, use one of {SUPPORTED_SYMBOLS}")
+                continue
+            if iv not in SUPPORTED_INTERVALS:
+                print(f"[error] Unsupported interval: {iv}, use one of {SUPPORTED_INTERVALS}")
+                continue
             try:
                 ensure_data(sym, iv, args.days, root=root)
             except Exception as e:

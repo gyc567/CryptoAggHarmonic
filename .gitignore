@@ -192,3 +192,9 @@ scripts/.run/
 
 # Watchlist symbol cache (rebuilt weekly from fapi exchangeInfo)
 app/cache/
+
+# Backtest data cache (downloaded K-line data)
+data/backtest/
+
+# Coverage reports
+coverage.json
