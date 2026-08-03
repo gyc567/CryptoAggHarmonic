@@ -301,6 +301,7 @@ def detect_patterns(
     limit_to: int = 10,
     percent_complete: float = 0.8,
     analysis_type: str = "forming",
+    fib_tolerance: float = 0.10,
 ) -> dict:
     """Run harmonic and divergence pattern detection.
 
@@ -309,13 +310,14 @@ def detect_patterns(
         limit_to: Max number of patterns to return.
         percent_complete: Minimum completion ratio (0-1).
         analysis_type: Type of analysis - "forming", "formed", or "divergence".
+        fib_tolerance: Fibonacci tolerance for pattern matching (0.10 = looser, finds more patterns).
 
     Returns:
         Dict with position, patterns, divergences, and HTF trend.
     """
     try:
         ohlc = OHLCTechnicals(candle_data.df, candle_data.symbol, candle_data.interval)
-        search = HarmonicSearch(ohlc)
+        search = HarmonicSearch(ohlc, fib_tolerance=fib_tolerance)
         div_search = DivergenceSearch(ohlc)
 
         if analysis_type in ("forming", "auto"):
