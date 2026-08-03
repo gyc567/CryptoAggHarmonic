@@ -32,7 +32,7 @@ from app.infra.supabase_client import (
 from app.infra.vibe_event_store import VibeEventStore
 from app.infra.vibe_session_store import VibeSessionStore
 from app.infra.vibe_trace_store import VibeTraceStore
-from app.services.analysis import AnalysisOrchestrator
+from app.factory import get_orchestrator
 from app.services.vibe.cancellation import cancel_run as signal_cancel_run
 from app.services.vibe.cancellation import register_run
 from app.services.vibe.runner import run_vibe_agent
@@ -280,7 +280,7 @@ def invoke_tool(user, tool_name):
         if not reserved:
             return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429, retryable=False)
 
-    orchestrator_instance = AnalysisOrchestrator()
+    orchestrator_instance = get_orchestrator()
     registry = create_default_registry(orchestrator_instance)
     tool = registry.get(tool_name)
     if not tool:

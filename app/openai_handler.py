@@ -2,51 +2,23 @@
 import json
 import logging
 import os
-import threading
 
-from dotenv import load_dotenv
-from openai import OpenAI
+from app.infra.llm_client import get_llm_client
 
-from .pyharmonics_handler import (
-    whats_forming_binance,
-    whats_forming_yahoo,
-    whats_options_interest,
-    whats_options_volume,
-)
+# Re-export for backwards compatibility with existing imports.
+_get_client = get_llm_client
 
 logging.basicConfig(level=logging.INFO)
-# Load environment variables
-load_dotenv()
-openai_api_model = os.getenv("OPENAI_API_MODEL")  # Ensure the OpenAI API model is set
-openai_api_base_url = os.getenv("OPENAI_API_BASE_URL")  # Ensure the OpenAI API base URL is set
-openai_request_timeout = int(os.getenv("OPENAI_REQUEST_TIMEOUT", "60"))  # Default 60s timeout
-logging.info(f"OpenAI - API model: {openai_api_model}, base URL: {openai_api_base_url}, timeout: {openai_request_timeout}s")
 
-# Map the function names to the actual functions
-FUNCTION_ROUTER = {
-    "forming_binance": whats_forming_binance,
-    "forming_yahoo": whats_forming_yahoo,
-    "options_interest": whats_options_interest,
-    "options_volume": whats_options_volume,
-}
+# Read model config lazily on first use.
+_openai_api_model: str | None = None
 
 
-def _get_client():
-    """Thread-safe lazy client initialization."""
-    global _client
-    if _client is None:
-        with _client_lock:
-            if _client is None:  # Double-check after acquiring lock
-                _client = OpenAI(
-                    api_key=os.getenv("OPENAI_API_KEY") or "dummy-key-for-testing",
-                    base_url=openai_api_base_url,
-                    timeout=openai_request_timeout,
-                )
-    return _client
-
-
-_client = None
-_client_lock = threading.Lock()
+def _get_model() -> str:
+    global _openai_api_model
+    if _openai_api_model is None:
+        _openai_api_model = os.getenv("OPENAI_API_MODEL", "gpt-3.5-turbo")
+    return _openai_api_model
 
 
 def parse_args(string):
@@ -88,8 +60,8 @@ def query_openai(prompt, developer_content, model=None):
     logging.debug(f"Developer content: {developer_content}")
     logging.debug(f"Model: {model}")
     try:
-        response = _get_client().chat.completions.create(
-            model=model or openai_api_model,
+        response = get_llm_client().chat.completions.create(
+            model=model or _get_model(),
             messages=[{"role": "developer", "content": developer_content}, {"role": "user", "content": prompt}],
             max_tokens=100,
         )

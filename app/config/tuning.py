@@ -354,6 +354,45 @@ class TuningConstants:
 # Singleton — read this from anywhere in the codebase.
 TUNING: TuningConstants = TuningConstants()
 
+# Thread-local stack for scoped tuning overrides.
+_tuning_context: list[TuningConstants] = []
+
+
+def get_tuning() -> TuningConstants:
+    """Get the current tuning constants.
+
+    Returns the innermost scoped value if inside a ``TuningScope`` context,
+    otherwise the global ``TUNING`` singleton.
+    """
+    return _tuning_context[-1] if _tuning_context else TUNING
+
+
+# --- Convenience accessors for domain modules -------------------------------
+#
+# Domain modules can import these instead of reading module-level aliases.
+# When inside a TuningScope, the scoped values are returned; otherwise
+# the global TUNING singleton values are used.
+
+
+def get_fib_tp1() -> float:
+    return get_tuning().fib_tp1
+
+
+def get_fib_tp2() -> float:
+    return get_tuning().fib_tp2
+
+
+def get_fib_tp3() -> float:
+    return get_tuning().fib_tp3
+
+
+def get_atr_stop_buffer() -> dict:
+    return dict(get_tuning().atr_stop_buffer)
+
+
+def get_extended_patterns() -> frozenset:
+    return get_tuning().extended_patterns
+
 
 # --- Hot-swap support --------------------------------------------------------
 #
@@ -455,7 +494,7 @@ def reset_tuning() -> None:
 
 
 class TuningScope:
-    """Context manager: apply ``t`` on enter, revert to ``TUNING`` on exit.
+    """Context manager: push ``t`` onto the stack on enter, pop on exit.
 
     Example::
 
@@ -469,11 +508,11 @@ class TuningScope:
         self._t = t
 
     def __enter__(self) -> TuningConstants:
-        apply_tuning(self._t)
+        _tuning_context.append(self._t)
         return self._t
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        reset_tuning()
+        _tuning_context.pop()
 
 
 # --- YAML I/O for the loop ----------------------------------------------------

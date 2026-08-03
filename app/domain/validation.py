@@ -8,11 +8,8 @@ from typing import Optional
 import pandas as pd
 from icontract import ensure, require
 
-from app.config.tuning import TUNING
+from app.config.tuning import TUNING, get_tuning
 from app.domain.signals import Candidate, compute_stop, compute_targets
-
-# --- Backwards-compat aliases (read from TUNING singleton) -----------------
-# See app/domain/signals.py for the rationale.
 
 """Signal validity verification (P4 pillar): pure, I/O-free functions.
 
@@ -27,8 +24,12 @@ Plus: quant regime scoring, per-bar momentum Sharpe gate, volatility targeting.
 
 Everything is a pure function of plain values or pandas frames, so the module
 can be unit-tested to 100% coverage.
+
+Tuning: values are read via ``get_tuning()`` which respects the current
+``TuningScope`` context when active.
 """
 
+# Backwards-compatible module-level aliases (frozen at import time).
 MAX_PRZ_DISTANCE_ATR = TUNING.max_prz_distance_atr
 MAX_D_AGE_BARS = TUNING.max_d_age_bars
 MAX_FORMING_PRZ_WIDTH_ATR = TUNING.max_forming_prz_width_atr

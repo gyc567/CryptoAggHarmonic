@@ -9,13 +9,13 @@ Start the app with gunicorn (recommended for production):
 pip install -r requirements.txt
 
 # Run with gunicorn using config
-PORT=5000 gunicorn --config gunicorn.conf.py app.main:app
+PORT=5000 gunicorn --config gunicorn.conf.py "app:get_app()"
 ```
 
 Start development with Flask:
 
 ```bash
-PORT=5000 python app/main.py
+PORT=5000 python -m app.main
 ```
 
 ## Ports
