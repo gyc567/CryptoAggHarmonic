@@ -65,6 +65,15 @@ def _parse_args(argv=None) -> argparse.Namespace:
             "(matches live trader semantic of waiting for pullback; default)."
         ),
     )
+    parser.add_argument(
+        "--min-grade",
+        choices=["A", "B", "C(参考)"],
+        default=None,
+        help=(
+            "Minimum signal grade to include. A = highest quality, B = medium, "
+            "C(参考) = reference only. Default: include all grades."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -128,6 +137,7 @@ def main(argv=None) -> int:
         step=args.step,
         horizon=args.horizon,
         entry_mode=args.entry_mode,
+        min_grade=args.min_grade,
     )
     elapsed_walk = time.time() - t0
 

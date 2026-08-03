@@ -24,6 +24,7 @@ Permanent documentation. See [AGENTS.md](AGENTS.md) → Documentation for rules.
 
 ## Reports
 
+- [Backtest: BTCUSDT 4H Optimized 2026-08-03](docs/backtest-btcusdt-4h-optimized-2026-08-03.md)
 - [Backtest: BTCUSDT 4H 2026-08-03](docs/backtest-btcusdt-4h-2026-08-03.md)
 - [Backtest Report](docs/backtest-report-harmonic-2026-07-30.md)
 - [Bench Implementation](docs/bench-implementation-report-2026-07-31.md)
