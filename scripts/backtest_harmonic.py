@@ -47,11 +47,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--silent", action="store_true")
     parser.add_argument(
         "--data-loader",
-        choices=["prod", "stdlib"],
-        default="stdlib",
+        choices=["prod", "stdlib", "cache"],
+        default="cache",
         help=(
             "prod = app.infra.historical_data (uses curl_cffi; may hang on TLS in "
-            "some envs); stdlib = urllib-only Binance fetch (default, more portable)."
+            "some envs); stdlib = urllib-only Binance fetch; "
+            "cache = local Parquet cache (default, fastest for repeated runs)."
         ),
     )
     parser.add_argument(
@@ -85,6 +86,19 @@ def main(argv=None) -> int:
         from app.infra.historical_data import fetch_historical_data
 
         df = fetch_historical_data("binance", args.symbol, args.interval, fetch_days)
+    elif args.data_loader == "cache":
+        # Try to load from local cache first, download if not available.
+        from scripts.download_backtest_data import ensure_data
+
+        df, was_cached = ensure_data(
+            args.symbol,
+            args.interval,
+            days=fetch_days,
+            exchange="binance",
+            verbose=not args.silent,
+        )
+        if not args.silent:
+            print(f"[backtest] data source: {'cache' if was_cached else 'downloaded'}")
     else:
         from datetime import datetime, timedelta, timezone
 
