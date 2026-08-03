@@ -48,11 +48,11 @@ def _parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument(
         "--data-loader",
         choices=["prod", "stdlib", "cache"],
-        default="cache",
+        default="stdlib",
         help=(
             "prod = app.infra.historical_data (uses curl_cffi; may hang on TLS in "
-            "some envs); stdlib = urllib-only Binance fetch; "
-            "cache = local Parquet cache (default, fastest for repeated runs)."
+            "some envs); stdlib = urllib-only Binance fetch (default, most compatible); "
+            "cache = local Parquet cache (fastest for repeated runs, use --data-loader cache)."
         ),
     )
     parser.add_argument(

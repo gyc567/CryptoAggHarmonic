@@ -33,6 +33,7 @@ from scripts._binance_stdlib import fetch_binance_klines
 DATA_ROOT = Path(__file__).resolve().parent.parent / "data" / "backtest"
 
 # Fixed end date for reproducible backtests (monthly update recommended).
+# All dates use UTC timezone for consistency.
 FIXED_END_DATE = datetime(2026, 8, 1, tzinfo=timezone.utc)
 
 # Default lookback: 730 days (~2 years, covers full market cycle).
@@ -99,12 +100,21 @@ def save_data(
     """Save DataFrame to Parquet with metadata.
 
     Returns the path to the saved file.
+
+    Raises:
+        OSError: If unable to create directory or write files.
     """
     data_path = get_data_path(symbol, interval, exchange, root)
-    data_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise OSError(f"Failed to create directory {data_path.parent}: {e}") from e
 
     # Save Parquet with index (dts column).
-    df.to_parquet(data_path, index=True)
+    try:
+        df.to_parquet(data_path, index=True)
+    except OSError as e:
+        raise OSError(f"Failed to write parquet file {data_path}: {e}") from e
 
     # Save metadata.
     meta = {
@@ -121,7 +131,10 @@ def save_data(
         "version": "v1",
     }
     meta_path = get_meta_path(symbol, interval, exchange, root)
-    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    try:
+        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    except OSError as e:
+        raise OSError(f"Failed to write metadata file {meta_path}: {e}") from e
 
     return data_path
 
@@ -159,7 +172,7 @@ def download_data(
         days: Number of calendar days to look back.
         exchange: Exchange name (default: binance).
         root: Override data root path.
-        max_retries: Number of retry attempts on failure.
+        max_retries: Total number of download attempts (default: 3).
         verbose: Print progress messages.
 
     Returns:

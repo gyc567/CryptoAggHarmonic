@@ -44,24 +44,6 @@ def sample_df():
     )
 
 
-@pytest.fixture
-def sample_meta():
-    """Sample metadata dict."""
-    return {
-        "symbol": "BTCUSDT",
-        "interval": "4h",
-        "exchange": "binance",
-        "downloaded_at": "2026-08-03T12:00:00Z",
-        "date_range": {
-            "start": "2026-07-01T00:00:00Z",
-            "end": "2026-08-03T00:00:00Z",
-        },
-        "candles": 10,
-        "source": "binance_stdlib",
-        "version": "v1",
-    }
-
-
 # --------------------------------------------------------------------------- #
 # Path helpers                                                                #
 # --------------------------------------------------------------------------- #
