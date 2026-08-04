@@ -129,3 +129,29 @@ When uncertain, ask:
 ### Metric tracking
 
 Log metric changes in plan docs and PR descriptions. Improvements should be **quantified**, not just described.
+
+---
+
+## Code quality standards
+
+All AI-generated code must adhere to these principles:
+
+### Design principles
+
+1. **KISS (Keep It Simple, Stupid)** — Prefer the simplest solution that works. Avoid over-engineering.
+2. **High cohesion, low coupling** — Group related code together; minimize dependencies between modules. Use clean design patterns (not excessive patterns).
+3. **100% test coverage for new code** — All new functionality must include tests. No new code without tests.
+4. **Non-regression** — Changes must not break unrelated existing functionality.
+5. **Preserve test suite** — Keep all test cases. Include test reports in documentation.
+
+### Testing workflow
+
+Before any feature work:
+- Write tests first (TDD) or alongside implementation
+- Run existing tests to establish baseline
+- After changes: run full test suite
+
+After any feature work:
+- Verify all tests pass (`pytest` or `npm test`)
+- Generate coverage report
+- Document test results in PR or plan doc
