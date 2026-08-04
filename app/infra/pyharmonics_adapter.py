@@ -200,19 +200,24 @@ def _df_to_candle_data(df: Any, symbol: str, interval: str) -> Any:
     class CachedCandleData(CandleData):
         SOURCE = "Cache"
 
+        def __init__(self2, df, symbol, interval):
+            super().__init__()
+            self2.df = df
+            self2.symbol = symbol
+            self2.interval = interval
+            self2.num_candles = len(df)
+            self2.reset_index()
+
         def get_candles(
-            self,
+            self2,
             symbol: str,
             interval: str,
             num_candles: Optional[int] = None,
         ) -> None:
-            self.symbol = symbol
-            self.interval = interval
-            self.df = df
-            self.num_candles = len(df)
-            self.reset_index()
+            # Already initialized in __init__, no-op for compatibility
+            pass
 
-    return CachedCandleData()
+    return CachedCandleData(df, symbol, interval)
 
 
 class _PatternPosition:

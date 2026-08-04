@@ -20,7 +20,7 @@ LOG="$RUN_DIR/next-dev.log"
 # Backend URL is consumed by the Next.js dev server via process env when
 # proxied routes resolve. Both the global var (production / Vercel) and
 # BACKEND_API_BASE (used by next.config rewrites) point at local Flask.
-export BACKEND_API_BASE="${BACKEND_API_BASE:-http://127.0.0.1:5000}"
+export BACKEND_API_BASE="${BACKEND_API_BASE:-http://127.0.0.1:5001}"
 
 cd "$FRONTEND"
 

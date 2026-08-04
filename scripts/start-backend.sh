@@ -43,12 +43,27 @@ if [[ -f "$PIDFILE" ]]; then
 fi
 
 # Sanity: make sure venv exists
-if [[ ! -x "$ROOT/.venv/bin/gunicorn" ]]; then
-  echo "ERROR: $ROOT/.venv/bin/gunicorn not found. Create venv and install deps first." >&2
+# Try multiple possible venv locations
+for VENV in "$ROOT/.venv" "$HOME/.hermes/hermes-agent/venv"; do
+  if [[ -x "$VENV/bin/gunicorn" ]]; then
+    GUNICORN_BIN="$VENV/bin/gunicorn"
+    break
+  fi
+done
+
+if [[ -z "${GUNICORN_BIN:-}" ]]; then
+  echo "ERROR: gunicorn not found in any venv. Create venv and install deps first." >&2
   exit 1
 fi
 
-nohup "$ROOT/.venv/bin/gunicorn" --config gunicorn.conf.py app.main:app \
+# Get port from env or default
+GUNICORN_PORT="${PORT:-5001}"
+export PORT="$GUNICORN_PORT"
+
+# Local dev: skip auth
+export DISABLE_AUTH=1
+
+nohup "$GUNICORN_BIN" --bind "0.0.0.0:$GUNICORN_PORT" --workers 1 --threads 10 app.main:app \
   >"$LOG" 2>&1 </dev/null &
 PID=$!
 echo "$PID" >"$PIDFILE"

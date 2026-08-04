@@ -21,6 +21,9 @@
 import multiprocessing
 import os
 
+# Local dev: skip auth
+os.environ.setdefault("DISABLE_AUTH", "1")
+
 bind = f"0.0.0.0:{os.getenv('PORT', '5000')}"
 
 # 默认 min(CPU, 4)：多进程扛 CPU 并行；内存受限环境用 GUNICORN_WORKERS 调小。

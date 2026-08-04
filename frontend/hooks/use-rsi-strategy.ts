@@ -46,7 +46,7 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
         if (!token) { setScanError("未登录"); return; }
         const res = await scanRsiTrend(token, params, controller.signal);
         if (res.success && res.data) setScanResult(res.data);
-        else setScanError(res.error || "扫描失败");
+        else setScanError(typeof res.error === 'string' ? res.error : res.error?.message || "扫描失败");
       } catch (e: unknown) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         setScanError(e instanceof Error ? e.message : "扫描失败");
@@ -70,7 +70,7 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
         if (!token) { setBacktestError("未登录"); return; }
         const res = await backtestRsiTrend(token, params, controller.signal);
         if (res.success && res.data) setBacktestResult(res.data);
-        else setBacktestError(res.error || "回测失败");
+        else setBacktestError(typeof res.error === 'string' ? res.error : res.error?.message || "回测失败");
       } catch (e: unknown) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         setBacktestError(e instanceof Error ? e.message : "回测失败");
@@ -94,7 +94,7 @@ export function useRsiStrategy({ getToken }: UseRsiStrategyOptions) {
         if (!token) { setPlanError("未登录"); return; }
         const res = await planRsiTrend(token, params, controller.signal);
         if (res.success && res.data) setPlanResult(res.data);
-        else setPlanError(res.error || "分析失败");
+        else setPlanError(typeof res.error === 'string' ? res.error : res.error?.message || "分析失败");
       } catch (e: unknown) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         setPlanError(e instanceof Error ? e.message : "分析失败");

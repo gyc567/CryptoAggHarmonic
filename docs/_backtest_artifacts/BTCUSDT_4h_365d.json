@@ -1,0 +1,372 @@
+{
+  "config": {
+    "market": "binance",
+    "symbol": "BTCUSDT",
+    "interval": "4h",
+    "days": 365,
+    "window": 30,
+    "step": 5,
+    "horizon": 30,
+    "fetch_days": 372,
+    "candles_fetched": 4381,
+    "data_start": "2024-08-01T00:00:00+00:00",
+    "data_end": "2026-08-01T00:00:00+00:00",
+    "elapsed_fetch_seconds": 0.02,
+    "elapsed_walk_seconds": 4.66,
+    "llm_disabled": true,
+    "data_loader": "cache",
+    "entry_mode": "market"
+  },
+  "summary": {
+    "total_signals": 14,
+    "skipped_signals": 14,
+    "decisions": 0,
+    "wins": 0,
+    "losses": 0,
+    "scratches": 0,
+    "win_rate": 0.0,
+    "avg_r": 0.0,
+    "total_r": 0.0,
+    "profit_factor": 0.0,
+    "by_grade": {
+      "C(参考)": {
+        "count": 14,
+        "wins": 0,
+        "losses": 0,
+        "r": 0.0
+      }
+    },
+    "by_family": {
+      "ABC": {
+        "count": 14,
+        "wins": 0,
+        "losses": 0,
+        "r": 0.0
+      }
+    }
+  },
+  "signals": [
+    {
+      "step_index": 89,
+      "signal_time": "2024-08-15T20:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.414",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 57541.06,
+      "stop_loss": 55506.98525,
+      "tp1": 56675.86194,
+      "rr1": 0.58,
+      "entry_reference": 56078.54,
+      "entry_zone": [
+        56078.54,
+        56078.54
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 344,
+      "signal_time": "2024-09-27T08:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.618",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 65437.35,
+      "stop_loss": 66322.84942857,
+      "tp1": 65512.27416,
+      "rr1": 0.5156,
+      "entry_reference": 65986.0,
+      "entry_zone": [
+        65986.0,
+        65986.0
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 659,
+      "signal_time": "2024-11-18T20:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.272",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 90464.08,
+      "stop_loss": 93309.99757143,
+      "tp1": 92309.792,
+      "rr1": 0.0065,
+      "entry_reference": 92594.0,
+      "entry_zone": [
+        92594.0,
+        92594.0
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 769,
+      "signal_time": "2024-12-07T04:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.272",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 99405.2,
+      "stop_loss": 89545.9766,
+      "tp1": 91675.86094,
+      "rr1": 0.7379,
+      "entry_reference": 90500.0,
+      "entry_zone": [
+        90500.0,
+        90500.0
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 969,
+      "signal_time": "2025-01-09T12:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "2",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 94244.02,
+      "stop_loss": 91172.06175,
+      "tp1": 93892.13378,
+      "rr1": 2.0111,
+      "entry_reference": 91800.0,
+      "entry_zone": [
+        91800.0,
+        91800.0
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 994,
+      "signal_time": "2025-01-13T16:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.414",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 92312.18,
+      "stop_loss": 88677.41046429,
+      "tp1": 90000.43636,
+      "rr1": 0.5619,
+      "entry_reference": 89256.69,
+      "entry_zone": [
+        89256.69,
+        89256.69
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 1099,
+      "signal_time": "2025-01-31T04:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.13",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 104188.56,
+      "stop_loss": 107036.85871429,
+      "tp1": 106000.15544,
+      "rr1": 0.1534,
+      "entry_reference": 106457.44,
+      "entry_zone": [
+        106457.44,
+        106457.44
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 1304,
+      "signal_time": "2025-03-06T08:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.272",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 91350.0,
+      "stop_loss": 80452.97214286,
+      "tp1": 82582.73698,
+      "rr1": 0.649,
+      "entry_reference": 81500.0,
+      "entry_zone": [
+        81500.0,
+        81500.0
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 1389,
+      "signal_time": "2025-03-20T12:00:00+00:00",
+      "direction": "short",
+      "grade": "C(参考)",
+      "pattern_name": "1.618",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 84691.76,
+      "stop_loss": 87999.4753,
+      "tp1": 86561.07734,
+      "rr1": 0.7798,
+      "entry_reference": 87453.67,
+      "entry_zone": [
+        87453.67,
+        87453.67
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 2234,
+      "signal_time": "2025-08-08T08:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.414",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 116891.51,
+      "stop_loss": 112221.2982,
+      "tp1": 113005.14158,
+      "rr1": 0.0224,
+      "entry_reference": 112650.0,
+      "entry_zone": [
+        112650.0,
+        112650.0
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 2364,
+      "signal_time": "2025-08-30T00:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.272",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 108436.2,
+      "stop_loss": 106759.93592857,
+      "tp1": 107853.02592,
+      "rr1": 0.1983,
+      "entry_reference": 107350.1,
+      "entry_zone": [
+        107350.1,
+        107350.1
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 2654,
+      "signal_time": "2025-10-17T08:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "2.618",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 105683.72,
+      "stop_loss": 102699.7509,
+      "tp1": 106450.34664,
+      "rr1": 2.2927,
+      "entry_reference": 103528.23,
+      "entry_zone": [
+        103528.23,
+        103528.23
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 3434,
+      "signal_time": "2026-02-24T08:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "2",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 63227.1,
+      "stop_loss": 62280.33335,
+      "tp1": 63820.45346,
+      "rr1": 1.5307,
+      "entry_reference": 62700.8,
+      "entry_zone": [
+        62700.8,
+        62700.8
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    },
+    {
+      "step_index": 4194,
+      "signal_time": "2026-07-01T00:00:00+00:00",
+      "direction": "long",
+      "grade": "C(参考)",
+      "pattern_name": "1.272",
+      "family": "ABC",
+      "formed": true,
+      "entry_price": 59197.13,
+      "stop_loss": 57437.2284,
+      "tp1": 58067.55562,
+      "rr1": 0.1752,
+      "entry_reference": 57800.19,
+      "entry_zone": [
+        57800.19,
+        57800.19
+      ],
+      "horizon": 30,
+      "result": "skipped",
+      "r_multiple": 0.0,
+      "exit_time": null,
+      "bars_held": null
+    }
+  ]
+}
