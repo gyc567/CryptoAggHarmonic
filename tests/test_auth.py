@@ -74,6 +74,7 @@ class TestRequireAuthDecorator:
             assert resp.status_code == 200
             assert resp.get_json() == {"user_id": "user-123"}
 
+    @patch.dict(os.environ, {"DISABLE_AUTH": ""}, clear=True)
     @patch("app.api.auth.get_auth_token")
     def test_missing_header(self, mock_get_token, app, client):
         mock_get_token.return_value = None
