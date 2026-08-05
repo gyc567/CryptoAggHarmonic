@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Optional
 
-from app.openai_handler import _get_client
+from app.infra.llm_client import get_llm_client
 from app.services.vibe.llm.provider import LLMProvider, LLMResponse, LLMUsage, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ class OpenAIProvider(LLMProvider):
     def __init__(self, model: Optional[str] = None):
         self.model = model or os.getenv("OPENAI_API_MODEL", "gpt-3.5-turbo")
         self._tool_support: Optional[bool] = None
-        self._client = _get_client()
+        self._client = get_llm_client()
 
     def is_tool_call_supported(self) -> bool:
         """Return whether the configured model supports tool-calling.

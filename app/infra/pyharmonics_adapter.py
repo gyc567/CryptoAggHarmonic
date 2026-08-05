@@ -1,6 +1,8 @@
 """Pyharmonics adapter: wraps all pyharmonics calls and converts exceptions."""
 
 import logging
+import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 # Import pyharmonics classes at module level for testability
@@ -14,6 +16,7 @@ from app.domain.enums import Interval, Market
 from app.domain.schemas import TechnicalResult
 from app.domain.signals import net_rr
 from app.infra import tradingview_adapter as tv
+from app.infra.kline_cache import KLineCache, KLineMeta, get_kline_cache
 from app.infra.marketdata import DirectBinanceCandleData, DirectBinanceFuturesCandleData
 
 logger = logging.getLogger(__name__)
@@ -63,18 +66,23 @@ def fetch_market_data(
     symbol: str,
     interval: Interval,
     candles: int = 1000,
+    force_refresh: bool = False,
 ) -> Any:
-    """Fetch candle data from market source.
+    """Fetch candle data from market source (with K-line caching).
 
     TradingView is tried first when enabled and the bridge is healthy; on
     failure we fall back to the legacy Binance/Yahoo adapters so the app
     keeps working even if the bridge is down.
+
+    K-line data is cached using fingerprint-based keys. Cache naturally
+    expires when new candles close (fingerprint changes).
 
     Args:
         market: Market source enum.
         symbol: Uppercase symbol.
         interval: Candle interval.
         candles: Number of candles to fetch.
+        force_refresh: Bypass cache and fetch fresh data.
 
     Returns:
         Candle data object.
@@ -82,6 +90,32 @@ def fetch_market_data(
     Raises:
         AppError: If market data is unavailable.
     """
+    cache = get_kline_cache()
+    cache_key = cache.make_key(
+        market=market.value,
+        symbol=symbol,
+        interval=interval.value,
+        limit=candles,
+    )
+
+    # Try cache first (unless force_refresh)
+    if not force_refresh:
+        cached_df, cached_meta = cache.get(cache_key)
+        if cached_df is not None:
+            logger.info(
+                "K-line cache hit for %s/%s (%d candles)",
+                market.value,
+                symbol,
+                len(cached_df),
+            )
+            # Reconstruct CandleData-compatible object from cached DataFrame
+            return _df_to_candle_data(cached_df, symbol, interval.value)
+
+    # Fetch from source
+    start_time = time.time()
+    source_name = "unknown"
+    exchange_name = market.value
+
     if tv.is_tradingview_enabled() and tv.is_bridge_healthy():
         try:
             cd = tv.fetch_market_data(
@@ -90,12 +124,16 @@ def fetch_market_data(
                 interval=interval.value,
                 candles=candles,
             )
+            source_name = "tradingview"
+            exchange_name = market.value
             logger.info(
                 "Fetched %s %s from TradingView (%d candles)",
                 market.value,
                 symbol,
                 len(cd.df),
             )
+            # Cache the result
+            _cache_candle_data(cache, cache_key, cd.df, source_name, exchange_name, start_time)
             return cd
         except Exception as e:
             logger.warning(
@@ -106,7 +144,19 @@ def fetch_market_data(
             )
 
     try:
-        return _fetch_from_legacy(market, symbol, interval, candles)
+        cd = _fetch_from_legacy(market, symbol, interval, candles)
+        source_name = "binance"
+        exchange_name = market.value
+        logger.info(
+            "Fetched %s %s from %s (%d candles)",
+            market.value,
+            symbol,
+            source_name,
+            len(cd.df),
+        )
+        # Cache the result
+        _cache_candle_data(cache, cache_key, cd.df, source_name, exchange_name, start_time)
+        return cd
     except AppError:
         raise
     except Exception as e:
@@ -117,6 +167,57 @@ def fetch_market_data(
             retryable=True,
             original_error=e,
         ) from e
+
+
+def _cache_candle_data(
+    cache: KLineCache,
+    cache_key: str,
+    df: Any,
+    source: str,
+    exchange: str,
+    start_time: float,
+) -> None:
+    """Cache K-line data with metadata."""
+    try:
+        meta = KLineMeta(
+            source=source,
+            exchange=exchange,
+            symbol="",
+            interval="",
+            fetched_at=datetime.now(timezone.utc).isoformat(),
+            latency_ms=(time.time() - start_time) * 1000,
+        )
+        cache.set(cache_key, df, meta)
+    except Exception as e:
+        logger.warning("Failed to cache K-line data: %s", e)
+
+
+def _df_to_candle_data(df: Any, symbol: str, interval: str) -> Any:
+    """Reconstruct CandleData-compatible object from cached DataFrame."""
+    # Import here to avoid circular imports
+    from pyharmonics.marketdata.candle_base import CandleData
+
+    class CachedCandleData(CandleData):
+        SOURCE = "Cache"
+
+        def __init__(self2, df, symbol, interval):
+            super().__init__()
+            self2.df = df
+            self2.symbol = symbol
+            self2.interval = interval
+            self2.num_candles = len(df)
+            self2.reset_index()
+
+        def get_candles(
+            self2,
+            symbol: str,
+            interval: str,
+            num_candles: Optional[int] = None,
+        ) -> None:
+            # Already initialized in __init__, no-op for compatibility
+            pass
+
+    return CachedCandleData(df, symbol, interval)
 
 
 class _PatternPosition:
@@ -205,6 +306,7 @@ def detect_patterns(
     limit_to: int = 10,
     percent_complete: float = 0.8,
     analysis_type: str = "forming",
+    fib_tolerance: float = 0.10,
 ) -> dict:
     """Run harmonic and divergence pattern detection.
 
@@ -213,13 +315,14 @@ def detect_patterns(
         limit_to: Max number of patterns to return.
         percent_complete: Minimum completion ratio (0-1).
         analysis_type: Type of analysis - "forming", "formed", or "divergence".
+        fib_tolerance: Fibonacci tolerance for pattern matching (0.10 = looser, finds more patterns).
 
     Returns:
         Dict with position, patterns, divergences, and HTF trend.
     """
     try:
         ohlc = OHLCTechnicals(candle_data.df, candle_data.symbol, candle_data.interval)
-        search = HarmonicSearch(ohlc)
+        search = HarmonicSearch(ohlc, fib_tolerance=fib_tolerance)
         div_search = DivergenceSearch(ohlc)
 
         if analysis_type in ("forming", "auto"):

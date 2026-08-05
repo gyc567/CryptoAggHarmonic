@@ -11,6 +11,9 @@ import os
 
 import pytest
 
+# Skip if matplotlib is not available
+matplotlib = pytest.importorskip("matplotlib", reason="matplotlib not installed")
+
 from app.loop.pareto import ParetoPoint
 from bench.dataset.signal_record import empty_record
 from bench.report.charts import (

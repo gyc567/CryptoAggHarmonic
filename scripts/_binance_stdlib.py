@@ -73,25 +73,22 @@ def fetch_binance_klines(
             f"&limit={batch_limit}"
         )
         url = f"{BINANCE_URL}?{params}"
-        attempt = 0
-        last_err: Optional[Exception] = None
-        while attempt <= max_retries:
+        # Note: max_retries means we attempt up to max_retries times total.
+        # Loop: attempt=0 (1st), attempt=1 (2nd), attempt=2 (3rd).
+        for attempt in range(max_retries):
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
                 with urllib.request.urlopen(req, timeout=timeout) as r:
                     batch = json.loads(r.read())
-                last_err = None
-                break
+                break  # Success
             except Exception as e:
                 last_err = e
-                attempt += 1
-                if attempt > max_retries:
-                    raise RuntimeError(
-                        f"Binance stdlib fetch failed after {max_retries+1} attempts: {e}"
-                    ) from e
-                time.sleep(0.5 * (2 ** (attempt - 1)))
-        if last_err is not None:
-            raise RuntimeError(f"Binance stdlib fetch failed: {last_err}")
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (2 ** attempt))
+        else:
+            raise RuntimeError(
+                f"Binance stdlib fetch failed after {max_retries} attempts: {last_err}"
+            ) from last_err
         if not batch:
             break
         first_open = batch[0][0]

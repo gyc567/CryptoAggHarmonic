@@ -22,3 +22,147 @@ Five-state triage: `needs-triage`, `needs-info`, `ready-for-agent`,
 
 Single-context. Read `CONTEXT.md` at the repo root and `docs/adr/` before
 exploring. See `docs/agents/domain.md`.
+
+---
+
+## Project plans
+
+All work-in-progress plans live in `plans/` directory with an index in `PLANS.md`.
+
+### Plan lifecycle
+
+1. **Create**: Write plan in `plans/xxx.md` before starting work
+2. **Index**: Add entry to `PLANS.md`
+3. **Execute**: Follow the plan
+4. **Complete**: Delete `plans/xxx.md` and remove from `PLANS.md`
+5. **Archive**: Git history preserves the plan permanently
+
+### Plan template
+
+```markdown
+# Plan: [What we're building]
+
+## Context
+Why this is needed.
+
+## Goals
+- [ ] Goal 1
+- [ ] Goal 2
+
+## Tasks
+- [ ] Task 1
+- [ ] Task 2
+
+## Verification
+How to confirm success.
+```
+
+---
+
+## Documentation
+
+All documentation lives in `docs/` directory with an index in `DOCS.md`.
+
+### Doc rules
+
+- Docs are **permanent** (never delete after creation)
+- Use multi-level indexes to prevent file bloat
+- Cross-link related docs from `DOCS.md`
+
+### Doc index structure
+
+```markdown
+# Documentation Index
+
+## Architecture
+- [ADR-001: Decision](docs/adr/adr-001.md)
+
+## Guides
+- [Setup](docs/guides/setup.md)
+
+## References
+- [API](docs/reference/api.md)
+```
+
+---
+
+## Optimization disciplines
+
+For areas with clear feedback loops, agents **must** follow discipline-specific guidelines.
+
+### Frontend optimization
+- Verify changes visually in browser
+- Test on actual browser, not just code review
+- See `PLANS.md` → Frontend Optimization Guide
+
+### Backtest evaluation
+- Use quantitative metrics (win rate, Sharpe, drawdown)
+- Validate against historical data
+- See `PLANS.md` → Backtest Evaluation Guide
+
+### Performance tuning
+- Measure before/after with benchmarks
+- Set explicit latency targets
+- See `PLANS.md` → Performance Tuning Guide
+
+---
+
+## North Star metrics
+
+All AI work should advance these metrics. When making decisions, prefer changes that improve these scores.
+
+### Primary metrics
+
+| Metric | Target | Why |
+|--------|--------|-----|
+| API latency | < 2s p95 | User experience |
+| Analysis accuracy | > 80% pattern recognition | Core value |
+| Cache hit rate | > 70% | Cost efficiency |
+
+### Decision framework
+
+When uncertain, ask:
+1. Does this improve a North Star metric?
+2. Does this maintain current metrics while adding value?
+3. If neither, should this be a separate task?
+
+### Metric tracking
+
+Log metric changes in plan docs and PR descriptions. Improvements should be **quantified**, not just described.
+
+---
+
+## Code quality standards
+
+All AI-generated code must adhere to these principles:
+
+### Design principles
+
+1. **KISS (Keep It Simple, Stupid)** — Prefer the simplest solution that works. Avoid over-engineering.
+2. **High cohesion, low coupling** — Group related code together; minimize dependencies between modules. Use clean design patterns (not excessive patterns).
+3. **100% test coverage for new code** — All new functionality must include tests. No new code without tests.
+4. **Non-regression** — Changes must not break unrelated existing functionality.
+5. **Preserve test suite** — Keep all test cases. Include test reports in documentation.
+
+### Implementation rules
+
+1. **不保留向后兼容** — 过时的直接删，别加兼容层、别写migration、别留fallback。
+2. **选能满足当前需求的最简单实现** — 不要预防性抽象，不要多此一举的配置层。
+3. **系统分层长** — 先跑通一个最小的端到端版本，再往上加东西。绝不为了未完成的复杂度拆掉能跑的东西。
+4. **组件保持模块化** — 关注点分离。
+5. **优先用成熟的、有人维护的库** — 没有明确理由别自己重写。
+6. **先翻项目里已有的依赖能做什么** — 再考虑加新包或自己写。别上来就假设库里没有。
+7. **架构决策往长了做** — 不接受"先这样以后再换"的临时方案。
+8. **先看成熟产品怎么解决同一个问题** — 用已验证的模式，别从零发明。
+
+### Testing workflow
+
+Before any feature work:
+- Write tests first (TDD) or alongside implementation
+- Run existing tests to establish baseline
+- After changes: run full test suite
+
+After any feature work:
+- Verify all tests pass (`pytest` or `npm test`)
+- Generate coverage report
+- Document test results in PR or plan doc

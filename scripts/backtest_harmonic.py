@@ -47,11 +47,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--silent", action="store_true")
     parser.add_argument(
         "--data-loader",
-        choices=["prod", "stdlib"],
+        choices=["prod", "stdlib", "cache"],
         default="stdlib",
         help=(
             "prod = app.infra.historical_data (uses curl_cffi; may hang on TLS in "
-            "some envs); stdlib = urllib-only Binance fetch (default, more portable)."
+            "some envs); stdlib = urllib-only Binance fetch (default, most compatible); "
+            "cache = local Parquet cache (fastest for repeated runs, use --data-loader cache)."
         ),
     )
     parser.add_argument(
@@ -62,6 +63,15 @@ def _parse_args(argv=None) -> argparse.Namespace:
             "market = enter at window-close (most signals skip when price has "
             "already run past the PRZ). prz = enter at signal.entry_reference "
             "(matches live trader semantic of waiting for pullback; default)."
+        ),
+    )
+    parser.add_argument(
+        "--min-grade",
+        choices=["A", "B", "C(参考)"],
+        default=None,
+        help=(
+            "Minimum signal grade to include. A = highest quality, B = medium, "
+            "C(参考) = reference only. Default: include all grades."
         ),
     )
     return parser.parse_args(argv)
@@ -85,6 +95,19 @@ def main(argv=None) -> int:
         from app.infra.historical_data import fetch_historical_data
 
         df = fetch_historical_data("binance", args.symbol, args.interval, fetch_days)
+    elif args.data_loader == "cache":
+        # Try to load from local cache first, download if not available.
+        from scripts.download_backtest_data import ensure_data
+
+        df, was_cached = ensure_data(
+            args.symbol,
+            args.interval,
+            days=fetch_days,
+            exchange="binance",
+            verbose=not args.silent,
+        )
+        if not args.silent:
+            print(f"[backtest] data source: {'cache' if was_cached else 'downloaded'}")
     else:
         from datetime import datetime, timedelta, timezone
 
@@ -114,6 +137,7 @@ def main(argv=None) -> int:
         step=args.step,
         horizon=args.horizon,
         entry_mode=args.entry_mode,
+        min_grade=args.min_grade,
     )
     elapsed_walk = time.time() - t0
 

@@ -51,6 +51,7 @@ class TestGetAuthToken:
 
 
 class TestRequireAuthDecorator:
+    @patch.dict(os.environ, {"DISABLE_AUTH": ""}, clear=True)
     @patch("app.api.auth.verify_user_token")
     @patch("app.api.auth.get_auth_token")
     def test_valid_token(self, mock_get_token, mock_verify, app, client):
@@ -73,6 +74,7 @@ class TestRequireAuthDecorator:
             assert resp.status_code == 200
             assert resp.get_json() == {"user_id": "user-123"}
 
+    @patch.dict(os.environ, {"DISABLE_AUTH": ""}, clear=True)
     @patch("app.api.auth.get_auth_token")
     def test_missing_header(self, mock_get_token, app, client):
         mock_get_token.return_value = None
@@ -89,6 +91,7 @@ class TestRequireAuthDecorator:
             assert data["success"] is False
             assert data["error"]["code"] == ErrorCode.UNAUTHORIZED.value
 
+    @patch.dict(os.environ, {"DISABLE_AUTH": ""}, clear=True)
     @patch("app.api.auth.verify_user_token")
     @patch("app.api.auth.get_auth_token")
     def test_invalid_token(self, mock_get_token, mock_verify, app, client):
@@ -104,6 +107,7 @@ class TestRequireAuthDecorator:
             resp = c.get("/test-auth", headers={"Authorization": "Bearer invalid-token"})
             assert resp.status_code == 401
 
+    @patch.dict(os.environ, {"DISABLE_AUTH": ""}, clear=True)
     @patch("app.api.auth.verify_user_token")
     @patch("app.api.auth.get_auth_token")
     def test_suspended_user(self, mock_get_token, mock_verify, app, client):

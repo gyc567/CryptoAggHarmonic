@@ -122,7 +122,8 @@ class TestTechnicalResultToSchema:
         assert result.entry_price == 100.0
         assert result.stop_loss == 95.0
         assert result.target_price == 110.0
-        assert result.risk_reward_ratio == 2.0
+        # risk_reward_ratio is computed by net_rr() which deducts fees
+        assert result.risk_reward_ratio == pytest.approx(1.83, abs=0.01)
         assert result.confidence == "raw-position"
 
     @staticmethod
@@ -152,7 +153,8 @@ class TestTechnicalResultToSchema:
         assert result.entry_price == 100.0
         assert result.stop_loss == 95.0
         assert result.target_price == 110.0
-        assert result.risk_reward_ratio == 2.0
+        # risk_reward_ratio is computed by net_rr() which deducts fees
+        assert result.risk_reward_ratio == pytest.approx(1.83, abs=0.01)
         assert result.signal is not None
         assert result.confidence == "validated-signal"
 

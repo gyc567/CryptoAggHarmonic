@@ -1,22 +1,3 @@
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import Optional
-
-from icontract import ensure, require
-
-from app.config.tuning import TUNING
-
-# --- Backwards-compat aliases (read from TUNING singleton) -----------------
-#
-# The values formerly defined as module-level constants now live in
-# :class:`app.config.tuning.TuningConstants` (see ``app/config/tuning.py``).
-# The aliases below preserve the original import paths so existing tests
-# (``from app.domain.signals import ATR_STOP_BUFFER``) continue to work.
-# Loop-tuning mutates TUNING via :func:`dataclasses.replace`; these aliases
-# point at the snapshot taken at import time, which matches the historical
-# behaviour of "import this constant at startup and freeze it".
-
 """Pure harmonic trading-signal math.
 
 This module is the domain core of the signal engine: every function is pure
@@ -40,23 +21,44 @@ Three-layer defense notes:
   failure — caught and unit-tested in ``tests/test_signals_contract.py``.
 - Layer 1 (mypy/pyright) — every public function has full type annotations;
   CI runs both checkers on this module.
+
+Tuning: values are read via ``app.config.tuning`` getters which respect the
+current ``TuningScope`` context when available.
 """
 
-FIB_TP1 = TUNING.fib_tp1
-FIB_TP2 = TUNING.fib_tp2
-FIB_TP3 = TUNING.fib_tp3
-ATR_STOP_BUFFER = dict(TUNING.atr_stop_buffer)
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+from icontract import ensure, require
+
+from app.config.tuning import (
+    TUNING,
+    get_atr_stop_buffer,
+    get_extended_patterns,
+    get_fib_tp1,
+    get_fib_tp2,
+    get_fib_tp3,
+)
+
+# Backwards-compatible module-level aliases (frozen at import time).
+# For scoped tuning, use the ``get_*`` functions instead.
+FIB_TP1 = get_fib_tp1()
+FIB_TP2 = get_fib_tp2()
+FIB_TP3 = get_fib_tp3()
+ATR_STOP_BUFFER = dict(get_atr_stop_buffer())
 ATR_PRZ_SWEEP = TUNING.atr_prz_sweep
 FEE_RATE = TUNING.fee_rate
 SLIPPAGE_RATE = TUNING.slippage_rate
 TP_CLOSE_PCTS = TUNING.tp_close_pcts
-EXTENDED_PATTERNS = frozenset(TUNING.extended_patterns)
+EXTENDED_PATTERNS = frozenset(get_extended_patterns())
 
 # Stop-loss risk levels (三档止损体系) — see TUNING.atr_stop_buffer for buffers.
 # Level 1 Conservative: PRZ外 + 1.0*ATR  — 新手,高波动市场
 # Level 2 Standard:     D点外 + 0.5*ATR  — 推荐日常使用
 # Level 3 Aggressive:   D点内 + 0.25*ATR — 高手,低波动市场
-STOP_LOSS_LEVELS = frozenset(TUNING.atr_stop_buffer.keys())
+STOP_LOSS_LEVELS = frozenset(get_atr_stop_buffer().keys())
 
 # Plan §2.6 (Fix 6 P2) — regime-aware stop buffer. high_quant 加宽 1.5×,
 # 与 position_mult × 0.6 配合，单笔风险从 1R 降到 1.5R × 0.6 = 0.9R，
@@ -289,6 +291,10 @@ def compute_stop(
     clamped to ``MAX_STOP_BUFFER_MULT × atr`` (default 2.0×) so a hostile
     trap + high_quant + C grade never blows up risk.
     """
+    # Use current tuning values (respects TuningScope if active).
+    _atr_stop_buffer = get_atr_stop_buffer()
+    _extended_patterns = get_extended_patterns()
+
     if level not in STOP_LOSS_LEVELS:
         level = "standard"
 
@@ -298,7 +304,7 @@ def compute_stop(
         base = stop_buffer_atr
         multiplier_label = f"{stop_buffer_atr:.2f}*ATR"
     else:
-        base = ATR_STOP_BUFFER[level]
+        base = _atr_stop_buffer[level]
         multiplier_label = f"{base:.2f}*ATR"
 
     # Resolve the multiplicative chain (each factor defaults to 1.0).
@@ -309,7 +315,7 @@ def compute_stop(
     effective_mult = min(effective_mult, MAX_STOP_BUFFER_MULT)
     buffer = effective_mult * atr
 
-    extended = candidate.name.lower() in EXTENDED_PATTERNS
+    extended = candidate.name.lower() in _extended_patterns
 
     if candidate.bullish:
         if level == "conservative":
@@ -387,13 +393,19 @@ def _chain_suffix(
 
 def compute_targets(candidate: Candidate, entry: float) -> tuple:
     """Fibonacci ladder on the A-D leg: 38.2% / 61.8% retrace, 127.2% extension."""
+    # Use current tuning values (respects TuningScope if active).
+    _fib_tp1 = get_fib_tp1()
+    _fib_tp2 = get_fib_tp2()
+    _fib_tp3 = get_fib_tp3()
+    _tp_close_pcts = TUNING.tp_close_pcts
+
     a = candidate.a_price
     d = entry  # entry stands in for D (the completion point we trade from)
     span = abs(a - d)
     if candidate.bullish:
-        prices = (d + FIB_TP1 * span, d + FIB_TP2 * span, d + FIB_TP3 * span)
+        prices = (d + _fib_tp1 * span, d + _fib_tp2 * span, d + _fib_tp3 * span)
     else:
-        prices = (d - FIB_TP1 * span, d - FIB_TP2 * span, d - FIB_TP3 * span)
+        prices = (d - _fib_tp1 * span, d - _fib_tp2 * span, d - _fib_tp3 * span)
     labels = ("TP1", "TP2", "TP3")
     bases = ("AD 38.2% retrace", "AD 61.8% retrace", "AD 127.2% extension")
     stops = ("breakeven", "tp1", "trail 1*ATR")
@@ -402,7 +414,7 @@ def compute_targets(candidate: Candidate, entry: float) -> tuple:
             label=labels[i],
             price=round(prices[i], 8),
             fib_basis=bases[i],
-            close_pct=TP_CLOSE_PCTS[i],
+            close_pct=_tp_close_pcts[i],
             move_stop_to=stops[i],
         )
         for i in range(3)
