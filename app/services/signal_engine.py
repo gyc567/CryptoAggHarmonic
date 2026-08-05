@@ -319,6 +319,44 @@ def _is_reversal_candle(row: pd.Series, bullish: bool) -> bool:
     return bool(row["close"] < row["open"] and upper_wick >= 0.5 * rng)
 
 
+def _rsi_zone_score(rsi: float, bullish: bool, rsi_series: pd.Series) -> float:
+    """RSI extreme zone + RSI trend direction dual scoring.
+
+    Regular bullish pattern: RSI in extreme oversold + RSI rising = strongest.
+    Regular bearish pattern: RSI in extreme overbought + RSI falling = strongest.
+    """
+    score = 0
+    rsi_recent = rsi_series.tail(5).values if rsi_series is not None and len(rsi_series) >= 2 else []
+    rsi_rising = len(rsi_recent) >= 2 and rsi_recent[-1] > rsi_recent[0]
+
+    if bullish:
+        if rsi <= 30:
+            score += 7
+        elif rsi <= 40:
+            score += 5
+        elif rsi <= 50:
+            score += 2
+        # RSI improving (rising) = extra confirmation
+        if score > 0 and rsi_rising:
+            score += 3
+        # RSI in overbought zone = caution (may not have bottomed yet)
+        if rsi >= 60:
+            score -= 3
+    else:
+        if rsi >= 70:
+            score += 7
+        elif rsi >= 60:
+            score += 5
+        elif rsi >= 50:
+            score += 2
+        # RSI worsening (falling) = extra confirmation for bearish pattern
+        if score > 0 and not rsi_rising:
+            score += 3
+        if rsi <= 40:
+            score -= 3
+    return score
+
+
 def confluence_score(
     df: pd.DataFrame,
     candidate: Candidate,
@@ -327,9 +365,21 @@ def confluence_score(
     trend: str,
     divergences: dict,
     pa_scale: float = 1.0,
+    rsi_series: pd.Series = None,
+    macd_line: float = 0.0,
+    macd_histogram: float = 0.0,
+    macd_histogram_prev: float = 0.0,
 ) -> tuple:
-    """Weighted confluence: price action 25, HTF 25, RSI 15, structure 15,
-    MACD 10, funding 10 (neutral without futures data)."""
+    """Enhanced confluence: price action 18, HTF 18, RSI 12, structure 10,
+    MACD 8, MACD-zero 8, dual-confirm 8, histogram 5, funding 10.
+
+    Key enhancements vs v4:
+    - Regular vs Hidden divergence filtering (not just "any bullish")
+    - MACD zero-line position filter
+    - RSI zone + RSI trend direction scoring
+    - Dual-indicator (RSI + MACD) Regular divergence bonus
+    - MACD histogram momentum strength
+    """
 
     @require(lambda atr: atr >= 0, "atr must be non-negative")
     @require(lambda rsi: 0.0 <= rsi <= 100.0, "rsi must be in [0, 100]")
@@ -345,7 +395,7 @@ def confluence_score(
     factors: dict[str, float] = {}
     last = df.iloc[-1]
 
-    # Price action at the PRZ: reversal candle + volume expansion.
+    # --- Price action at the PRZ: reversal candle + volume expansion ---
     pa = 0.0
     if _is_reversal_candle(last, candidate.bullish):
         pa += 15.0
@@ -354,7 +404,7 @@ def confluence_score(
             pa += 10.0
     factors["price_action"] = pa * pa_scale
 
-    # Higher-timeframe trend alignment.
+    # --- Higher-timeframe trend alignment ---
     if trend == ("bullish" if candidate.bullish else "bearish"):
         factors["htf_trend"] = 25
     elif trend == "unknown":
@@ -362,37 +412,82 @@ def confluence_score(
     else:
         factors["htf_trend"] = 0
 
-    # RSI: divergence bonus + extreme-zone positioning + reverse-divergence penalty.
-    # Q5: an RSI divergence that points the OPPOSITE direction of the candidate
-    # is a strong warning (price-vs-momentum disagreement). Penalise -5 so a
-    # candidate with opposite divergence can never reach A grade.
+    # --- RSI: Regular/Hidden divergence filtering + zone + trend ---
     div_families = divergences or {}
     rsi_divs = div_families.get("rsi", [])
+
+    # Separate Regular vs Hidden divergences (divergences are dicts from pa.to_dict())
+    rsi_regular_bull = [d for d in rsi_divs if d.get("name") == "Regular" and d.get("bullish") is True]
+    rsi_regular_bear = [d for d in rsi_divs if d.get("name") == "Regular" and d.get("bullish") is False]
+    rsi_hidden_bull = [d for d in rsi_divs if d.get("name") == "Hidden" and d.get("bullish") is True]
+    rsi_hidden_bear = [d for d in rsi_divs if d.get("name") == "Hidden" and d.get("bullish") is False]
+
     rsi_score = 0
-    if any(bool(d.get("bullish")) == candidate.bullish for d in rsi_divs):
-        rsi_score += 8
-    elif any(d.get("bullish") is not None for d in rsi_divs):
-        # At least one real RSI divergence was found, and it disagrees with
-        # the pattern direction. Strong warning — a reversal harmonic pattern
-        # riding against the divergence is fighting the most recent momentum.
-        rsi_score -= 5
-    if (candidate.bullish and rsi <= 35) or (not candidate.bullish and rsi >= 65):
-        rsi_score += 7
-    elif (candidate.bullish and rsi <= 45) or (not candidate.bullish and rsi >= 55):
-        rsi_score += 4
+    if candidate.bullish:
+        if rsi_regular_bull:
+            rsi_score += 8  # Regular bullish div = true reversal signal
+        elif rsi_hidden_bull:
+            rsi_score -= 5  # Hidden = momentum延续, 不利于反转
+    else:
+        if rsi_regular_bear:
+            rsi_score += 8
+        elif rsi_hidden_bear:
+            rsi_score -= 5
+
+    # RSI zone + trend direction scoring
+    rsi_zone = _rsi_zone_score(rsi, candidate.bullish, rsi_series if rsi_series is not None else pd.Series([]))
+    rsi_score += rsi_zone
     factors["rsi"] = rsi_score
 
-    # Structure: PRZ overlaps a recent swing low/high (support/resistance).
+    # --- Structure: PRZ overlaps a recent swing low/high ---
     tail = df["low"].tail(SWING_LOOKBACK) if candidate.bullish else df["high"].tail(SWING_LOOKBACK)
     swing = tail.min() if candidate.bullish else tail.max()
     mid = (candidate.prz_low + candidate.prz_high) / 2
     factors["structure"] = 15 if abs(mid - swing) <= ATR_PRZ_SWEEP * atr else 0
 
-    # MACD divergence.
+    # --- MACD: Regular/Hidden divergence + zero-line filter + histogram momentum ---
     macd_divs = div_families.get("macd", [])
-    factors["macd"] = 10 if any(bool(d.get("bullish")) == candidate.bullish for d in macd_divs) else 0
+    macd_regular_bull = [d for d in macd_divs if d.get("name") == "Regular" and d.get("bullish") is True]
+    macd_regular_bear = [d for d in macd_divs if d.get("name") == "Regular" and d.get("bullish") is False]
+    macd_hidden_bull = [d for d in macd_divs if d.get("name") == "Hidden" and d.get("bullish") is True]
+    macd_hidden_bear = [d for d in macd_divs if d.get("name") == "Hidden" and d.get("bullish") is False]
 
-    # Funding: unknown without a futures feed -> neutral half weight.
+    macd_score = 0
+    if candidate.bullish:
+        if macd_regular_bull:
+            macd_score += 10
+        elif macd_hidden_bull:
+            macd_score -= 5
+    else:
+        if macd_regular_bear:
+            macd_score += 10
+        elif macd_hidden_bear:
+            macd_score -= 5
+    factors["macd"] = macd_score
+
+    # MACD zero-line filter: MACD below zero for bullish = oversold zone, more reliable
+    if candidate.bullish:
+        factors["macd_zero"] = 8 if macd_line < 0 else -4
+    else:
+        factors["macd_zero"] = 8 if macd_line > 0 else -4
+
+    # --- Dual-indicator confirmation: RSI + MACD both with Regular divergences ---
+    has_rsi_regular = (candidate.bullish and rsi_regular_bull) or (not candidate.bullish and rsi_regular_bear)
+    has_macd_regular = (candidate.bullish and macd_regular_bull) or (not candidate.bullish and macd_regular_bear)
+    if has_rsi_regular and has_macd_regular:
+        factors["dual_confirm"] = 8
+    elif has_rsi_regular or has_macd_regular:
+        factors["dual_confirm"] = 3
+    else:
+        factors["dual_confirm"] = 0
+
+    # --- MACD histogram momentum: bars getting larger in correct direction ---
+    if candidate.bullish:
+        factors["histogram"] = 5 if (macd_histogram > 0 and macd_histogram > macd_histogram_prev) else 0
+    else:
+        factors["histogram"] = 5 if (macd_histogram < 0 and macd_histogram < macd_histogram_prev) else 0
+
+    # --- Funding: neutral without futures feed ---
     factors["funding"] = 5
 
     return sum(factors.values()), factors
@@ -458,6 +553,12 @@ class _ScoreContext(NamedTuple):
     # Fix 8: optional escape hatch passed through to compute_stop.  When
     # not None, completely overrides the level vocabulary for the buffer.
     stop_buffer_atr: float | None = None
+    # --- RSI + MACD enhancement fields ---
+    rsi_series: pd.Series = None  # full RSI series for trend direction
+    macd_line: float = 0.0  # EMA12 - EMA26
+    macd_signal: float = 0.0  # 9-period EMA of macd_line
+    macd_histogram: float = 0.0  # macd_line - macd_signal (== df["macd"])
+    macd_histogram_prev: float = 0.0  # previous bar histogram
 
 
 def _prepare_score_context(
@@ -488,6 +589,21 @@ def _prepare_score_context(
     price = float(df["close"].iloc[-1])
     position_mult = round(volatility_multiplier(atr, price) * regime_mult, 4)
 
+    # --- RSI + MACD enhancement: compute full series (df has no "rsi" column) ---
+    closes = df["close"]
+    delta = closes.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1 / RSI_WINDOW, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / RSI_WINDOW, adjust=False).mean()
+    rs = gain / loss.replace(0, pd.NA)
+    rsi_series = 100 - 100 / (1 + rs)
+
+    # MACD: pyharmonics only stores histogram; recompute line + signal for zero-line filter
+    ema_fast = closes.ewm(span=12, adjust=False).mean()
+    ema_slow = closes.ewm(span=26, adjust=False).mean()
+    macd_line_series = ema_fast - ema_slow
+    macd_signal_series = macd_line_series.ewm(span=9, adjust=False).mean()
+    macd_histogram_series = macd_line_series - macd_signal_series
+
     return _ScoreContext(
         df=df,
         atr=atr,
@@ -506,6 +622,12 @@ def _prepare_score_context(
         volume_authenticity=auth,
         # Fix 8: escape hatch forwarded as-is.
         stop_buffer_atr=stop_buffer_atr,
+        # --- RSI + MACD enhancement fields ---
+        rsi_series=rsi_series,
+        macd_line=float(macd_line_series.iloc[-1]),
+        macd_signal=float(macd_signal_series.iloc[-1]),
+        macd_histogram=float(macd_histogram_series.iloc[-1]),
+        macd_histogram_prev=float(macd_histogram_series.iloc[-2]) if len(macd_histogram_series) >= 2 else 0.0,
     )
 
 
@@ -616,6 +738,10 @@ def score_candidate(
         ctx.trend,
         ctx.divergences,
         ctx.pa_scale,
+        rsi_series=ctx.rsi_series,
+        macd_line=ctx.macd_line,
+        macd_histogram=ctx.macd_histogram,
+        macd_histogram_prev=ctx.macd_histogram_prev,
     )
     # Q4 pattern-reliability bump (Gartley +5, Crab -3, ...).
     score += _pattern_base_score(candidate.name)

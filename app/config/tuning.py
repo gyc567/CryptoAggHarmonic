@@ -158,7 +158,7 @@ class TuningConstants:
     )
 
     # Tunable — minimum confluence to grade an A in normal regime.
-    a_grade_min: int = 75
+    a_grade_min: int = 70
 
     # Tunable — stricter A-grade floor under high-quant regime.
     a_grade_min_high_quant: int = 85
