@@ -348,11 +348,6 @@ class TestQuotaFunctions:
         assert result is True
 
 
-class TestStorageFunctions:
-    @patch("app.infra.supabase_client.get_supabase_client")
-
-
-
 class TestAuditFunctions:
     @patch("app.infra.supabase_client.get_supabase_client")
     def test_log_audit_event(self, mock_get_client):

@@ -11,6 +11,9 @@ from typing import List
 import pandas as pd
 import pytest
 
+# Skip if matplotlib is not available (required by bench.report.charts)
+pytest.importorskip("matplotlib", reason="matplotlib not installed")
+
 import bench.runner as runner_mod
 from bench.runner import (
     BenchRunResult,
