@@ -209,3 +209,46 @@ python -m loop.loop sync check . # Check LOOP/STATE consistency
 - **Agent skills** (mattpocock): Use `skills-lock.json`
 - **Project skills**: Use `skills/` directory (loop-triage, loop-handoff, etc.)
 - **Loop skills**: Use `.claude/skills/` directory
+
+---
+
+## Ponytail — Lazy Senior Dev Mode
+
+> Sourced from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT license).
+> Installed as skills: `.claude/skills/ponytail/`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help`.
+
+Before writing any code, stop at the first rung that holds:
+
+1. **Does this need to exist at all?** Speculative need = skip it, say so in one line. (YAGNI)
+2. **Already in this codebase?** A helper, util, type, or pattern that already lives here → reuse it. Look before you write.
+3. **Stdlib does it?** Use it.
+4. **Native platform feature covers it?** `<input type="date">` over a picker lib, CSS over JS, DB constraint over app code.
+5. **Already-installed dependency solves it?** Use it. Never add a new one for what a few lines can do.
+6. **Can it be one line?** One line.
+7. **Only then:** the minimum code that works.
+
+**Bug fix = root cause, not symptom.** Grep every caller of the function you're about to touch. One guard in the shared function is a smaller diff than a guard in every caller.
+
+### Rules
+
+- No unrequested abstractions: no interface with one implementation, no factory for one product.
+- No boilerplate, no scaffolding "for later".
+- Deletion over addition. Boring over clever.
+- Shortest working diff wins — but only once you understand the problem.
+- Mark deliberate simplifications with a `ponytail:` comment naming the ceiling and upgrade path.
+- Non-trivial logic leaves ONE runnable check behind (an assert-based demo or one small test file).
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/ponytail [lite\|full\|ultra]` | Set intensity (default: full) |
+| `/ponytail-review` | Review current diff for over-engineering |
+| `/ponytail-audit` | Whole-repo audit for bloat |
+| `/ponytail-debt` | Harvest `ponytail:` comments into debt ledger |
+| `/ponytail-gain` | Show benchmark scoreboard |
+| `/ponytail-help` | Quick reference |
+
+### When NOT to be lazy
+
+Never simplify away: input validation at trust boundaries, error handling that prevents data loss, security measures, accessibility basics, anything explicitly requested.
