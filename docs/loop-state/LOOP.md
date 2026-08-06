@@ -104,6 +104,44 @@
 | **Gate** | 人类审核后才发布 |
 | **前提** | `pyproject.toml [project] version` 已定义 |
 
+### 8. Code Health Audit（L1）
+
+| 属性 | 值 |
+|------|---|
+| **Cadence** | 每周日 10:00 UTC |
+| **Trigger** | GitHub Actions schedule |
+| **Workflow** | `.github/workflows/code-health-audit.yml` |
+| **State** | `docs/loop-state/STATE.md`（记录 last_code_health_audit_commit） |
+| **输入** | 全仓库增量 diff（自上次 audit 以来变更的文件） |
+| **输出** | GitHub Issue 草稿（`code-health` label）+ Durable Facts 更新 |
+| **Gate** | L1：报告模式，人类决定行动；所有发现带 ⚠️ 需确认 |
+| **Scope** | `app/services/`、`app/api/`、`loop/`、`skills/`、`patterns/` |
+| **Excludes** | `app/loop/`、`bench/`、`tests/` |
+
+### 9. Debt Harvesting（L1）
+
+| 属性 | 值 |
+|------|---|
+| **Cadence** | 每月 1 日 11:00 UTC |
+| **Trigger** | GitHub Actions schedule |
+| **Workflow** | `.github/workflows/debt-harvesting.yml` |
+| **State** | `docs/loop-state/STATE.md` |
+| **输入** | `docs/loop-state/durable-facts.md` 代码行数历史 |
+| **输出** | `docs/loop-state/PONYTAIL-DEBT.md` + Durable Facts 追加 |
+| **Gate** | L1：报告模式，人类决定行动 |
+
+---
+
+## Ponytail Integration
+
+Ponytail 是横切质量层，不是循环。约束范围：
+- ✅ `app/services/`、`app/api/`、`loop/`（CLI）、`skills/`、`patterns/`
+- ❌ `app/loop/`（CMA-ES 信号搜索）
+- ❌ `bench/`（实验代码）
+- ❌ `tests/`（AGENTS.md 100% 覆盖要求优先于 ponytail ultra）
+
+详见：`docs/adr/0004-ponytail-integration.md`
+
 ---
 
 ## 安全规则

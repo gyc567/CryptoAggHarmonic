@@ -56,22 +56,29 @@ jobs:
         with:
           script: |
             const prNum = context.payload.pull_request.number;
+            const prTitle = context.payload.pull_request.title || '';
             const ciStatus = context.payload.pull_request.commits; // simplified
+
+            // Fetch diff size for ponytail bloat warning
+            const diffSize = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              basehead: context.payload.pull_request.base.ref + '...' + context.payload.pull_request.head.ref
+            }).then(r => r.data.files?.length || 0).catch(() => 0);
+
+            let bloatWarning = '';
+            if (diffSize > 15) {
+              bloatWarning = `\n\n### Code Health (ponytail)\n⚠️ diff touches ${diffSize} files — run \`/ponytail-review\` to check for over-engineering before merging.`;
+            }
 
             const comment = `## PR Babysitter Status
 
-This PR has been reviewed by the automated PR Babysitter.
+CI: ${ciStatus ? 'see workflow runs' : 'unknown'}
+Review status: check PR above${bloatWarning}
 
-### Status Checklist
+---
+*PR Babysitter: automated monitoring. CI must pass + at least one approval before merge.*`;
 
-- [ ] CI passing (check workflow run)
-- [ ] At least one reviewer approved
-- [ ] No unresolved conversations
-- [ ] All comments addressed
-
-If any item is blocking, please address it or request assistance.`;
-
-            // Only post if no prior babysitter comment exists
             github.rest.issues.listComments({
               issue_number: prNum,
               owner: context.repo.owner,

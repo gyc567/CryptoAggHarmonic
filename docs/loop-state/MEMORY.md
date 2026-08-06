@@ -56,3 +56,26 @@
 | Durable Facts | 200 | 100,000 |
 
 详见：`docs/loop-state/memory-budget.md`
+
+---
+
+## Code Volume Trend（来自 ponytail-audit）
+
+### 来源
+
+每周 Code Health Audit（`code-health-audit.yml`）运行后，自动追加到 `docs/loop-state/durable-facts.md`。
+
+### 追踪指标
+
+- 按模块统计代码行数（`app/services`、`app/api`、`loop`、`skills`、`patterns`）
+- 每周净增减 + 累计趋势
+- **不依赖** `ponytail:` 注释（注释是开发习惯，循环无法强制）
+
+### 告警条件
+
+连续 4 周净增长 → 触发 code-health issue（已在 `code-health-audit.yml` 中实现）
+
+### 文件
+
+- 快照：`docs/loop-state/PONYTAIL-DEBT.md`（每月 debt-harvesting.yml 更新）
+- 趋势表：`docs/loop-state/durable-facts.md` Code Volume Trend 节

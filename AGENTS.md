@@ -249,6 +249,17 @@ Before writing any code, stop at the first rung that holds:
 | `/ponytail-gain` | Show benchmark scoreboard |
 | `/ponytail-help` | Quick reference |
 
+### Constraint Scope
+
+Ponytail applies to **business logic and infrastructure code only**:
+
+- ✅ `app/services/`、`app/api/`、`loop/`（CLI 工具）、`skills/`、`patterns/`
+- ❌ `app/loop/` — CMA-ES signal search (scientific experiment code, not business logic)
+- ❌ `bench/` — Backtest harness (experiment code)
+- ❌ `tests/` — Test coverage requirements (AGENTS.md 100% coverage rule takes precedence over ponytail ultra deletion suggestions)
+
+**Rule**: If a `/ponytail-*` command targets `app/loop/`, `bench/`, or `tests/`, politely explain the exclusion and decline.
+
 ### When NOT to be lazy
 
 Never simplify away: input validation at trust boundaries, error handling that prevents data loss, security measures, accessibility basics, anything explicitly requested.

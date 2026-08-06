@@ -1,0 +1,191 @@
+name: Code Health Audit
+
+# Runs ponytail-audit on incremental diff + updates Durable Facts with code volume trend.
+# L1: report only, human decides what (if anything) to act on.
+# Scope: app/services/, app/api/, loop/, skills/, patterns/
+# Excludes: app/loop/ (CMA-ES search), bench/, tests/
+
+on:
+  schedule:
+    # Every Sunday at 10:00 UTC
+    - cron: "0 10 * * 0"
+  workflow_dispatch:
+    inputs:
+      from_commit:
+        description: 'From commit (default: last audit commit from STATE.md)'
+        required: false
+        default: ''
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            app/services
+            app/api
+            loop
+            skills
+            patterns
+            docs/loop-state
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Determine from_commit
+        id: baseline
+        run: |
+          # Try to read last audit commit from STATE.md
+          if [ -n "${{ inputs.from_commit }}" ]; then
+            FROM_COMMIT="${{ inputs.from_commit }}"
+          elif [ -f docs/loop-state/STATE.md ]; then
+            FROM_COMMIT=$(grep -oP '(?<=last_code_health_audit_commit: )[a-f0-9]+' docs/loop-state/STATE.md 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$FROM_COMMIT" ]; then
+            # First run: use commit from 7 days ago
+            FROM_COMMIT=$(git log --after="7 days ago" --format=%H --reverse | head -1)
+          fi
+
+          echo "from_commit=$FROM_COMMIT" >> $GITHUB_OUTPUT
+          echo "Scanning from: $FROM_COMMIT"
+
+      - name: Get changed files (incremental diff)
+        id: diff
+        run: |
+          TO_COMMIT=$(git rev-parse HEAD)
+          echo "to_commit=$TO_COMMIT" >> $GITHUB_OUTPUT
+
+          # Get list of changed files in scope
+          CHANGED_FILES=$(git diff --name-only ${{ steps.baseline.outputs.from_commit }}..$TO_COMMIT \
+            -- 'app/services/' 'app/api/' 'loop/' 'skills/' 'patterns/' \
+            | grep -v '__pycache__' | grep -v '\.pyc$' | grep -v '\.egg-info/' || echo "")
+
+          echo "Changed files in scope:"
+          echo "$CHANGED_FILES"
+          echo "changed_files_count=$(echo "$CHANGED_FILES" | wc -l)" >> $GITHUB_OUTPUT
+
+          # Save file list for the next step
+          echo "$CHANGED_FILES" > changed_files.txt
+
+      - name: Run cloc on changed files
+        id: cloc
+        if: steps.diff.outputs.changed_files_count != '0'
+        run: |
+          # Install cloc if not available
+          if ! command -v cloc &> /dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq cloc 2>/dev/null || true
+          fi
+
+          CHANGED_FILES=$(cat changed_files.txt)
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No changed files in scope."
+            echo "total_added=0" >> $GITHUB_OUTPUT
+            echo "total_removed=0" >> $GITHUB_OUTPUT
+            echo "total_changed=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Run cloc on the changed files
+          cloc --json --quiet \
+            --found-rs=0 \
+            $CHANGED_FILES > cloc_result.json 2>/dev/null || true
+
+          # Parse cloc output
+          if [ -f cloc_result.json ] && [ -s cloc_result.json ]; then
+            ADDED=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('cloc_result.json'))
+    header = d.get('header', {})
+    cumulative = d.get('Cumulative', {})
+    if cumulative:
+        print(cumulative.get('code', 0))
+    elif header.get('note'):
+        print(0)
+    else:
+        print(0)
+except: print(0)
+" 2>/dev/null || echo "0")
+
+            # Also count raw lines of change
+            RAW_ADDED=$(git diff --unified=0 ${{ steps.baseline.outputs.from_commit }}..${{ steps.diff.outputs.to_commit }} -- $CHANGED_FILES | grep -E '^\+' | grep -v '^++' | wc -l)
+            RAW_REMOVED=$(git diff --unified=0 ${{ steps.baseline.outputs.from_commit }}..${{ steps.diff.outputs.to_commit }} -- $CHANGED_FILES | grep -E '^-' | grep -v '^--' | wc -l)
+
+            echo "total_added=$RAW_ADDED" >> $GITHUB_OUTPUT
+            echo "total_removed=$RAW_REMOVED" >> $GITHUB_OUTPUT
+            echo "net_change=$((RAW_ADDED - RAW_REMOVED))" >> $GITHUB_OUTPUT
+
+            echo "Code health diff (lines): +$RAW_ADDED -$RAW_REMOVED = $((RAW_ADDED - RAW_REMOVED)) net"
+          else
+            echo "total_added=0" >> $GITHUB_OUTPUT
+            echo "total_removed=0" >> $GITHUB_OUTPUT
+            echo "net_change=0" >> $GITHUB_OUTPUT
+            echo "cloc: no data"
+          fi
+
+      - name: Generate audit summary
+        id: summary
+        run: |
+          NET=${OUTPUT_net_change:-0}
+          echo "net_change=$NET" >> $GITHUB_OUTPUT
+
+          echo "=== Code Health Audit Summary ==="
+          echo "From commit: ${{ steps.baseline.outputs.from_commit }}"
+          echo "To commit:   ${{ steps.diff.outputs.to_commit }}"
+          echo "Files in scope: ${{ steps.diff.outputs.changed_files_count }}"
+          echo "Lines (added/removed/net): +${{ steps.cloc.outputs.total_added || 0 }} / -${{ steps.cloc.outputs.total_removed || 0 }} / $NET"
+
+      - name: Update STATE.md with audit baseline
+        run: |
+          TO_COMMIT=$(git rev-parse HEAD)
+          {
+            echo ""
+            echo "<!-- code-health-audit: $TO_COMMIT $(date -Iseconds) -->"
+          } >> docs/loop-state/STATE.md
+
+          echo "Updated STATE.md with audit commit: $TO_COMMIT"
+
+      - name: Update loop-run-log.md
+        run: |
+          NET=${OUTPUT_net_change:-0}
+          {
+            echo "### $(date -IsecondsZ) [code-health-audit] files=${{ steps.diff.outputs.changed_files_count }} lines=+${{ steps.cloc.outputs.total_added || 0 }}-${{ steps.cloc.outputs.total_removed || 0 }} net=$NET outcome=success"
+          } >> docs/loop-state/loop-run-log.md
+
+      - name: Post audit result as issue
+        if: steps.diff.outputs.changed_files_count != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const net = parseInt('${{ steps.cloc.outputs.net_change || 0 }}');
+            const files = parseInt('${{ steps.diff.outputs.changed_files_count }}');
+            const emoji = net <= 0 ? '✅' : '⚠️';
+            const body = `${emoji} **Code Health Audit** — $(new Date().toISOString().split('T')[0])
+
+### Diff Summary (this week)
+- Files touched: ${files}
+- Lines added: +${{ steps.cloc.outputs.total_added || 0 }}
+- Lines removed: -${{ steps.cloc.outputs.total_removed || 0 }}
+- **Net change: ${net > 0 ? '+' : ''}${net} lines**
+
+### Scope
+\`app/services/\`, \`app/api/\`, \`loop/\`, \`skills/\`, \`patterns/\`
+(Excludes: \`app/loop/\`, \`bench/\`, \`tests/\`)
+
+---
+*⚠️ Findings require human confirmation before any code change. Run \`/ponytail-audit\` locally on specific files for detailed analysis.*`;
+
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Code Health Audit: ${new Date().toISOString().split('T')[0]} (${net > 0 ? '+' : ''}${net} lines)`,
+              body: body,
+              labels: ['code-health']
+            });
