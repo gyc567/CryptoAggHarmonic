@@ -75,7 +75,7 @@ All documentation lives in `docs/` directory with an index in `DOCS.md`.
 # Documentation Index
 
 ## Architecture
-- [ADR-001: Decision](docs/adr/adr-001.md)
+- [ADR-001: Decision (placeholder)](docs/adr/0001-adr-placeholder.md)
 
 ## Guides
 - [Setup](docs/guides/setup.md)
@@ -166,3 +166,46 @@ After any feature work:
 - Verify all tests pass (`pytest` or `npm test`)
 - Generate coverage report
 - Document test results in PR or plan doc
+
+---
+
+## Loop engineering
+
+This project uses loop-engineering principles. See `docs/loop-engineering-plan.md` for the full plan.
+
+### Core files
+
+| File | Purpose |
+|------|---------|
+| `docs/loop-state/LOOP.md` | 7 loop definitions (cadence, skill, gate) |
+| `docs/loop-state/STATE.md` | Current operational state (auto-updated) |
+| `docs/loop-state/gate.yaml` | Path denylist + auto-merge rules |
+| `loop/` | Python CLI tools (`loop.py`, `loop_gate.py`, etc.) |
+
+### Loop CLI
+
+```bash
+python -m loop.loop doctor .     # Check core files exist
+python -m loop.loop status .    # Show state summary
+python -m loop.loop audit . --suggest  # Compute readiness score
+python -m loop.loop gate check . # Check gate.yaml violations
+python -m loop.loop sync check . # Check LOOP/STATE consistency
+```
+
+### Loop maturity levels
+
+- **L1**: Report only — loop generates reports, humans decide
+- **L2**: Assist — loop suggests, humans decide
+- **L3**: Autonomous — loop acts within hard constraints
+
+### Key constraints
+
+1. **TUNING promotion**: Never call `apply_tuning()` to modify the live gunicorn worker's TUNING. Promotion requires a PR editing `app/config/tuning.py` + SIGHUP restart.
+2. **No auto-merge without gate**: Check `gate.yaml` before any automated PR.
+3. **Memory hygiene**: Follow the four-tier memory policy in `docs/loop-state/MEMORY.md`.
+
+### Skills
+
+- **Agent skills** (mattpocock): Use `skills-lock.json`
+- **Project skills**: Use `skills/` directory (loop-triage, loop-handoff, etc.)
+- **Loop skills**: Use `.claude/skills/` directory

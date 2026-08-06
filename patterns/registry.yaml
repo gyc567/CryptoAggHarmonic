@@ -1,0 +1,56 @@
+patterns:
+  - name: daily-triage
+    display: Daily Triage
+    cadence: "1d"
+    risk: low
+    description: Daily issue and PR triage
+    workflow: .github/workflows/daily-triage.yml
+    skill: skills/loop-triage
+
+  - name: pr-babysitter
+    display: PR Babysitter
+    cadence: event-driven
+    risk: medium
+    description: Monitor PRs for blocking issues
+    workflow: .github/workflows/pr-babysitter.yml
+    skill: skills/loop-triage
+
+  - name: ci-sweeper
+    display: CI Sweeper
+    cadence: on-failure
+    risk: medium
+    description: Analyze and triage CI failures
+    workflow: .github/workflows/ci-sweeper.yml
+    skill: skills/loop-triage
+
+  - name: issue-triage
+    display: Issue Triage
+    cadence: on-open
+    risk: low
+    description: Apply triage labels to new issues
+    workflow: .github/workflows/issue-triage.yml
+    skill: skills/loop-triage
+
+  - name: dependency-sweeper
+    display: Dependency Sweeper
+    cadence: "6h"
+    risk: medium
+    description: Update dependencies automatically
+    workflow: .github/workflows/dependency-sweeper.yml
+    skill: skills/loop-triage
+
+  - name: post-merge-cleanup
+    display: Post-Merge Cleanup
+    cadence: "1d-6h post-merge"
+    risk: low
+    description: Clean up after merged PRs
+    workflow: .github/workflows/post-merge-cleanup.yml
+    skill: skills/loop-triage
+
+  - name: changelog-drafter
+    display: Changelog Drafter
+    cadence: weekly
+    risk: low
+    description: Draft changelog from commits
+    workflow: .github/workflows/changelog-drafter.yml
+    skill: skills/loop-triage

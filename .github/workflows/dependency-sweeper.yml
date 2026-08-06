@@ -1,0 +1,57 @@
+name: Dependency Sweeper
+
+on:
+  schedule:
+    # Every 6 hours
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no auto-merge)'
+        required: false
+        default: 'true'
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for outdated dependencies
+        id: check
+        run: |
+          # Check if pip-review or pip-updater is available
+          pip install pip-review 2>/dev/null || pip install pip-check 2>/dev/null
+
+          echo "Checking for outdated dependencies..."
+
+          # Simple check using pip list
+          pip list --outdated --format=freeze > outdated.txt || echo "No outdated deps" > outdated.txt
+
+          echo "Outdated dependencies:"
+          cat outdated.txt
+          OUTDATED_COUNT=$(wc -l < outdated.txt)
+          echo "OUTDATED_COUNT=$OUTDATED_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Create Dependabot PR if needed
+        if: steps.check.outputs.OUTDATED_COUNT != '0' && github.event.inputs.dry_run != 'true'
+        run: |
+          echo "Would create Dependabot PR for $OUTDATED_COUNT outdated packages"
+          # Dependabot creates PRs automatically when requirements files change
+          # This workflow just monitors and reports
+
+      - name: Report outdated dependencies
+        if: steps.check.outputs.OUTDATED_COUNT != '0'
+        run: |
+          echo "## Dependency Sweeper Report" > dep-report.md
+          echo "" >> dep-report.md
+          echo "Found \`$(cat outdated.txt | wc -l)\` outdated packages:" >> dep-report.md
+          cat outdated.txt >> dep-report.md
+
+          # Create a GitHub issue for tracking
+          gh issue create \
+            --title "Dependency Update Report $(date +%Y-%m-%d)" \
+            --body "$(cat dep-report.md)" \
+            --label "dependencies" \
+            --label "automated" \
+            || echo "Issue creation skipped (may already exist)"

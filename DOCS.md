@@ -4,8 +4,8 @@ Permanent documentation. See [AGENTS.md](AGENTS.md) → Documentation for rules.
 
 ## Architecture
 
-- [ADR-001: Decision](docs/adr/adr-001.md)
-- [ADR-002: Decision](docs/adr/adr-002.md)
+- [ADR-001: Decision (placeholder)](docs/adr/0001-adr-placeholder.md)
+- [ADR-002: Decision (placeholder)](docs/adr/0002-adr-placeholder.md)
 
 ## Guides
 

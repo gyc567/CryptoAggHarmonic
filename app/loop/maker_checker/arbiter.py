@@ -123,6 +123,7 @@ class Arbiter:
                 triggers + ["m4_rejected_hard_constraint"],
                 checker_confidence=llm.confidence,
                 checker_flags=llm.flags,
+                agreement=gap <= self.config.maker_checker_gap_threshold,
             )
 
         llm_accept = llm.accept
@@ -139,6 +140,7 @@ class Arbiter:
                         triggers + ["llm_accept", "maker_checker_gap"],
                         checker_confidence=llm.confidence,
                         checker_flags=llm.flags,
+                        agreement=False,
                     )
                 return _merge(
                     "accepted",
@@ -147,6 +149,7 @@ class Arbiter:
                     triggers + ["llm_accept"],
                     checker_confidence=llm.confidence,
                     checker_flags=llm.flags,
+                    agreement=True,
                 )
             return _merge(
                 "rejected",
@@ -155,6 +158,7 @@ class Arbiter:
                 triggers + ["llm_reject_overrides"],
                 checker_confidence=llm.confidence,
                 checker_flags=llm.flags,
+                agreement=gap <= self.config.maker_checker_gap_threshold,
             )
 
         # 4 + 5. M4 suspicious.
@@ -166,6 +170,7 @@ class Arbiter:
                 triggers + ["m4_suspicious", "llm_accept"],
                 checker_confidence=llm.confidence,
                 checker_flags=llm.flags,
+                agreement=False,
             )
         return _merge(
             "rejected",
@@ -174,6 +179,7 @@ class Arbiter:
             triggers + ["m4_suspicious", "llm_reject"],
             checker_confidence=llm.confidence,
             checker_flags=llm.flags,
+            agreement=gap <= self.config.maker_checker_gap_threshold,
         )
 
 
@@ -185,6 +191,7 @@ def _merge(
     *,
     checker_confidence: Optional[float],
     checker_flags: tuple[dict, ...] = (),
+    agreement: Optional[bool] = None,
 ) -> MergeResult:
     """Build a :class:`MergeResult` with validation."""
     return make_merge_result(
@@ -194,6 +201,7 @@ def _merge(
         trigger_reasons=trigger_reasons,
         checker_confidence=checker_confidence,
         checker_flags=checker_flags,
+        agreement=agreement,
     )
 
 

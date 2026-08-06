@@ -1,0 +1,81 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Analyze new issue
+        id: analyze
+        run: |
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          ISSUE_BODY="${{ github.event.issue.body }}"
+          ISSUE_NUMBER=${{ github.event.issue.number }}
+
+          echo "Analyzing issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
+
+          # Simple triage logic based on keywords
+          if echo "$ISSUE_TITLE" | grep -qiE "bug|error|fail|crash|broken"; then
+            LABEL="bug"
+          elif echo "$ISSUE_TITLE" | grep -qiE "feat|enhance|add|new"; then
+            LABEL="enhancement"
+          elif echo "$ISSUE_TITLE" | grep -qiE "question|how|what"; then
+            LABEL="question"
+          else
+            LABEL="needs-triage"
+          fi
+
+          echo "Suggested label: ${LABEL}"
+          echo "LABEL=${LABEL}" >> $GITHUB_OUTPUT
+
+      - name: Post triage comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = '${{ steps.analyze.outputs.LABEL }}';
+            const issueNumber = context.issue.number;
+
+            const triageComment = `## Triage Suggestion
+
+This issue has been automatically triaged as **${label}**.
+
+### Next Steps
+
+| Label | Meaning |
+|-------|---------|
+| \`bug\` | A defect to fix |
+| \`enhancement\` | A feature request |
+| \`question\` | Needs clarification |
+| \`needs-triage\` | Needs more information |
+
+Please verify this label is correct and add relevant details.`;
+
+            github.rest.issues.createComment({
+              issue_number: issueNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: triageComment
+            });
+
+            // Add label if not already present
+            github.rest.issues.addLabels({
+              issue_number: issueNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: [label]
+            }).catch(() => {
+              // Label may already exist, that's OK
+            });

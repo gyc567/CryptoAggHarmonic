@@ -1,0 +1,68 @@
+name: Issue Sync
+
+# Syncs pending_issues/ JSON files to GitHub Issues
+# Runs on workflow_dispatch or can be triggered by loop state changes
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 30 minutes during working hours
+    - cron: "*/30 8-18 * * 1-5"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check pending issues
+        id: check
+        run: |
+          if [ -d .scratch/loop_state/pending_issues ]; then
+            count=$(find .scratch/loop_state/pending_issues -name "*.json" | wc -l)
+            echo "pending_count=$count" >> $GITHUB_OUTPUT
+            echo "has_pending=true" >> $GITHUB_OUTPUT
+          else
+            echo "pending_count=0" >> $GITHUB_OUTPUT
+            echo "has_pending=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync pending issues
+        if: steps.check.outputs.has_pending == 'true'
+        run: |
+          # For each pending issue JSON file, create a GitHub issue
+          for file in .scratch/loop_state/pending_issues/*.json; do
+            [ -e "$file" ] || continue
+            uuid=$(basename "$file" .json)
+            data=$(cat "$file")
+
+            candidate_id=$(echo "$data" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('candidate_id',''))")
+            decision=$(echo "$data" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('decision',''))")
+            fitness=$(echo "$data" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('fitness',''))")
+            params_sha=$(echo "$data" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('params_sha',''))")
+
+            # Build issue body
+            body="## Maker-Checker Review: ${candidate_id}
+**Decision**: ${decision}
+**Fitness**: ${fitness}
+**Params SHA**: ${params_sha}
+
+\`\`\`json
+${data}
+\`\`\`
+
+---
+*Created by issue-sync.yml from pending_issues/${uuid}.json*"
+
+            # Create GitHub issue
+            gh issue create \
+              --title "[MC] Review: ${candidate_id} (${decision})" \
+              --body "${body}" \
+              --label "maker-checker" \
+              --label "ready-for-human"
+
+            echo "Created issue for candidate: ${candidate_id}"
+
+            # Remove the processed pending issue file
+            rm "$file"
+          done

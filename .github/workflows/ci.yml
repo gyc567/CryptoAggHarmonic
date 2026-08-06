@@ -33,8 +33,14 @@ jobs:
       - name: Layer 1 - mypy (trusted core)
         run: mypy app/domain/signals.py app/domain/schemas.py
 
+      - name: Layer 1 - mypy (loop engine)
+        run: mypy app/loop/ loop/
+
       - name: Layer 1 - pyright (trusted core)
         run: pyright app/domain/signals.py app/domain/schemas.py
+
+      - name: Layer 1 - pyright (loop engine)
+        run: pyright app/loop/ loop/
 
       - name: Layer 2 + Layer 3 - contract tests (fast)
         run: |

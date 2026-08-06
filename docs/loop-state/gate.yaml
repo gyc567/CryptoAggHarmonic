@@ -1,0 +1,47 @@
+# Gate Configuration — path denylist and auto-merge allowlist
+
+version: 1
+
+# Paths that no loop may modify or auto-merge
+denylist:
+  - "test-report-*.md"
+  - "__pycache__/"
+  - "*.pyc"
+  - ".git/"
+  - "docs/plans/"
+  - "frontend/node_modules/"
+  - ".scratch/"
+  - "*.egg-info/"
+  - ".venv/"
+
+# Patterns that are ALWAYS excluded (safety net)
+always_exclude:
+  - "**/secrets.yaml"
+  - "**/credentials.json"
+  - "**/.env"
+  - "**/*.key"
+
+# Auto-merge allowlist: conditions under which auto-merge is permitted
+auto_merge_allowlist:
+  - source: "dependabot"
+    conditions:
+      - "dependency: patch"
+      - "dependency: low-risk-cve"
+    ci_required: true
+  - source: "loop"
+    conditions:
+      - "files: requirements*.txt OR pyproject.toml"
+      - "ci_required: true"
+    require_label: ["automerge"]
+
+# Max auto-merge frequency per week per source
+rate_limits:
+  dependabot: 10
+  loop: 5
+
+# Kill switch — set to true to pause all loops
+loop_paused: false
+pause_reason: ""
+
+# Minimum Loop Readiness Score for automerge
+min_readiness_score: 58

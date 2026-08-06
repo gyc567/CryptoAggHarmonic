@@ -81,6 +81,13 @@ def _create_app() -> "Flask":
     app.register_blueprint(rsi_trend_bp)
     app.register_blueprint(watchlist_bp)
 
+    # Loop engineering: Prometheus metrics endpoint
+    try:
+        from app.api.metrics_routes import make_metrics_blueprint
+        app.register_blueprint(make_metrics_blueprint())
+    except Exception:
+        logger.warning("Failed to register metrics blueprint; prometheus_client may not be installed")
+
     # Simple CORS support for local dev / preview origins.
     _add_cors(app)
 

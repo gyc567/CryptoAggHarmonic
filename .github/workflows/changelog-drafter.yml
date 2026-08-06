@@ -1,0 +1,83 @@
+name: Changelog Drafter
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Start date (YYYY-MM-DD)'
+        required: false
+        default: ''
+  release:
+    types: [published]
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate changelog draft
+        id: generate
+        run: |
+          SINCE="${INPUT_SINCE:-$(date -d '7 days ago' +%Y-%m-%d)}"
+          echo "Generating changelog since: $SINCE"
+
+          # Get commits from the last week
+          git log --oneline --since="$SINCE" --until=$(date +%Y-%m-%d) > commits.txt
+
+          echo "Commits this period:"
+          cat commits.txt
+
+          # Extract conventional commit types
+          echo "## Unreleased Changes" > CHANGELOG_DRAFT.md
+          echo "" >> CHANGELOG_DRAFT.md
+          echo "Generated: $(date -Iseconds)" >> CHANGELOG_DRAFT.md
+          echo "" >> CHANGELOG_DRAFT.md
+
+          # Parse conventional commits
+          FEATURES=$(git log --oneline --since="$SINCE" --format="%s" | grep -E "^feat|Feature" || echo "")
+          FIXES=$(git log --oneline --since="$SINCE" --format="%s" | grep -E "^fix|Fix|Bug" || echo "")
+          DOCS=$(git log --oneline --since="$SINCE" --format="%s" | grep -E "^docs|Docs|Doc" || echo "")
+          CHORES=$(git log --oneline --since="$SINCE" --format="%s" | grep -E "^chore|Chore|refactor|Refactor" || echo "")
+
+          echo "### Features" >> CHANGELOG_DRAFT.md
+          [ -n "$FEATURES" ] && echo "$FEATURES" >> CHANGELOG_DRAFT.md || echo "_None_" >> CHANGELOG_DRAFT.md
+          echo "" >> CHANGELOG_DRAFT.md
+
+          echo "### Bug Fixes" >> CHANGELOG_DRAFT.md
+          [ -n "$FIXES" ] && echo "$FIXES" >> CHANGELOG_DRAFT.md || echo "_None_" >> CHANGELOG_DRAFT.md
+          echo "" >> CHANGELOG_DRAFT.md
+
+          echo "### Documentation" >> CHANGELOG_DRAFT.md
+          [ -n "$DOCS" ] && echo "$DOCS" >> CHANGELOG_DRAFT.md || echo "_None_" >> CHANGELOG_DRAFT.md
+          echo "" >> CHANGELOG_DRAFT.md
+
+          echo "### Other Changes" >> CHANGELOG_DRAFT.md
+          [ -n "$CHORES" ] && echo "$CHORES" >> CHANGELOG_DRAFT.md || echo "_None_" >> CHANGELOG_DRAFT.md
+
+          echo ""
+          echo "=== CHANGELOG DRAFT ==="
+          cat CHANGELOG_DRAFT.md
+          echo "========================="
+
+          # Save for next steps
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          cat CHANGELOG_DRAFT.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create release prep issue
+        if: github.event_name == 'schedule'
+        run: |
+          gh issue create \
+            --title "Release Prep: $(date +%Y-%m-%d)" \
+            --label "release-prep" \
+            --label "automated" \
+            --body "${{ steps.generate.outputs.CHANGELOG }}"

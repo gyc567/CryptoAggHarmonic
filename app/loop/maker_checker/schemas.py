@@ -167,6 +167,9 @@ class MergeResult:
     trigger_reasons: tuple[str, ...]
     checker_confidence: Optional[float] = None
     checker_flags: tuple[dict, ...] = ()
+    # agreement is True when |maker_self_score - checker_score| < gap_threshold.
+    # Used to compute mc_agreement_rate metric.
+    agreement: Optional[bool] = None
 
     VALID_DECISIONS = ("accepted", "rejected", "suspicious_to_human")
 
@@ -178,6 +181,8 @@ class MergeResult:
         if self.checker_confidence is not None:
             if not 0.0 <= self.checker_confidence <= 1.0:
                 raise ValueError("checker_confidence must be None or in [0, 1]; " f"got {self.checker_confidence}")
+        if self.agreement is not None and not isinstance(self.agreement, bool):
+            raise ValueError("agreement must be None or bool")
 
 
 # ---- Calibration ---------------------------------------------------------
@@ -296,6 +301,7 @@ def make_merge_result(
     trigger_reasons: list[str] | tuple[str, ...],
     checker_confidence: Optional[float] = None,
     checker_flags: list[dict] | tuple[dict, ...] = (),
+    agreement: Optional[bool] = None,
 ) -> MergeResult:
     """Build a :class:`MergeResult` from keyword args."""
     return MergeResult(
@@ -305,6 +311,7 @@ def make_merge_result(
         trigger_reasons=tuple(trigger_reasons),
         checker_confidence=checker_confidence,
         checker_flags=tuple(checker_flags),
+        agreement=agreement,
     )
 
 

@@ -1,0 +1,88 @@
+name: CI Sweeper
+
+on:
+  workflow_run:
+    workflow: CI
+    types: [completed]
+
+jobs:
+  sweep:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt pyyaml
+
+      - name: Download failed workflow artifacts
+        run: |
+          # Get the run ID from the triggering workflow
+          RUN_ID=${{ github.event.workflow_run.id }}
+          gh run download $RUN_ID --dir artifacts/ || echo "No artifacts to download"
+
+      - name: Analyze CI failure
+        id: analyze
+        run: |
+          # Get the failed job names from the workflow run
+          gh run view ${{ github.event.workflow_run.id }} --json jobs --jq '.jobs[] | select(.conclusion == "failure") | .name' > failed_jobs.txt
+          cat failed_jobs.txt
+
+          echo "Failed jobs: $(cat failed_jobs.txt)"
+
+      - name: Classify failure
+        id: classify
+        run: |
+          FAILED_JOBS=$(cat failed_jobs.txt)
+          echo "Failed jobs content: '$FAILED_JOBS'"
+
+          # Classify the failure
+          if echo "$FAILED_JOBS" | grep -qi "mypy\|pyright\|ruff\|black"; then
+            FAILURE_TYPE="linting"
+          elif echo "$FAILED_JOBS" | grep -qi "pytest\|test"; then
+            FAILURE_TYPE="test"
+          elif echo "$FAILED_JOBS" | grep -qi "frontend"; then
+            FAILURE_TYPE="frontend"
+          else
+            FAILURE_TYPE="unknown"
+          fi
+
+          echo "Failure type: $FAILURE_TYPE"
+          echo "FAILURE_TYPE=$FAILURE_TYPE" >> $GITHUB_OUTPUT
+
+      - name: Post failure analysis
+        if: github.event.workflow_run.pull_requests[0]
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.workflow_run.pull_requests[0].number;
+            const failureType = '${{ steps.classify.outputs.FAILURE_TYPE }}';
+
+            const comment = `## CI Sweeper Analysis
+
+**Failure Type**: \`${failureType}\`
+
+The CI failure has been analyzed. Please review the failed jobs above.
+
+### Recommendations
+
+| Type | Action |
+|------|--------|
+| \`linting\` | Run \`ruff check .\` and \`black --check .\` locally |
+| \`test\` | Run \`pytest\` locally to see full output |
+| \`frontend\` | Check \`npm test\` output |
+| \`unknown\` | Check the workflow run logs |
+
+This is an automated analysis. If the failure is flaky, please re-run the workflow.`;
+
+            github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

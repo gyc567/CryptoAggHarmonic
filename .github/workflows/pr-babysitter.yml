@@ -1,0 +1,92 @@
+name: PR Babysitter
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  schedule:
+    # Every 30 minutes during working hours
+    - cron: "*/30 8-18 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  babysit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Analyze PRs
+        id: analyze
+        run: |
+          # Get open PRs
+          gh pr list --state open --json number,title,reviews,labels --jq '.[] | "\(.number)|\(.title)|\(.labels[].name // "")"' > pr_list.txt
+
+          echo "Open PRs found: $(wc -l < pr_list.txt)"
+
+          while IFS='|' read -r pr_num pr_title pr_labels; do
+            echo "PR #$pr_num: $pr_title (labels: $pr_labels)"
+          done < pr_list.txt
+
+      - name: Check for stale PRs
+        run: |
+          # Find PRs with no reviews for more than 3 days
+          STALE_PR_COUNT=$(gh pr list --state open --search "created:<=$(date -d '3 days ago' +%Y-%m-%d)" --json number,title --jq 'length')
+
+          echo "Stale PRs (>3 days no activity): $STALE_PR_COUNT"
+
+          if [ "$STALE_PR_COUNT" -gt 0 ]; then
+            echo "Stale PRs found, would post reminder comment..."
+            gh pr list --state open --search "created:<=$(date -d '3 days ago' +%Y-%m-%d)" --json number,title --jq '.[] | "PR #\(.number): \(.title)"'
+          fi
+
+      - name: Post PR status summary
+        if: github.event_name == 'pull_request'
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          PR_TITLE="${{ github.event.pull_request.title }}"
+
+          echo "PR #$PR_NUM: $PR_TITLE"
+
+          # Check if CI is passing
+          CI_STATUS=$(gh pr view $PR_NUM --json statusCheckRollup --jq '.statusCheckRollup[] | select(.type == "CI") | .conclusion' 2>/dev/null || echo "unknown")
+          echo "CI status: $CI_STATUS"
+
+      - name: Comment on PR with blocking status
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNum = context.payload.pull_request.number;
+            const ciStatus = context.payload.pull_request.commits; // simplified
+
+            const comment = `## PR Babysitter Status
+
+This PR has been reviewed by the automated PR Babysitter.
+
+### Status Checklist
+
+- [ ] CI passing (check workflow run)
+- [ ] At least one reviewer approved
+- [ ] No unresolved conversations
+- [ ] All comments addressed
+
+If any item is blocking, please address it or request assistance.`;
+
+            // Only post if no prior babysitter comment exists
+            github.rest.issues.listComments({
+              issue_number: prNum,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 50
+            }).then(comments => {
+              const hasBabysitterComment = comments.data.some(
+                c => c.body.includes('PR Babysitter Status')
+              );
+              if (!hasBabysitterComment) {
+                return github.rest.issues.createComment({
+                  issue_number: prNum,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: comment
+                });
+              }
+            });

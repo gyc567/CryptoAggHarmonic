@@ -10,6 +10,9 @@ redis==5.0.8
 upstash-redis==1.7.0
 rq==1.16.2
 socksio==1.0.0  # Required when httpx uses a SOCKS proxy (all_proxy)
+pyyaml>=6.0  # For gate.yaml, loop-state YAML files
+prometheus-client>=0.19.0  # For /metrics endpoint
+tiktoken>=0.5.0            # For accurate memory token counting (memory-budget.md)
 
 # Transitive dependencies of pyharmonics that must be constrained to avoid
 # a websockets version conflict:
