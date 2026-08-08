@@ -178,11 +178,19 @@ def main():
     pareto = pareto_load(pareto_path)
 
     strategy_version = current_version()
+    gen_started = time.time()
 
     accepted_count = 0
     rejected_count = 0
     error_count = 0
     best_so_far: Optional[CandidateResult] = None
+
+    # Optional metrics (no-op if prometheus_client missing).
+    try:
+        from app.api.metrics_routes import record_generation, record_proposal
+    except Exception:  # pragma: no cover - defensive
+        record_generation = None  # type: ignore[assignment]
+        record_proposal = None  # type: ignore[assignment]
 
     for r in results:
         # Run the second-opinion checker (plan §4). When a Maker-Checker
@@ -221,6 +229,11 @@ def main():
             },
             root=state_root,
         )
+        if record_proposal is not None:
+            try:
+                record_proposal(r.decision or "unknown")
+            except Exception:  # pragma: no cover
+                pass
 
         # Outerloop: escalate suspicious_to_human without calling gh.
         if getattr(verdict, "decision", None) == "suspicious_to_human":
@@ -309,6 +322,12 @@ def main():
         ),
         root=state_root,
     )
+
+    if record_generation is not None:
+        try:
+            record_generation(time.time() - gen_started)
+        except Exception:  # pragma: no cover
+            pass
 
     logger.info(
         "done: %d accepted, %d rejected, %d errors, pareto=%d",

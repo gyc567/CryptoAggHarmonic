@@ -406,108 +406,24 @@ def get_extended_patterns() -> frozenset:
 
 # --- Hot-swap support --------------------------------------------------------
 #
-# Path A (ADR-0003 D9): hot paths read via ``get_tuning()`` so scoped /
-# applied candidates are visible even when another process mutated aliases
-# earlier, and so ``from module import ALIAS`` freezes no longer control
-# scoring.
-#
-# ``apply_tuning`` still refreshes module-level aliases for tests and any
-# remaining legacy readers; the source of truth is ``get_tuning()``.
-
-# Mapping from "module that owns the alias" to {alias_name: tuning_field}.
-# Keep this in sync with the module-level constants in each consumer.
-_ALIAS_MAP: dict[str, dict[str, str]] = {
-    "app.domain.signals": {
-        "FIB_TP1": "fib_tp1",
-        "FIB_TP2": "fib_tp2",
-        "FIB_TP3": "fib_tp3",
-        "ATR_STOP_BUFFER": "atr_stop_buffer",
-        "ATR_PRZ_SWEEP": "atr_prz_sweep",
-        "FEE_RATE": "fee_rate",
-        "SLIPPAGE_RATE": "slippage_rate",
-        "TP_CLOSE_PCTS": "tp_close_pcts",
-        "EXTENDED_PATTERNS": "extended_patterns",
-    },
-    "app.domain.validation": {
-        "MAX_PRZ_DISTANCE_ATR": "max_prz_distance_atr",
-        "MAX_D_AGE_BARS": "max_d_age_bars",
-        "MAX_FORMING_PRZ_WIDTH_ATR": "max_forming_prz_width_atr",
-        "AUTHENTICITY_HALVE": "authenticity_halve",
-        "AUTHENTICITY_VETO": "authenticity_veto",
-        "ADVERSE_SHARPE_THRESHOLD": "adverse_sharpe_threshold",
-        "REGIME_MODERATE": "regime_moderate",
-        "REGIME_HIGH": "regime_high",
-        "TARGET_ATR_PCT": "target_atr_pct",
-    },
-    "app.services.discipline_filters": {
-        "DEFAULT_TTL_BARS": "default_ttl_bars",
-    },
-    "app.services.signal_engine": {
-        "ATR_WINDOW": "atr_window",
-        "ATR_LONG_WINDOW": "atr_long_window",
-        "RSI_WINDOW": "rsi_window",
-        "VOLUME_MA_WINDOW": "volume_ma_window",
-        "SWING_LOOKBACK": "swing_lookback",
-        "HTF_RULE": "htf_rule",
-        "MIN_CANDLES": "min_candles",
-        "A_GRADE_MIN": "a_grade_min",
-        "A_GRADE_MIN_HIGH_QUANT": "a_grade_min_high_quant",
-        "HIGH_QUANT_POSITION_MULT": "high_quant_position_mult",
-        "PATTERN_BASE_SCORE": "pattern_base_score",
-        "_STABILITY_WINDOW": "stability_window",
-    },
-    "app.services.macro_bias": {
-        "_SLOPE_TREND_UP": "slope_trend_up",
-        "_SLOPE_TREND_DOWN": "slope_trend_down",
-        "_MULT_TRENDING_ALIGNED": "mult_trending_aligned",
-        "_MULT_RANGING_ALIGNED": "mult_ranging_aligned",
-        "_MULT_TRENDING_INVERSE": "mult_trending_inverse",
-        "_MULT_RANGING_INVERSE": "mult_ranging_inverse",
-        "_MULT_EXTREME_INVERSE": "mult_extreme_inverse",
-        "_MULT_DATA_SHORT": "mult_data_short",
-        "_EXTREME_DEVIATION_PCT": "extreme_deviation_pct",
-        "_MIN_DAILY_BARS": "min_daily_bars",
-    },
-}
+# Path A (ADR-0003 D9): hot paths read via ``get_tuning()`` only.
+# ``apply_tuning`` sets the process-local applied candidate — it does **not**
+# mutate module-level aliases (those are import-time snapshots / legacy only).
 
 
 def apply_tuning(t: TuningConstants) -> None:
-    """Activate ``t`` for this process (get_tuning + legacy module aliases).
+    """Activate ``t`` for this process via :func:`get_tuning`.
 
-    Idempotent. Raises ``ImportError`` if a participating module hasn't been
-    imported yet (the harness imports ``app.services.signal_engine`` etc.
-    before calling this, so this is rare in practice).
-
-    Does **not** promote into live gunicorn workers — use a PR + SIGHUP.
+    Idempotent. Does **not** promote into live gunicorn workers — use a
+    PR editing ``app/config/tuning.py`` + SIGHUP (see tuning_promotion).
     """
     global _applied_tuning
-    import importlib
-
     _applied_tuning = t
-
-    for module_name, aliases in _ALIAS_MAP.items():
-        try:
-            mod = importlib.import_module(module_name)
-        except ImportError as exc:  # pragma: no cover - defensive
-            raise ImportError(f"apply_tuning: cannot import {module_name}: {exc}") from exc
-        for alias_name, field_name in aliases.items():
-            value = getattr(t, field_name)
-            # Mapping fields are stored as dict on TUNING; copy so callers
-            # that mutate the alias don't bleed into TUNING.
-            if isinstance(value, dict):
-                value = dict(value)
-            elif isinstance(value, frozenset):
-                value = frozenset(value)
-            setattr(mod, alias_name, value)
 
 
 def reset_tuning() -> None:
-    """Clear applied override and restore aliases to the singleton ``TUNING``."""
+    """Clear the applied override so :func:`get_tuning` returns ``TUNING``."""
     global _applied_tuning
-    _applied_tuning = None
-    apply_tuning(TUNING)
-    # apply_tuning sets _applied_tuning again; clear so get_tuning() == TUNING
-    # identity for tests that compare to the singleton.
     _applied_tuning = None
 
 

@@ -88,6 +88,17 @@ def run_candidate(
 
     log_path = run_dir / "backtest.log"
 
+    # Dry-run: skip the real harness (Phase 0 pipeline smoke / CI).
+    # Set LOOP_WORKER_DRY_RUN=1. Not a fitness baseline — synthetic metrics only.
+    if os.environ.get("LOOP_WORKER_DRY_RUN") == "1":
+        return _dry_run_result(
+            candidate_id=candidate_id,
+            sha=sha,
+            run_dir=run_dir,
+            started=started,
+            log_path=log_path,
+        )
+
     cmd = [
         sys.executable,
         ".scratch/backtest/run_backtest_v3.py",
@@ -178,6 +189,52 @@ def run_candidate(
         gen=-1,
         decision="accepted",
         metrics=exp,
+        fitness=fitness,
+        run_dir=str(run_dir),
+        elapsed_seconds=time.time() - started,
+    )
+
+
+def _dry_run_result(
+    *,
+    candidate_id: str,
+    sha: str,
+    run_dir: Path,
+    started: float,
+    log_path: Path,
+) -> CandidateResult:
+    """Synthetic metrics for pipeline smoke (LOOP_WORKER_DRY_RUN=1).
+
+    Deterministic-ish fitness from params_sha so Pareto still moves a little.
+    """
+    # Map last hex nibble → fitness in [0.5, 2.0]
+    nibble = int(sha[-1], 16) if sha and sha[-1] in "0123456789abcdef" else 8
+    fitness = 0.5 + (nibble / 15.0) * 1.5
+    trades = 30 + nibble
+    metrics = {
+        "trades_count": trades,
+        "sharpe": round(0.2 + nibble * 0.05, 4),
+        "calmar": round(0.5 + nibble * 0.1, 4),
+        "profit_factor": round(1.2 + nibble * 0.05, 4),
+        "by_regime": {
+            "bull": {"n": trades // 2, "sharpe": 0.3},
+            "bear": {"n": trades // 3, "sharpe": 0.1},
+            "range": {"n": max(1, trades // 6), "sharpe": 0.0},
+        },
+    }
+    summary = {
+        "__aggregate__": {"experimental": metrics},
+        "__meta__": {"fitness": {"experimental": fitness}, "dry_run": True},
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    log_path.write_text(f"dry_run candidate={candidate_id} sha={sha} fitness={fitness}\n")
+    return CandidateResult(
+        candidate_id=candidate_id,
+        params_sha=sha,
+        cluster="?",
+        gen=-1,
+        decision="accepted",
+        metrics=metrics,
         fitness=fitness,
         run_dir=str(run_dir),
         elapsed_seconds=time.time() - started,

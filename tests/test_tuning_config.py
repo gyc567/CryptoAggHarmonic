@@ -161,27 +161,23 @@ class TestHotSwap:
     def teardown_method(self):
         reset_tuning()
 
-    def test_apply_tuning_swaps_module_aliases(self):
-        import app.services.macro_bias as mb
+    def test_apply_tuning_sets_get_tuning_only(self):
+        """Path A: apply_tuning no longer mutates module-level aliases."""
         import app.services.signal_engine as se
 
+        frozen = se.A_GRADE_MIN
         t = dataclasses.replace(TUNING, a_grade_min=80, mult_extreme_inverse=1.4)
         apply_tuning(t)
-        assert se.A_GRADE_MIN == 80
-        assert mb._MULT_EXTREME_INVERSE == 1.4
-        # Path A: get_tuning must also see the applied candidate
         assert get_tuning().a_grade_min == 80
         assert get_tuning().mult_extreme_inverse == 1.4
+        # Legacy alias remains the import-time / last-snapshot value
+        assert se.A_GRADE_MIN == frozen
 
     def test_reset_tuning_reverts(self):
-        import app.services.signal_engine as se
-
         t = dataclasses.replace(TUNING, a_grade_min=80)
         apply_tuning(t)
-        assert se.A_GRADE_MIN == 80
         assert get_tuning().a_grade_min == 80
         reset_tuning()
-        assert se.A_GRADE_MIN == TUNING.a_grade_min
         assert get_tuning() is TUNING
         assert get_tuning().a_grade_min == TUNING.a_grade_min
 
@@ -198,18 +194,12 @@ class TestHotSwap:
         assert get_tuning() is TUNING
 
     def test_hot_path_reads_get_tuning_not_import_freeze(self):
-        """score path must honor apply_tuning even if aliases were frozen earlier.
-
-        Simulates the race: import-time AUTHENTICITY bindings must not control
-        live scoring after apply_tuning.
-        """
+        """score path must honor apply_tuning even if aliases were frozen earlier."""
         import app.services.signal_engine as se
 
         base_halve = TUNING.authenticity_halve
         apply_tuning(dataclasses.replace(TUNING, authenticity_halve=base_halve + 5))
-        # Module alias may still be refreshed by apply_tuning; get_tuning is the rule.
         assert get_tuning().authenticity_halve == base_halve + 5
-        # Hot path helpers consult get_tuning, not frozen imports
         assert se._pattern_base_score("unknown_xyz") == 0
         apply_tuning(
             dataclasses.replace(
@@ -227,10 +217,8 @@ class TestHotSwap:
         assert se._pattern_base_score("gartley-382-1") == 99
         reset_tuning()
 
-    def test_dict_field_passed_by_value(self):
-        """Mutating the alias dict shouldn't bleed into TUNING."""
-        import app.services.signal_engine as se
-
+    def test_apply_tuning_does_not_mutate_singleton(self):
+        """Applied candidate is process-local; TUNING singleton stays clean."""
         apply_tuning(
             dataclasses.replace(
                 TUNING,
@@ -244,11 +232,9 @@ class TestHotSwap:
                 },
             )
         )
-        se.PATTERN_BASE_SCORE["bat"] = 42
-        # TUNING must be unchanged.
+        assert get_tuning().pattern_base_score["gartley"] == 99
         assert TUNING.pattern_base_score["bat"] == 2
-        # Live get_tuning copy is independent of alias mutation
-        assert get_tuning().pattern_base_score["bat"] == 0
+        reset_tuning()
 
 
 # --- Cluster map -------------------------------------------------------------
