@@ -78,9 +78,53 @@ def check_gate_yaml() -> dict:
         with open(gate) as f:
             cfg = yaml.safe_load(f) or {}
         has_keys = all(k in cfg for k in ("denylist", "auto_merge_allowlist", "loop_paused"))
-        return {"name": "gate.yaml valid", "passed": has_keys, "details": str(gate)}
+        denylist = cfg.get("denylist") or []
+        has_tuning_gate = any("tuning.py" in str(p) for p in denylist)
+        return {
+            "name": "gate.yaml valid",
+            "passed": has_keys and has_tuning_gate,
+            "details": str(gate) if has_tuning_gate else "missing app/config/tuning.py denylist",
+        }
     except Exception as e:
         return {"name": "gate.yaml valid", "passed": False, "details": str(e)}
+
+
+def check_budget_defaults_enforced() -> dict:
+    """Operational: search loop budget defaults match loop-budget.md."""
+    search_py = Path("app/loop/search.py")
+    if not search_py.exists():
+        return {"name": "budget_defaults", "passed": False, "details": "app/loop/search.py missing"}
+    text = search_py.read_text()
+    ok = "DEFAULT_WEEKLY_BUDGET_USD = 25" in text and "DEFAULT_DOLLARS_PER_CPU_SECOND = 0.0001" in text
+    return {
+        "name": "budget_defaults",
+        "passed": ok,
+        "details": "weekly=25 cpu=0.0001" if ok else "defaults not aligned with loop-budget.md",
+    }
+
+
+def check_strategy_version_module() -> dict:
+    """Operational: strategy_version (not skills_version) is the live module."""
+    new = Path("app/loop/strategy_version.py").exists()
+    old = Path("app/loop/skills_version.py").exists()
+    return {
+        "name": "strategy_version_module",
+        "passed": new and not old,
+        "details": "app/loop/strategy_version.py" if new and not old else "rename incomplete",
+    }
+
+
+def check_pending_issues_writer() -> dict:
+    """Operational: state.write_pending_issue exists for outerloop."""
+    state_py = Path("app/loop/state.py")
+    if not state_py.exists():
+        return {"name": "pending_issues_writer", "passed": False, "details": "state.py missing"}
+    ok = "def write_pending_issue" in state_py.read_text()
+    return {
+        "name": "pending_issues_writer",
+        "passed": ok,
+        "details": "write_pending_issue" if ok else "writer missing",
+    }
 
 
 def check_memory_tiers() -> list[dict]:
@@ -151,13 +195,17 @@ DIMENSIONS: list[Dimension] = [
     Dimension("Token Budget", 10, [
         check_file_exists(Path("docs/loop-state/loop-budget.md")),
         check_gate_yaml(),
+        check_budget_defaults_enforced(),
     ]),
     Dimension("Gate.yaml", 10, [
         check_gate_yaml(),
+        check_file_exists(Path("app/loop/tuning_promotion.py")),
     ]),
     Dimension("CLI Tools", 10, [
         check_file_exists(Path("loop/loop.py")),
         check_file_exists(Path("loop/loop_gate.py")),
+        check_strategy_version_module(),
+        check_pending_issues_writer(),
     ]),
     Dimension("ADR", 10, [
         check_file_exists(Path("docs/adr/0003-loop-engineering-integration.md")),

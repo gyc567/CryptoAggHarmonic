@@ -278,6 +278,30 @@ class TestCheckSafety:
             "weekly_budget",
             "cluster_exists",
         }
+        # Defaults must match docs/loop-state/loop-budget.md
+        assert cfg.weekly_budget_usd == 25.0
+        assert cfg.dollars_per_cpu_second == 0.0001
+
+    def test_over_budget_fails(self):
+        cfg = GenerationConfig(
+            gen=1,
+            parent_sha="abc",
+            parent=TUNING,
+            cluster="C1 Geometry",
+            weekly_budget_usd=25.0,
+            lambda_=10,
+        )
+        checks = check_safety(cfg, weekly_spend_usd=24.99)
+        budget = next(c for c in checks if c.name == "weekly_budget")
+        assert not budget.ok
+
+    def test_disable_loop_budget_env(self, monkeypatch):
+        from app.loop.search import budget_defaults
+
+        monkeypatch.setenv("DISABLE_LOOP_BUDGET", "1")
+        assert budget_defaults() == (0.0, 0.0)
+        monkeypatch.delenv("DISABLE_LOOP_BUDGET", raising=False)
+        assert budget_defaults() == (25.0, 0.0001)
 
     def test_too_many_mutations_fails(self):
         cfg = GenerationConfig(

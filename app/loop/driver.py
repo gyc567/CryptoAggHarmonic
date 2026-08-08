@@ -45,7 +45,7 @@ from app.loop.pareto import (
 from app.loop.pareto import (
     save as pareto_save,
 )
-from app.loop.skills_version import current_version
+from app.loop.strategy_version import current_version
 from app.loop.worker import CandidateResult, run_candidate
 
 logger = logging.getLogger("app.loop.driver")
@@ -177,7 +177,7 @@ def main():
     pareto_path = state_root / "PARETO.json"
     pareto = pareto_load(pareto_path)
 
-    skills_version = current_version()
+    strategy_version = current_version()
 
     accepted_count = 0
     rejected_count = 0
@@ -197,7 +197,7 @@ def main():
             verdict = check_candidate(r, parent_metrics=None)
 
         # Append to HISTORY regardless of decision. Tag every record
-        # with the skills_version so we can detect stale decisions.
+        # with strategy_version so we can detect stale decisions.
         state.append_history(
             {
                 "ts": time.time(),
@@ -217,10 +217,30 @@ def main():
                     "reasons": verdict.reasons,
                     "flags": verdict.flags,
                 },
-                "skills_version": skills_version,
+                "strategy_version": strategy_version,
             },
             root=state_root,
         )
+
+        # Outerloop: escalate suspicious_to_human without calling gh.
+        if getattr(verdict, "decision", None) == "suspicious_to_human":
+            state.write_pending_issue(
+                {
+                    "candidate_id": r.candidate_id,
+                    "params_sha": r.params_sha,
+                    "decision": "suspicious_to_human",
+                    "fitness": r.fitness,
+                    "gen": gen,
+                    "cluster": cluster,
+                    "verdict": {
+                        "decision": verdict.decision,
+                        "confidence": verdict.confidence,
+                        "reasons": list(getattr(verdict, "reasons", []) or []),
+                        "flags": list(getattr(verdict, "flags", []) or []),
+                    },
+                },
+                root=state_root,
+            )
 
         if r.decision == "accepted":
             accepted_count += 1
@@ -284,7 +304,7 @@ def main():
                 f"cluster: {cluster}",
                 f"symbol_set: {symbol_set}",
                 f"quarter: {quarter or 'full'}",
-                f"skills_version: {skills_version}",
+                f"strategy_version: {strategy_version}",
             ],
         ),
         root=state_root,

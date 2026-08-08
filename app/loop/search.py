@@ -20,10 +20,10 @@ Safety rails (plan §3.4):
 * ``max_diff_per_gen`` — at most N fields mutated per generation (we
   default to 1 — "mutate one cluster per generation").
 * ``weekly_budget_usd`` — rough cost ceiling. Cost per candidate is
-  estimated from elapsed_seconds × dollars_per_cpu_second (default $0).
-  We default ``dollars_per_cpu_second=0`` because the v3 harness runs
-  locally on the developer's CPU; the budget check is a no-op unless
-  the operator sets a positive value.
+  estimated from elapsed_seconds × dollars_per_cpu_second.
+  Defaults match ``docs/loop-state/loop-budget.md`` ($25/week,
+  $0.0001/cpu-second). Set ``DISABLE_LOOP_BUDGET=1`` to disable
+  (local dev only).
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import random
 import time
 from dataclasses import dataclass, field
@@ -52,6 +53,20 @@ from app.loop.sensitivity import (
 
 logger = logging.getLogger("app.loop.search")
 
+# Aligned with docs/loop-state/loop-budget.md (ADR-0003 D4).
+DEFAULT_WEEKLY_BUDGET_USD = 25.0
+DEFAULT_DOLLARS_PER_CPU_SECOND = 0.0001
+
+
+def budget_defaults() -> tuple[float, float]:
+    """Return (weekly_budget_usd, dollars_per_cpu_second).
+
+    Honours ``DISABLE_LOOP_BUDGET=1`` for local development.
+    """
+    if os.environ.get("DISABLE_LOOP_BUDGET") == "1":
+        return 0.0, 0.0
+    return DEFAULT_WEEKLY_BUDGET_USD, DEFAULT_DOLLARS_PER_CPU_SECOND
+
 
 @dataclass
 class GenerationConfig:
@@ -65,8 +80,8 @@ class GenerationConfig:
     sigma_scale: float = 1.0
     n_mutations: int = 1
     timeout_seconds: int = 900
-    weekly_budget_usd: float = 0.0
-    dollars_per_cpu_second: float = 0.0
+    weekly_budget_usd: float = DEFAULT_WEEKLY_BUDGET_USD
+    dollars_per_cpu_second: float = DEFAULT_DOLLARS_PER_CPU_SECOND
 
     def estimate_cost(self, elapsed_seconds: float) -> float:
         return elapsed_seconds * self.dollars_per_cpu_second
@@ -289,8 +304,19 @@ def main():
     p.add_argument("--n-mutations", type=int, default=1)
     p.add_argument("--sensitivity", default=None, help="Optional sensitivity.json for per-field σ scaling")
     p.add_argument("--timeout", type=int, default=900)
-    p.add_argument("--weekly-budget", type=float, default=0.0)
-    p.add_argument("--dollars-per-cpu-second", type=float, default=0.0)
+    default_budget, default_cpu = budget_defaults()
+    p.add_argument(
+        "--weekly-budget",
+        type=float,
+        default=default_budget,
+        help=f"Weekly USD ceiling (default {default_budget}; DISABLE_LOOP_BUDGET=1 → 0)",
+    )
+    p.add_argument(
+        "--dollars-per-cpu-second",
+        type=float,
+        default=default_cpu,
+        help=f"CPU cost rate (default {default_cpu})",
+    )
     p.add_argument("--quarter", default=None)
     p.add_argument("--seed", type=int, default=None)
     args = p.parse_args()

@@ -34,7 +34,7 @@ from app.loop.pareto import (
 class TestEnsureRoot:
     def test_creates_subdirectories(self, tmp_path):
         root = state.ensure_root(tmp_path)
-        for sub in ("runs", "tuning_snapshots", "REJECTED", "archive"):
+        for sub in ("runs", "tuning_snapshots", "REJECTED", "archive", "pending_issues", "outbox"):
             assert (root / sub).is_dir()
 
     def test_idempotent(self, tmp_path):
@@ -283,3 +283,34 @@ class TestFromMetrics:
         assert p.sharpe == 0.4
         assert p.trade_count == 35
         assert p.worst_regime_sharpe == pytest.approx(-0.1)
+
+
+class TestWritePendingIssue:
+    def test_writes_json_under_pending_issues(self, tmp_path):
+        path = state.write_pending_issue(
+            {
+                "uuid": "abc123deadbeef",
+                "candidate_id": "gen1-001",
+                "params_sha": "deadbeefcafe",
+                "decision": "suspicious_to_human",
+                "fitness": 0.42,
+            },
+            root=tmp_path,
+        )
+        assert path.exists()
+        assert path.parent.name == "pending_issues"
+        data = json.loads(path.read_text())
+        assert data["uuid"] == "abc123deadbeef"
+        assert data["candidate_id"] == "gen1-001"
+        assert data["decision"] == "suspicious_to_human"
+        assert data["fitness"] == 0.42
+        assert "created_at" in data
+
+    def test_auto_uuid_when_missing(self, tmp_path):
+        path = state.write_pending_issue(
+            {"candidate_id": "x", "decision": "suspicious_to_human"},
+            root=tmp_path,
+        )
+        data = json.loads(path.read_text())
+        assert data["uuid"]
+        assert path.name == f"{data['uuid']}.json"

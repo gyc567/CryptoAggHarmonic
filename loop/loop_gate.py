@@ -53,6 +53,17 @@ def check_path(path: str) -> tuple[bool, str]:
         return False, "loop_paused=true in gate.yaml"
 
     path_str = str(path)
+    # Hard rule: live TUNING is never auto-promotable (ADR-0003 D9).
+    try:
+        from app.loop.tuning_promotion import promotion_allowed_for_files
+
+        ok, reason = promotion_allowed_for_files([path_str])
+        if not ok:
+            return False, reason
+    except ImportError:
+        # CLI-only checkout without app/ package — fall through to denylist.
+        pass
+
     for pattern in cfg.get("always_exclude", []):
         if fnmatch.fnmatch(path_str, pattern):
             return False, f"always_exclude: {pattern}"

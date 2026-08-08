@@ -47,9 +47,33 @@ DEFAULT_ROOT = Path(os.environ.get("LOOP_STATE_ROOT", ".scratch/loop_state"))
 def ensure_root(root: Optional[Path] = None) -> Path:
     """Create the loop_state directory tree if missing. Returns the root."""
     root = Path(root) if root else DEFAULT_ROOT
-    for sub in ("runs", "tuning_snapshots", "REJECTED", "archive"):
+    for sub in ("runs", "tuning_snapshots", "REJECTED", "archive", "pending_issues", "outbox"):
         (root / sub).mkdir(parents=True, exist_ok=True)
     return root
+
+
+def write_pending_issue(
+    record: dict[str, Any],
+    root: Optional[Path] = None,
+) -> Path:
+    """Write a ``suspicious_to_human`` payload for issue-sync (outerloop).
+
+    Does **not** call ``gh`` — CI/local operators sync via
+    ``.github/workflows/issue-sync.yml`` or manual review of
+    ``pending_issues/*.json``.
+    """
+    root = ensure_root(root)
+    dest_dir = root / "pending_issues"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    issue_id = record.get("uuid") or uuid.uuid4().hex
+    path = dest_dir / f"{issue_id}.json"
+    payload = {
+        "uuid": issue_id,
+        "created_at": record.get("created_at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        **{k: v for k, v in record.items() if k not in ("uuid", "created_at")},
+    }
+    atomic_write_json(path, payload)
+    return path
 
 
 def params_sha(t: TuningConstants) -> str:

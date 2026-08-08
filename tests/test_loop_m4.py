@@ -1,4 +1,4 @@
-"""Tests for M4 — adaptive heartbeat + checker + skills versioning.
+"""Tests for M4 — adaptive heartbeat + checker + strategy versioning.
 
 These tests use no subprocess / no real harness; they exercise the
 scheduling / checking / hashing logic in isolation.
@@ -24,9 +24,10 @@ from app.loop.scheduler import (
     next_wake_at,
     plateau_count_from_history,
 )
-from app.loop.skills_version import (
+from app.loop.strategy_version import (
     current_version,
     is_outdated,
+    read_recorded_version,
     save_version,
 )
 from app.loop.worker import CandidateResult
@@ -269,10 +270,10 @@ class TestCheckCandidate:
         assert any("fitness_gain_trade_drop" in f for f in v.flags)
 
 
-# --- skills_version.py -------------------------------------------------------
+# --- strategy_version.py -------------------------------------------------------
 
 
-class TestSkillsVersion:
+class TestStrategyVersion:
     def test_current_version_is_stable(self):
         v1 = current_version()
         v2 = current_version()
@@ -286,16 +287,22 @@ class TestSkillsVersion:
 
     def test_save_version_creates_file(self, tmp_path, monkeypatch):
         # Patch DEFAULT_ROOT in BOTH modules since each captured a ref.
-        from app.loop import skills_version as sv_mod
         from app.loop import state as state_mod
+        from app.loop import strategy_version as sv_mod
 
         monkeypatch.setattr(state_mod, "DEFAULT_ROOT", tmp_path)
         monkeypatch.setattr(sv_mod, "DEFAULT_ROOT", tmp_path)
         v = save_version(repo_root=Path("/tmp"))  # doesn't matter — files missing
-        saved = json.loads((tmp_path / "skills_version.json").read_text())
+        saved = json.loads((tmp_path / "strategy_version.json").read_text())
         assert saved["version"] == v
         assert "ts" in saved
 
     def test_is_outdated(self):
         assert is_outdated("abc", "xyz")
         assert not is_outdated("abc", "abc")
+
+    def test_read_recorded_version_compat(self):
+        assert read_recorded_version({"strategy_version": "new"}) == "new"
+        assert read_recorded_version({"skills_version": "old"}) == "old"
+        assert read_recorded_version({"strategy_version": "new", "skills_version": "old"}) == "new"
+        assert read_recorded_version({}) is None
