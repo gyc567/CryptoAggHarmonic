@@ -13,6 +13,8 @@ denylist:
   - ".scratch/"
   - "*.egg-info/"
   - ".venv/"
+  # Live TUNING promotion must go through human PR + SIGHUP, never auto-merge
+  - "app/config/tuning.py"
 
 # Patterns that are ALWAYS excluded (safety net)
 always_exclude:

@@ -6,15 +6,23 @@ on:
     - cron: "0 9 * * 1-5"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
 jobs:
   triage:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
             docs/loop-state
             docs/agents
+            loop
 
       - name: Set up Python
         uses: actions/setup-python@v5

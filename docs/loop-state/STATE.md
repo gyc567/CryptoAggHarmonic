@@ -7,10 +7,14 @@
 
 <!-- 由循环自动填充 -->
 
+- [x] 2026-08-08: GitHub Issues **enabled** on `gyc567/pyharmonics-gpt` (smoke #1 closed)
+- [x] 2026-08-08: Triage + loop labels created (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `maker-checker`, `release-prep`, `code-health`, `dependencies`, `automated`, `loop`)
+
 ## Watch List
 
 <!-- 由循环自动填充 -->
 
+- Fix remaining loop config honesty gaps: budget defaults, TUNING promotion gate, pending_issues write path (see open Issues)
 - Expand contributor failure stories (dependency sweeper, multi-loop)
 - Collect a production story for Post-Merge Cleanup
 - Validate `loop-init` scaffolds on fresh projects across all patterns

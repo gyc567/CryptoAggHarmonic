@@ -5,10 +5,18 @@ on:
     workflow: CI
     types: [completed]
 
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
 jobs:
   sweep:
     if: github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 

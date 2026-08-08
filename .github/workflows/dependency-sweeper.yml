@@ -11,9 +11,15 @@ on:
         required: false
         default: 'true'
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   sweep:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 

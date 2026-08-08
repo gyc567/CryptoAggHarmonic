@@ -13,9 +13,15 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   changelog:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
