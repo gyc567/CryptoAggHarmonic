@@ -8,21 +8,14 @@ from typing import Any
 
 from flask import jsonify, request
 
-from app.domain.enums import ErrorCode
-from app.infra.supabase_client import (
-    reserve_user_quota,
-    verify_user_token,
-)
-
-logger = logging.getLogger(__name__)
-
-
 def get_auth_token() -> str | None:
     """Extract Bearer token from Authorization header or query param.
 
-    Query-param fallback supports EventSource which cannot set headers.
-    Returns:
-        Token string or None.
+    Query-param fallback supports EventSource (SSE) streams which cannot set
+    custom headers.  The returned token is still validated by
+    ``verify_user_token()`` in ``require_auth``, so the ``user_id`` injected
+    into route handlers is always authenticated — quota tracking is therefore
+    unaffected by whether the token arrived via header or query param.
     """
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):

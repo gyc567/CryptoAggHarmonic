@@ -20,6 +20,7 @@ GATE_FILE = Path("docs/loop-state/gate.yaml")
 def load_gate_config() -> dict[str, Any]:
     """Load gate.yaml, returning a dict with defaults for missing keys."""
     import yaml  # lazy import to avoid hard dep
+    import logging
 
     defaults: dict[str, Any] = {
         "denylist": [],
@@ -31,8 +32,14 @@ def load_gate_config() -> dict[str, Any]:
     }
     if not GATE_FILE.exists():
         return defaults
-    with open(GATE_FILE) as f:
-        cfg = yaml.safe_load(f) or {}
+    try:
+        with open(GATE_FILE) as f:
+            cfg = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        logging.getLogger("loop.gate").warning(
+            "gate.yaml is not valid YAML (%s); using defaults", e
+        )
+        return defaults
     return {**defaults, **cfg}
 
 

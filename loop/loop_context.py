@@ -22,12 +22,11 @@ The file is append-only; we never mutate old lines.
 from __future__ import annotations
 
 import json
-import os
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 from loop.loop_gate import load_gate_config
 
 # ── config ────────────────────────────────────────────────────────────────────
@@ -44,18 +43,20 @@ MIN_AGE_HOURS = 24       # hours before promotion is considered
 # ── scratch store ─────────────────────────────────────────────────────────────
 
 _scratch: dict[str, tuple[str, float]] = {}   # key → (value, first_seen_ts)
+_scratch_lock = threading.Lock()
 
 
 def scratch_put(key: str, value: str) -> None:
     """Store or update a scratch entry with current timestamp."""
-    _scratch[key] = (value, time.time())
+    with _scratch_lock:
+        _scratch[key] = (value, time.time())
 
 
 def scratch_get(key: str) -> str | None:
     """Retrieve a scratch value, or None if not found."""
-    return _scratch.get(key, (None, None))[0]
-
-
+    with _scratch_lock:
+        val = _scratch.get(key)
+        return val[0] if val else None
 # ── promotion logic ───────────────────────────────────────────────────────────
 
 def should_promote(key: str, value: str, first_seen: float) -> bool:
@@ -87,23 +88,30 @@ def promote_all() -> int:
         EPISODIC_FILE.parent.mkdir(parents=True, exist_ok=True)
         EPISODIC_FILE.write_text("")
 
-    promoted = 0
+    # Collect eligible keys under lock, then promote outside the lock.
     to_delete: list[str] = []
+    with _scratch_lock:
+        for key, (value, first_seen) in list(_scratch.items()):
+            if should_promote(key, value, first_seen):
+                to_delete.append(key)
 
-    for key, (value, first_seen) in list(_scratch.items()):
-        if should_promote(key, value, first_seen):
-            record = {
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "key": key,
-                "value": value,
-            }
-            with EPISODIC_FILE.open("a") as fh:
-                fh.write(json.dumps(record) + "\n")
-            to_delete.append(key)
-            promoted += 1
-
+    promoted = 0
     for key in to_delete:
-        del _scratch[key]
+        with _scratch_lock:
+            _, first_seen = _scratch.get(key, (None, None))
+            if first_seen is None:
+                continue
+            value, _ = _scratch[key]
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "key": key,
+            "value": value,
+        }
+        with EPISODIC_FILE.open("a") as fh:
+            fh.write(json.dumps(record) + "\n")
+        with _scratch_lock:
+            del _scratch[key]
+        promoted += 1
 
     return promoted
 
@@ -113,18 +121,19 @@ def load_episodic(limit: int = 100) -> list[dict[str, Any]]:
     if not EPISODIC_FILE.exists():
         return []
     lines = EPISODIC_FILE.read_text().strip().splitlines()
-    records = [json.loads(l) for l in lines if l]
     return records[-limit:]
 
 
 def scratch_size() -> int:
     """Return current scratch entry count."""
-    return len(_scratch)
+    with _scratch_lock:
+        return len(_scratch)
 
 
 def clear_scratch() -> None:
     """Clear all scratch entries. Used by memory-budget enforcement."""
-    _scratch.clear()
+    with _scratch_lock:
+        _scratch.clear()
 
 
 # ── Durable Facts promotion ──────────────────────────────────────────────────

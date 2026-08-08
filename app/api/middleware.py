@@ -70,11 +70,29 @@ def register_error_handlers(app):
 
     @app.errorhandler(Exception)
     def handle_unexpected_error(error):
-        """Catch-all for unhandled exceptions."""
+        """Catch-all for unhandled exceptions.
+
+        Wrapped in an inner try so that if ``logger.exception`` or
+        ``jsonify`` itself throws, we fall back to a bare 500 instead of
+        recursively calling this same handler.
+        """
         req_id = str(uuid.uuid4())[:8]
-        logger.exception("Unexpected error: request_id=%s", req_id)
-        app_error = map_exception_to_error(error, req_id)
-        return jsonify(app_error.to_dict()), 500
+        try:
+            logger.exception("Unexpected error: request_id=%s", req_id)
+            app_error = map_exception_to_error(error, req_id)
+            return jsonify(app_error.to_dict()), 500
+        except Exception:
+            # Fallback: avoid recursion if logging or jsonify itself threw.
+            # The original error has already been logged above if possible.
+            return jsonify({
+                "success": False,
+                "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "Internal server error",
+                    "retryable": True,
+                    "request_id": req_id,
+                },
+            }), 500
 
 
 def _status_code_for_error(code: ErrorCode) -> int:
