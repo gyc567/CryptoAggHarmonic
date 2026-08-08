@@ -40,6 +40,7 @@ from app.config.tuning import (
     get_fib_tp1,
     get_fib_tp2,
     get_fib_tp3,
+    get_tuning,
 )
 
 # Backwards-compatible module-level aliases (frozen at import time).
@@ -397,7 +398,7 @@ def compute_targets(candidate: Candidate, entry: float) -> tuple:
     _fib_tp1 = get_fib_tp1()
     _fib_tp2 = get_fib_tp2()
     _fib_tp3 = get_fib_tp3()
-    _tp_close_pcts = TUNING.tp_close_pcts
+    _tp_close_pcts = get_tuning().tp_close_pcts
 
     a = candidate.a_price
     d = entry  # entry stands in for D (the completion point we trade from)
@@ -424,29 +425,38 @@ def compute_targets(candidate: Candidate, entry: float) -> tuple:
 # --- Net risk/reward ----------------------------------------------------------
 
 
+@require(lambda entry, stop, target, fee_rate=None, slippage_rate=None: entry > 0, "Entry price must be positive for risk/reward math")
+@require(lambda entry, stop, target, fee_rate=None, slippage_rate=None: stop > 0, "Stop price must be positive")
+@require(lambda entry, stop, target, fee_rate=None, slippage_rate=None: target > 0, "Target price must be positive")
 @require(
-    lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: entry > 0,
-    "Entry price must be positive for risk/reward math",
+    lambda entry, stop, target, fee_rate=None, slippage_rate=None: fee_rate is None or fee_rate >= 0,
+    "fee_rate must be non-negative",
 )
-@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: stop > 0, "Stop price must be positive")
-@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: target > 0, "Target price must be positive")
-@require(lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: fee_rate >= 0, "fee_rate must be non-negative")
 @require(
-    lambda entry, stop, target, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: slippage_rate >= 0,
+    lambda entry, stop, target, fee_rate=None, slippage_rate=None: slippage_rate is None or slippage_rate >= 0,
     "slippage_rate must be non-negative",
 )
 @ensure(
-    lambda entry, stop, target, result, fee_rate=FEE_RATE, slippage_rate=SLIPPAGE_RATE: result is None or result > 0,
+    lambda entry, stop, target, result, fee_rate=None, slippage_rate=None: result is None or result > 0,
     "net_rr returns None for degenerate geometry, otherwise a positive ratio",
 )
 def net_rr(
-    entry: float, stop: float, target: float, fee_rate: float = FEE_RATE, slippage_rate: float = SLIPPAGE_RATE
+    entry: float,
+    stop: float,
+    target: float,
+    fee_rate: float | None = None,
+    slippage_rate: float | None = None,
 ) -> float | None:
     """Risk/reward of one target, net of round-trip fees and slippage.
 
     Costs are approximated as (fee + slippage) on both entry and exit notional.
     Returns None when the setup has no positive risk (degenerate geometry).
     """
+    t = get_tuning()
+    if fee_rate is None:
+        fee_rate = t.fee_rate
+    if slippage_rate is None:
+        slippage_rate = t.slippage_rate
     risk = abs(entry - stop)
     if risk <= 0 or entry <= 0:
         return None

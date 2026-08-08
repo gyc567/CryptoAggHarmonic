@@ -19,6 +19,7 @@ from app.config.tuning import (
     apply_tuning,
     clusters,
     from_dict,
+    get_tuning,
     reset_tuning,
     to_dict,
 )
@@ -168,6 +169,9 @@ class TestHotSwap:
         apply_tuning(t)
         assert se.A_GRADE_MIN == 80
         assert mb._MULT_EXTREME_INVERSE == 1.4
+        # Path A: get_tuning must also see the applied candidate
+        assert get_tuning().a_grade_min == 80
+        assert get_tuning().mult_extreme_inverse == 1.4
 
     def test_reset_tuning_reverts(self):
         import app.services.signal_engine as se
@@ -175,16 +179,53 @@ class TestHotSwap:
         t = dataclasses.replace(TUNING, a_grade_min=80)
         apply_tuning(t)
         assert se.A_GRADE_MIN == 80
+        assert get_tuning().a_grade_min == 80
         reset_tuning()
         assert se.A_GRADE_MIN == TUNING.a_grade_min
+        assert get_tuning() is TUNING
+        assert get_tuning().a_grade_min == TUNING.a_grade_min
 
     def test_tuning_scope_context_manager(self):
-        """Skip: TuningScope affects get_tuning(), not module-level aliases.
-        
-        The module-level alias A_GRADE_MIN is set at import time and is not
-        affected by TuningScope. This test checks the wrong behavior.
+        """TuningScope overrides get_tuning(); exits restore applied/singleton."""
+        applied = dataclasses.replace(TUNING, a_grade_min=80)
+        scoped = dataclasses.replace(TUNING, a_grade_min=90)
+        apply_tuning(applied)
+        assert get_tuning().a_grade_min == 80
+        with TuningScope(scoped):
+            assert get_tuning().a_grade_min == 90
+        assert get_tuning().a_grade_min == 80
+        reset_tuning()
+        assert get_tuning() is TUNING
+
+    def test_hot_path_reads_get_tuning_not_import_freeze(self):
+        """score path must honor apply_tuning even if aliases were frozen earlier.
+
+        Simulates the race: import-time AUTHENTICITY bindings must not control
+        live scoring after apply_tuning.
         """
-        pytest.skip("TuningScope affects get_tuning(), not module-level aliases")
+        import app.services.signal_engine as se
+
+        base_halve = TUNING.authenticity_halve
+        apply_tuning(dataclasses.replace(TUNING, authenticity_halve=base_halve + 5))
+        # Module alias may still be refreshed by apply_tuning; get_tuning is the rule.
+        assert get_tuning().authenticity_halve == base_halve + 5
+        # Hot path helpers consult get_tuning, not frozen imports
+        assert se._pattern_base_score("unknown_xyz") == 0
+        apply_tuning(
+            dataclasses.replace(
+                TUNING,
+                pattern_base_score={
+                    "gartley": 99,
+                    "bat": 0,
+                    "butterfly": 0,
+                    "crab": 0,
+                    "deep crab": 0,
+                    "shark": 0,
+                },
+            )
+        )
+        assert se._pattern_base_score("gartley-382-1") == 99
+        reset_tuning()
 
     def test_dict_field_passed_by_value(self):
         """Mutating the alias dict shouldn't bleed into TUNING."""
@@ -206,6 +247,8 @@ class TestHotSwap:
         se.PATTERN_BASE_SCORE["bat"] = 42
         # TUNING must be unchanged.
         assert TUNING.pattern_base_score["bat"] == 2
+        # Live get_tuning copy is independent of alias mutation
+        assert get_tuning().pattern_base_score["bat"] == 0
 
 
 # --- Cluster map -------------------------------------------------------------

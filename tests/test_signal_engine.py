@@ -409,7 +409,11 @@ class TestConfluenceScore:
         cand = gartley_candidate()
         atr = compute_atr(df)
         rsi = compute_rsi(df["close"])
-        divs = {"rsi": [{"bullish": True}], "macd": [{"bullish": True}]}
+        # name="Regular" is required for the Regular-divergence branch (v5).
+        divs = {
+            "rsi": [{"name": "Regular", "bullish": True}],
+            "macd": [{"name": "Regular", "bullish": True}],
+        }
         score, factors = confluence_score(df, cand, atr, rsi, "bullish", divs)
         assert factors["price_action"] == 25
         assert factors["htf_trend"] == 25
@@ -425,7 +429,8 @@ class TestConfluenceScore:
         score, factors = confluence_score(df, cand, atr, 50.0, "bearish", {})
         assert factors["price_action"] == 0
         assert factors["htf_trend"] == 0
-        assert factors["rsi"] == 0
+        # RSI=50 on bullish candidate is mid-zone (+2); no div / no htf.
+        assert factors["rsi"] == 2
         assert factors["macd"] == 0
 
     def test_unknown_trend_partial(self):
@@ -440,10 +445,12 @@ class TestConfluenceScore:
         cand = gartley_candidate()
         atr = compute_atr(df)
         _, f_bull = confluence_score(df, cand, atr, 40.0, "unknown", {})
-        assert f_bull["rsi"] == 4
+        # RSI<=40 bullish zone = +5; no rsi_series → no rising bonus
+        assert f_bull["rsi"] == 5
         bear_cand = gartley_candidate(bullish=False)
         _, f_bear = confluence_score(df, bear_cand, atr, 60.0, "unknown", {})
-        assert f_bear["rsi"] == 4
+        # RSI>=60 bearish zone = +5; empty series ⇒ not rising ⇒ +3 trend bonus
+        assert f_bear["rsi"] == 8
 
     def test_rsi_extreme_zone(self):
         df = make_df([100.0 + i * 0.1 for i in range(100)])
@@ -868,8 +875,10 @@ class TestV2EngineAmendments:
         cand = gartley_candidate(bullish=True)
         atr = compute_atr(df)
         rsi = compute_rsi(df["close"])
-        # Bearish divergence on a bullish candidate must subtract 5.
-        divs = {"rsi": [{"bullish": False}]}
+        # Hidden bullish-False on a bullish candidate is reverse momentum → -5.
+        # (Flat series RSI~50 contributes mid-zone +2, so net -3 if Regular reverse;
+        # use Hidden name to isolate the -5 branch without Regular +8.)
+        divs = {"rsi": [{"name": "Hidden", "bullish": True}]}
         _score, factors = confluence_score(
             df,
             cand,
@@ -878,9 +887,10 @@ class TestV2EngineAmendments:
             "unknown",
             divs,
         )
-        assert factors["rsi"] == -5
+        # mid-zone (+2) + Hidden reverse (-5) = -3
+        assert factors["rsi"] == -3
 
-        # Same divergence on a bearish candidate is aligned (not penalised).
+        # Same Hidden bullish div on a bearish candidate is not the reverse branch.
         bear_cand = gartley_candidate(bullish=False)
         _score, factors_bear = confluence_score(
             df,

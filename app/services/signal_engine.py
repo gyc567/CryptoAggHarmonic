@@ -27,9 +27,8 @@ from typing import Any, NamedTuple, Optional
 import pandas as pd
 from icontract import require
 
-from app.config.tuning import TUNING
+from app.config.tuning import TUNING, get_tuning
 from app.domain.signals import (
-    ATR_PRZ_SWEEP,
     Candidate,
     Signal,
     compute_stop,
@@ -41,8 +40,6 @@ from app.domain.signals import (
     reasoning_from_signal,
 )
 from app.domain.validation import (
-    AUTHENTICITY_HALVE,
-    AUTHENTICITY_VETO,
     adverse_momentum_veto,
     direction_invariant_ok,
     filter_candidates,
@@ -57,33 +54,20 @@ from app.domain.validation import (
 
 logger = logging.getLogger(__name__)
 
-# Backwards-compat aliases — values live in TUNING.
+# Legacy module-level aliases (import-time snapshots). Hot paths use
+# ``get_tuning()``; ``apply_tuning`` still refreshes these for tests.
 
 ATR_WINDOW = TUNING.atr_window
 ATR_LONG_WINDOW = TUNING.atr_long_window
 RSI_WINDOW = TUNING.rsi_window
 VOLUME_MA_WINDOW = TUNING.volume_ma_window
 SWING_LOOKBACK = TUNING.swing_lookback
-
-# Resample map: current interval -> higher timeframe rule for trend filter.
 HTF_RULE = dict(TUNING.htf_rule)
-
 MIN_CANDLES = TUNING.min_candles
-
 A_GRADE_MIN = TUNING.a_grade_min
 A_GRADE_MIN_HIGH_QUANT = TUNING.a_grade_min_high_quant
 HIGH_QUANT_POSITION_MULT = TUNING.high_quant_position_mult
-
-# Pattern names considered identical across sub-windows (pyharmonics suffixes
-# like "gartley-382-1" are normalized by prefix matching).
 _STABILITY_WINDOW = TUNING.stability_window
-
-
-# Q4: Pattern-reliability weighting. Empirically observed win rates from the
-# BTC/ETH/BNB 4H backtest documented in docs/. Gartley wins most often so it
-# gets a positive bump; Crab/DeepCrab lose so they get a penalty. The lookup
-# is keyed on the lowercase pattern family name (the prefix before any
-# pyharmonics numeric suffix). Unknown patterns get 0.
 PATTERN_BASE_SCORE: dict[str, int] = dict(TUNING.pattern_base_score)
 
 
@@ -91,12 +75,12 @@ def _pattern_base_score(pattern_name: str) -> int:
     """Look up the Q4 reliability bump for a pattern name.
 
     Matches on the family prefix so ``"gartley-382-1"`` still resolves to
-    ``+5``. Returns ``0`` for unknown families.
+    ``+5``. Returns ``0`` for unknown families. Reads live tuning (Path A).
     """
     if not pattern_name:
         return 0
     name = pattern_name.lower()
-    for family, bump in PATTERN_BASE_SCORE.items():
+    for family, bump in get_tuning().pattern_base_score.items():
         if name.startswith(family):
             return bump
     return 0
@@ -234,12 +218,16 @@ def _extract_times(pattern: Any, close_times: Optional[Sequence]) -> tuple[tuple
     return tuple(mapped), indices_tuple
 
 
-def compute_atr(df: pd.DataFrame, window: int = ATR_WINDOW) -> float:
+def compute_atr(df: pd.DataFrame, window: int | None = None) -> float:
     """Robust ATR: min of the short-window and long-window means.
 
     A long lookback desensitizes the value to a recent crash/candle burst,
     which would otherwise inflate every ATR-derived buffer.
     """
+    t = get_tuning()
+    if window is None:
+        window = t.atr_window
+    long_window = t.atr_long_window
 
     @require(lambda df: len(df) >= 2, "df must have at least 2 bars")
     @require(lambda window: window >= 1, "window must be >= 1")
@@ -258,12 +246,14 @@ def compute_atr(df: pd.DataFrame, window: int = ATR_WINDOW) -> float:
     atr_short = tr.rolling(window).mean().iloc[-1]
     if pd.isna(atr_short):
         return float(high.tail(window).max() - low.tail(window).min()) / window
-    atr_long = tr.tail(ATR_LONG_WINDOW).mean()
+    atr_long = tr.tail(long_window).mean()
     return float(min(atr_short, atr_long))
 
 
-def compute_rsi(closes: pd.Series, window: int = RSI_WINDOW) -> float:
+def compute_rsi(closes: pd.Series, window: int | None = None) -> float:
     """Wilder RSI of the latest close."""
+    if window is None:
+        window = get_tuning().rsi_window
 
     @require(lambda window: window >= 1, "window must be >= 1")
     @require(lambda closes: len(closes) >= 0, "closes must be a pd.Series")
@@ -292,7 +282,7 @@ def htf_trend(df: pd.DataFrame, interval: str) -> str:
 
     _check(interval=interval)
 
-    rule = HTF_RULE.get(interval)
+    rule = get_tuning().htf_rule.get(interval)
     if rule is None or "dts" not in df.columns:
         return "unknown"
     closes = df.set_index("dts")["close"].resample(rule).last().dropna()
@@ -327,7 +317,11 @@ def _rsi_zone_score(rsi: float, bullish: bool, rsi_series: pd.Series) -> float:
     """
     score = 0
     rsi_recent = rsi_series.tail(5).values if rsi_series is not None and len(rsi_series) >= 2 else []
-    rsi_rising = len(rsi_recent) >= 2 and rsi_recent[-1] > rsi_recent[0]
+    # Guard pd.NA: ewm RSI can leave trailing NA; `bool(NA)` raises TypeError.
+    if len(rsi_recent) >= 2 and pd.notna(rsi_recent[-1]) and pd.notna(rsi_recent[0]):
+        rsi_rising = bool(rsi_recent[-1] > rsi_recent[0])
+    else:
+        rsi_rising = False
 
     if bullish:
         if rsi <= 30:
@@ -399,7 +393,7 @@ def confluence_score(
     pa = 0.0
     if _is_reversal_candle(last, candidate.bullish):
         pa += 15.0
-        vol_ma = df["volume"].tail(VOLUME_MA_WINDOW).mean()
+        vol_ma = df["volume"].tail(get_tuning().volume_ma_window).mean()
         if vol_ma > 0 and last["volume"] >= 1.5 * vol_ma:
             pa += 10.0
     factors["price_action"] = pa * pa_scale
@@ -440,10 +434,11 @@ def confluence_score(
     factors["rsi"] = rsi_score
 
     # --- Structure: PRZ overlaps a recent swing low/high ---
-    tail = df["low"].tail(SWING_LOOKBACK) if candidate.bullish else df["high"].tail(SWING_LOOKBACK)
+    lookback = get_tuning().swing_lookback
+    tail = df["low"].tail(lookback) if candidate.bullish else df["high"].tail(lookback)
     swing = tail.min() if candidate.bullish else tail.max()
     mid = (candidate.prz_low + candidate.prz_high) / 2
-    factors["structure"] = 15 if abs(mid - swing) <= ATR_PRZ_SWEEP * atr else 0
+    factors["structure"] = 15 if abs(mid - swing) <= get_tuning().atr_prz_sweep * atr else 0
 
     # --- MACD: Regular/Hidden divergence + zero-line filter + histogram momentum ---
     macd_divs = div_families.get("macd", [])
@@ -570,12 +565,13 @@ def _prepare_score_context(
     """Compute shared data-level metrics. Returns None if a hard gate fires.
 
     Volume authenticity is computed here but the GATE is per-candidate
-    (Q6 amendment): formed patterns use the strict ``AUTHENTICITY_VETO``
-    threshold, forming patterns use the looser ``AUTHENTICITY_HALVE``
+    (Q6 amendment): formed patterns use the strict authenticity_veto
+    threshold, forming patterns use the looser authenticity_halve
     because forming patterns haven't yet had their confirming volume spike.
     """
+    t = get_tuning()
     auth = volume_authenticity(df)
-    pa_scale = 0.5 if auth < AUTHENTICITY_HALVE else 1.0
+    pa_scale = 0.5 if auth < t.authenticity_halve else 1.0
 
     atr = compute_atr(df)
     if atr <= 0:
@@ -584,16 +580,17 @@ def _prepare_score_context(
     trend = htf_trend(df, interval)
     sharpe = per_bar_sharpe(df["close"])
     regime_score, regime = quant_regime(df)
-    a_min = A_GRADE_MIN_HIGH_QUANT if regime == "high_quant" else A_GRADE_MIN
-    regime_mult = HIGH_QUANT_POSITION_MULT if regime == "high_quant" else 1.0
+    a_min = t.a_grade_min_high_quant if regime == "high_quant" else t.a_grade_min
+    regime_mult = t.high_quant_position_mult if regime == "high_quant" else 1.0
     price = float(df["close"].iloc[-1])
     position_mult = round(volatility_multiplier(atr, price) * regime_mult, 4)
 
     # --- RSI + MACD enhancement: compute full series (df has no "rsi" column) ---
     closes = df["close"]
     delta = closes.diff()
-    gain = delta.clip(lower=0).ewm(alpha=1 / RSI_WINDOW, adjust=False).mean()
-    loss = (-delta.clip(upper=0)).ewm(alpha=1 / RSI_WINDOW, adjust=False).mean()
+    rsi_w = t.rsi_window
+    gain = delta.clip(lower=0).ewm(alpha=1 / rsi_w, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / rsi_w, adjust=False).mean()
     rs = gain / loss.replace(0, pd.NA)
     rsi_series = 100 - 100 / (1 + rs)
 
@@ -645,7 +642,7 @@ def score_candidate(
     :class:`Signal` for survivors so callers can run their own ranking on
     the survivors.
 
-    Q4 + Q6: the raw confluence score is bumped by ``PATTERN_BASE_SCORE`` for
+    Q4 + Q6: the raw confluence score is bumped by pattern_base_score for
     the pattern family, and the grade gate additionally receives
     ``width_pct`` so a wide PRZ can never reach A even with a perfect score.
     """
@@ -660,11 +657,12 @@ def score_candidate(
     df = ctx.df
     atr = ctx.atr
     last = ctx.last
+    t = get_tuning()
 
-    # Q6: per-candidate volume gate. formed=True → strict (AUTHENTICITY_VETO);
-    # formed=False → lenient (AUTHENTICITY_HALVE) because forming patterns
+    # Q6: per-candidate volume gate. formed=True → strict (authenticity_veto);
+    # formed=False → lenient (authenticity_halve) because forming patterns
     # legitimately lack the confirming volume spike.
-    threshold = AUTHENTICITY_VETO if candidate.formed else AUTHENTICITY_HALVE
+    threshold = t.authenticity_veto if candidate.formed else t.authenticity_halve
     if ctx.volume_authenticity < threshold:
         logger.debug(
             "Volume authenticity %d < %d for %s pattern, vetoing",
@@ -852,9 +850,10 @@ def apply_stability(
     if best is None or best.grade not in ("A", "B") or stability_detector is None:
         return best
 
+    stab = get_tuning().stability_window
     try:
-        sub1 = stability_detector(df.iloc[:-_STABILITY_WINDOW])
-        sub2 = stability_detector(df.iloc[_STABILITY_WINDOW:])
+        sub1 = stability_detector(df.iloc[:-stab])
+        sub2 = stability_detector(df.iloc[stab:])
     except Exception:
         # Detector failures degrade to "unknown sub-windows"; the
         # downstream ``stability_verdict`` treats that as suspect so
@@ -899,7 +898,7 @@ def build_signal(
 
     _check_inputs(interval=interval, stop_level=stop_level)
 
-    if df is None or len(df) < MIN_CANDLES or not candidates:
+    if df is None or len(df) < get_tuning().min_candles or not candidates:
         return None
 
     ctx = _prepare_score_context(df, interval, divergences, stop_buffer_atr=stop_buffer_atr)

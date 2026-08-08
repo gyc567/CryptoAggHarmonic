@@ -8,7 +8,7 @@ from typing import Optional
 import pandas as pd
 from icontract import ensure, require
 
-from app.config.tuning import TUNING, get_tuning
+from app.config.tuning import TUNING, get_tuning  # TUNING: legacy aliases only
 from app.domain.signals import Candidate, compute_stop, compute_targets
 
 """Signal validity verification (P4 pillar): pure, I/O-free functions.
@@ -67,19 +67,20 @@ def rejection_reason(
     close_times: Optional[Sequence] = None,
 ) -> str | None:
     """Return the rejection reason for a candidate, or None when it is valid."""
+    t = get_tuning()
     prz_mid = (candidate.prz_low + candidate.prz_high) / 2
-    if atr > 0 and abs(price - prz_mid) > MAX_PRZ_DISTANCE_ATR * atr:
+    if atr > 0 and abs(price - prz_mid) > t.max_prz_distance_atr * atr:
         return "stale_distance"
 
     if close_times is not None and candidate.times:
         d_time = candidate.times[-1]
-        age = sum(1 for t in close_times if t > d_time)
-        if age > MAX_D_AGE_BARS:
+        age = sum(1 for ct in close_times if ct > d_time)
+        if age > t.max_d_age_bars:
             return "stale_age"
 
     if not candidate.formed:
         width = candidate.prz_high - candidate.prz_low
-        if width <= 0 or (atr > 0 and width > MAX_FORMING_PRZ_WIDTH_ATR * atr):
+        if width <= 0 or (atr > 0 and width > t.max_forming_prz_width_atr * atr):
             return "degenerate_prz"
 
     # Stop-based "violated" check only makes sense with a positive ATR (the
@@ -375,9 +376,10 @@ def quant_regime(df: pd.DataFrame, window: int = TUNING.quant_regime_window) -> 
     score = gap_score * 0.25 + reversal_score * 0.25 + vol_score * 0.30 + tail_score * 0.20
     score = int(min(100, max(0, round(score))))
 
-    if score >= REGIME_HIGH:
+    t = get_tuning()
+    if score >= t.regime_high:
         regime = "high_quant"
-    elif score >= REGIME_MODERATE:
+    elif score >= t.regime_moderate:
         regime = "moderate_quant"
     else:
         regime = "normal"
@@ -387,12 +389,14 @@ def quant_regime(df: pd.DataFrame, window: int = TUNING.quant_regime_window) -> 
 # --- 6. Statistical gates ---------------------------------------------------------
 
 
-def per_bar_sharpe(closes: pd.Series, window: int = TUNING.per_bar_sharpe_window) -> float:
+def per_bar_sharpe(closes: pd.Series, window: int | None = None) -> float:
     """Per-bar momentum Sharpe (mean/std of recent returns).
 
     Interval-agnostic: no annualization, so it works uniformly from 15m to 1w.
     Returns +/-inf for zero-variance drift (consistent momentum), 0.0 for flat.
     """
+    if window is None:
+        window = get_tuning().per_bar_sharpe_window
     rets = closes.pct_change().dropna().tail(window)
     if len(rets) < 3:
         return 0.0
@@ -408,19 +412,31 @@ def per_bar_sharpe(closes: pd.Series, window: int = TUNING.per_bar_sharpe_window
     return mean / std
 
 
-def adverse_momentum_veto(direction: str, sharpe: float, threshold: float = ADVERSE_SHARPE_THRESHOLD) -> bool:
+def adverse_momentum_veto(
+    direction: str,
+    sharpe: float,
+    threshold: float | None = None,
+) -> bool:
     """Veto entries against extreme consistent momentum (falling knives / blow-offs).
 
     Mild adverse momentum is EXPECTED at a reversal PRZ and is not penalized;
     only |sharpe| above the threshold in the adverse direction vetoes.
     """
+    if threshold is None:
+        threshold = get_tuning().adverse_sharpe_threshold
     if direction == "long":
         return sharpe < -threshold
     return sharpe > threshold
 
 
-def volatility_multiplier(atr: float, close: float, target_atr_pct: float = TARGET_ATR_PCT) -> float:
+def volatility_multiplier(
+    atr: float,
+    close: float,
+    target_atr_pct: float | None = None,
+) -> float:
     """Position scaling so each trade carries similar volatility (clamped 0.5-1.5)."""
+    if target_atr_pct is None:
+        target_atr_pct = get_tuning().target_atr_pct
     if close <= 0:
         return 1.0
     atr_pct = atr / close * 100

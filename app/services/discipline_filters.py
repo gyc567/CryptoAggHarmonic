@@ -6,7 +6,7 @@ from typing import Optional
 import pandas as pd
 from icontract import require
 
-from app.config.tuning import TUNING
+from app.config.tuning import TUNING, get_tuning
 from app.domain.forming_schemas import CandidateMetrics
 from app.domain.signals import Candidate, compute_targets
 
@@ -44,6 +44,7 @@ trust.
 # patterns (D not yet confirmed). Callers may override per-request.
 # Backwards-compat alias — the value lives in TUNING.default_ttl_bars.
 
+# Legacy snapshot; evaluate() resolves TTL via get_tuning when default used.
 DEFAULT_TTL_BARS = TUNING.default_ttl_bars
 
 
@@ -111,7 +112,7 @@ def evaluate(
     df: pd.DataFrame,
     candidate: Candidate,
     current_price: float,
-    max_ttl: int = DEFAULT_TTL_BARS,
+    max_ttl: int | None = None,
     c_idx: Optional[int] = None,
 ) -> DisciplineResult:
     """Run path-integrity / TTL / TP2 checks against one candidate.
@@ -121,6 +122,7 @@ def evaluate(
         candidate: The harmonic candidate from upstream.
         current_price: Latest close; used for the TP2 cross check.
         max_ttl: TTL in bars. ``bars_since_c > max_ttl`` ⇒ stale.
+            Defaults to live ``get_tuning().default_ttl_bars``.
         c_idx: Index of the C point in ``df``. If ``None`` we try to recover
             it from ``candidate.times[-2]`` (one-before-last; for XABCD the
             last entry is D). Falls back to 0 if neither is available.
@@ -130,6 +132,8 @@ def evaluate(
         switch; ``metrics`` always carries the per-check outcomes so the
         frontend can render diagnostics.
     """
+    if max_ttl is None:
+        max_ttl = get_tuning().default_ttl_bars
 
     @require(lambda df: len(df) > 0, "df must not be empty")
     @require(lambda candidate: candidate.prz_low > 0 and candidate.prz_high > 0, "candidate PRZ bounds must be positive")

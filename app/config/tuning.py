@@ -351,27 +351,37 @@ class TuningConstants:
             raise ValueError(f"atr_long_window ({self.atr_long_window}) must be >= " f"atr_window ({self.atr_window})")
 
 
-# Singleton — read this from anywhere in the codebase.
+# Singleton — the committed live defaults (edited only via PR + SIGHUP).
 TUNING: TuningConstants = TuningConstants()
 
-# Thread-local stack for scoped tuning overrides.
+# Process-local applied candidate (set by ``apply_tuning`` / backtest harness).
+# Not a live-gunicorn promotion path — see ``app.loop.tuning_promotion``.
+_applied_tuning: TuningConstants | None = None
+
+# Nested scoped overrides (innermost wins). Preferred for in-process trials.
 _tuning_context: list[TuningConstants] = []
 
 
 def get_tuning() -> TuningConstants:
-    """Get the current tuning constants.
+    """Return the effective TuningConstants for this process.
 
-    Returns the innermost scoped value if inside a ``TuningScope`` context,
-    otherwise the global ``TUNING`` singleton.
+    Priority (Path A — always live, never a frozen import-time alias):
+
+    1. Innermost :class:`TuningScope`
+    2. Last :func:`apply_tuning` value (backtest harness / worker)
+    3. Module singleton ``TUNING``
     """
-    return _tuning_context[-1] if _tuning_context else TUNING
+    if _tuning_context:
+        return _tuning_context[-1]
+    if _applied_tuning is not None:
+        return _applied_tuning
+    return TUNING
 
 
 # --- Convenience accessors for domain modules -------------------------------
 #
-# Domain modules can import these instead of reading module-level aliases.
-# When inside a TuningScope, the scoped values are returned; otherwise
-# the global TUNING singleton values are used.
+# Domain/service code should call these (or ``get_tuning()``) at use time.
+# Do not capture return values into module-level constants used on hot paths.
 
 
 def get_fib_tp1() -> float:
@@ -396,15 +406,13 @@ def get_extended_patterns() -> frozenset:
 
 # --- Hot-swap support --------------------------------------------------------
 #
-# Modules under ``app/domain/`` and ``app/services/`` declare module-level
-# aliases like ``MAX_D_AGE_BARS = TUNING.max_d_age_bars`` for backwards
-# compatibility with the pre-M0 codebase and existing tests. These aliases
-# are evaluated **once** at import time; if the loop wants to swap in a
-# mutated :class:`TuningConstants` instance, it must also update the
-# aliases. :func:`apply_tuning` does that for every module that participates
-# in the search space; :func:`reset_tuning` reverts to the singleton.
+# Path A (ADR-0003 D9): hot paths read via ``get_tuning()`` so scoped /
+# applied candidates are visible even when another process mutated aliases
+# earlier, and so ``from module import ALIAS`` freezes no longer control
+# scoring.
 #
-# Use as a context manager when you want to scope the swap to a block:
+# ``apply_tuning`` still refreshes module-level aliases for tests and any
+# remaining legacy readers; the source of truth is ``get_tuning()``.
 
 # Mapping from "module that owns the alias" to {alias_name: tuning_field}.
 # Keep this in sync with the module-level constants in each consumer.
@@ -464,13 +472,18 @@ _ALIAS_MAP: dict[str, dict[str, str]] = {
 
 
 def apply_tuning(t: TuningConstants) -> None:
-    """Replace every module-level alias with the field from ``t``.
+    """Activate ``t`` for this process (get_tuning + legacy module aliases).
 
     Idempotent. Raises ``ImportError`` if a participating module hasn't been
     imported yet (the harness imports ``app.services.signal_engine`` etc.
     before calling this, so this is rare in practice).
+
+    Does **not** promote into live gunicorn workers — use a PR + SIGHUP.
     """
+    global _applied_tuning
     import importlib
+
+    _applied_tuning = t
 
     for module_name, aliases in _ALIAS_MAP.items():
         try:
@@ -489,8 +502,13 @@ def apply_tuning(t: TuningConstants) -> None:
 
 
 def reset_tuning() -> None:
-    """Revert every alias back to the values from the singleton ``TUNING``."""
+    """Clear applied override and restore aliases to the singleton ``TUNING``."""
+    global _applied_tuning
+    _applied_tuning = None
     apply_tuning(TUNING)
+    # apply_tuning sets _applied_tuning again; clear so get_tuning() == TUNING
+    # identity for tests that compare to the singleton.
+    _applied_tuning = None
 
 
 class TuningScope:
