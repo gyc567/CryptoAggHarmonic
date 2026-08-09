@@ -1,5 +1,6 @@
 import type {
   AnalysisData,
+  AnalysisHistoryItem,
   AnalyzeRequest,
   ApiError,
   ApiFailure,
@@ -144,7 +145,7 @@ export async function request<T>(
   while (attempt < retry && isRetryableFailure(last)) {
     attempt += 1;
     const delay = retryDelayMs * 2 ** (attempt - 1);
-    await sleep(delay, fetchInit.signal);
+    await sleep(delay, fetchInit.signal ?? undefined);
     last = await requestOnce<T>(path, token, fetchInit);
   }
   return last;
@@ -172,19 +173,19 @@ export async function getMarkets(
 export async function getHistory(
   token: string | null,
   init?: RequestOptions
-): Promise<ApiResponse<unknown>> {
-  return request<unknown>("/api/history", token, init);
+): Promise<ApiResponse<{ items: AnalysisHistoryItem[] }>> {
+  return request<{ items: AnalysisHistoryItem[] }>("/api/history", token, init);
 }
 
 export async function getAnalysis(
   token: string | null,
   id: string,
   init?: RequestOptions
-): Promise<ApiResponse<unknown>> {
-  return request<unknown>(`/api/analysis/${id}`, token, init);
+): Promise<ApiResponse<AnalysisData>> {
+  return request<AnalysisData>(`/api/analysis/${id}`, token, init);
 }
 
-export async function appendLocalHistory(item: { id: string; [key: string]: unknown }) {
+export async function appendLocalHistory(item: AnalysisHistoryItem) {
   try {
     const stored = localStorage.getItem("ph_history");
     const history: unknown[] = stored ? JSON.parse(stored) : [];

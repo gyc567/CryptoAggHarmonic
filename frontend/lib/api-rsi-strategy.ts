@@ -18,19 +18,23 @@ import type { ApiResponse } from "@/types";
 
 // --- Request types ----------------------------------------------------------
 
+export type RsiTrendMarket = "binance" | "yahoo";
+export type RsiTrendInterval = "1h" | "4h" | "1d" | "1w";
+export type RsiTrendZone = "extreme" | "pullback";
+
 export interface RsiTrendRequestParams {
-  market?: "binance" | "yahoo";
+  market: RsiTrendMarket;
   symbol: string;
-  interval?: "1h" | "4h" | "1d" | "1w";
-  use_ema50?: boolean;
-  require_candle_color?: boolean;
+  interval: RsiTrendInterval;
+  use_ema50: boolean;
+  require_candle_color: boolean;
   /** Float in [0.5, 3.0]. Defaults to 1.0 on the server. */
-  atr_mult?: number;
-  rsi_zone?: "extreme" | "pullback";
+  atr_mult: number;
+  rsi_zone: RsiTrendZone;
   /** Float in [1.0, 5.0]. Defaults to 2.0 on the server. */
-  reward_risk?: number;
+  reward_risk: number;
   /** Float in [0.0, 100.0]. Defaults to 0 on the server. */
-  min_quality_score?: number;
+  min_quality_score: number;
 }
 
 export interface RsiTrendBacktestParams extends RsiTrendRequestParams {
@@ -50,21 +54,39 @@ export interface RsiTrendFilters {
   use_ema50: boolean;
   require_candle_color: boolean;
   atr_mult: number;
-  rsi_zone: "extreme" | "pullback";
+  rsi_zone: RsiTrendZone;
   reward_risk: number;
   min_quality_score: number;
 }
 
+export type RsiTrendDirection = "long" | "short";
+
+/** Latest trend/momentum snapshot — mirrors app.domain.rsi_trend.current_state(). */
+export interface RsiTrendState {
+  time: string;
+  close: number;
+  ema200: number;
+  ema50: number;
+  rsi: number | null;
+  atr: number | null;
+  trend: "bullish" | "bearish" | "neutral";
+  deviation_pct: number;
+  entangled: boolean;
+}
+
+/** Mirrors app.domain.rsi_trend.StrategySignal.to_dict(). */
 export interface RsiTrendSignal {
+  direction: RsiTrendDirection;
+  entry_price: number;
+  stop_loss: number;
+  target_price: number;
+  atr: number;
+  rsi: number;
+  /** ISO timestamp of the signal bar ("" if unavailable). */
+  time: string;
+  /** Positional bar index within the analysed DataFrame. */
   index: number;
-  timestamp: string;
-  direction: "long" | "short";
-  pattern: string;
-  grade: string;
-  formed: boolean;
-  // ... and several numeric fields. Left loose so consumers can read
-  // whatever they need; the full schema lives in app.domain.rsi_trend.
-  [key: string]: unknown;
+  quality_score: number;
 }
 
 export interface RsiTrendScanResponse {
@@ -73,20 +95,41 @@ export interface RsiTrendScanResponse {
   interval: string;
   filters: RsiTrendFilters;
   bars: number;
-  state: Record<string, unknown>;
+  state: RsiTrendState | null;
   latest_signal: RsiTrendSignal | null;
   recent_signals: RsiTrendSignal[];
 }
 
+export interface RsiTrendBacktestTrade {
+  direction: "long" | "short";
+  entry_price: number;
+  entry_time: string;
+  stop_loss: number;
+  target_price: number;
+  exit_price: number;
+  exit_time: string;
+  exit_reason: string;
+  r_multiple: number;
+  bars_held: number;
+  partials: { fraction: number; price: number; r_multiple: number; reason: string; time: string }[];
+}
+
 export interface RsiTrendBacktestResponse extends RsiTrendScanResponse {
   lookback_days: number;
-  /**
-   * Trade ledger summary produced by run_backtest(...).to_dict().
-   * Field set depends on the backtester; kept loose on purpose.
-   */
-  trades?: unknown[];
-  stats?: Record<string, unknown>;
-  [key: string]: unknown;
+  filters: RsiTrendFilters & { partial_mode: boolean; trailing_stop: boolean };
+  bars: number;
+  total_signals: number;
+  trades_count: number;
+  win_count: number;
+  loss_count: number;
+  scratch_count: number;
+  win_rate: number;
+  avg_r: number;
+  total_r: number;
+  profit_factor: number | null;
+  max_drawdown_r: number;
+  avg_bars_held: number;
+  trades: RsiTrendBacktestTrade[];
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -182,7 +225,7 @@ export interface RsiTrendPlanDecision {
 }
 
 export interface RsiTrendPlanMarketOverview {
-  trend: string;
+  trend: "bullish" | "bearish" | "neutral";
   trend_strength: number;
   close: number;
   ema200: number;
@@ -213,7 +256,13 @@ export interface RsiTrendPlan {
   } | null;
   multi_tf: unknown;
   invalidation: string[];
-  history?: Record<string, unknown> | null;
+  history?: {
+    signals_count: number;
+    longs?: number;
+    shorts?: number;
+    avg_quality?: number;
+    note: string;
+  } | null;
   ai_insight?: {
     summary: string;
     risk_note: string;
@@ -231,6 +280,7 @@ export function planRsiTrend(
 ): Promise<ApiResponse<RsiTrendPlan>> {
   return request<RsiTrendPlan>(
     `/api/rsi-trend/plan?${toQuery(params)}`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : undefined, signal }
+    token,
+    signal ? { headers: { Authorization: `Bearer ${token}` }, signal } : undefined
   );
 }

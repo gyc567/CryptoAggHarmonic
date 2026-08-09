@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 /**
  * Detect "unconfigured" Supabase env vars.
@@ -49,18 +50,47 @@ export function createClient() {
  * surfaces the configuration error to the caller so the UI can show it
  * instead of pretending to send a magic link.
  */
-function createMisconfiguredClient() {
+
+/** Error shape surfaced by the misconfigured client (mirrors AuthError). */
+interface MisconfiguredAuthError {
+  name: string;
+  message: string;
+  status: number;
+}
+
+/** Minimal auth surface the app consumes; keeps the mock typed without `any`. */
+interface MisconfiguredSupabaseAuth {
+  signInWithOtp: (options: {
+    email: string;
+    options?: { emailRedirectTo?: string };
+  }) => Promise<{ data: { session: null; user: null }; error: MisconfiguredAuthError }>;
+  signOut: () => Promise<{ error: null }>;
+  getSession: () => Promise<{ data: { session: null }; error: null }>;
+  getUser: () => Promise<{ data: { user: null }; error: null }>;
+  onAuthStateChange: (
+    callback: (event: AuthChangeEvent, session: Session | null) => void
+  ) => { data: { subscription: { unsubscribe: () => void } } };
+}
+
+function createMisconfiguredClient(): { auth: MisconfiguredSupabaseAuth } {
   const message = getMissingSupabaseEnvMessage();
-  const notConfigured = () => ({ data: { session: null, user: null }, error: { name: "SupabaseNotConfigured", message, status: 500 } as any });
+  const notConfigured = (): {
+    data: { session: null; user: null };
+    error: MisconfiguredAuthError;
+  } => ({
+    data: { session: null, user: null },
+    error: { name: "SupabaseNotConfigured", message, status: 500 },
+  });
   return {
     auth: {
       signInWithOtp: async () => notConfigured(),
       signOut: async () => ({ error: null }),
       getSession: async () => ({ data: { session: null }, error: null }),
       getUser: async () => ({ data: { user: null }, error: null }),
-      onAuthStateChange: (_cb: (event: string, session: unknown) => void) => ({
-        data: { subscription: { unsubscribe: () => {} } },
-      }),
+      onAuthStateChange: (callback) => {
+        void callback;
+        return { data: { subscription: { unsubscribe: () => {} } } };
+      },
     },
-  } as any;
+  };
 }

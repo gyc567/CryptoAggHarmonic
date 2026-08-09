@@ -35,9 +35,14 @@ export function DirectionBadge({ direction }: { direction: RsiTrendDirection }) 
   );
 }
 
-export function EntangledWarning() {
+export function EntangledWarning({ className }: { className?: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-600 dark:text-yellow-400">
+    <div
+      className={cn(
+        "flex items-start gap-2 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-600 dark:text-yellow-400",
+        className
+      )}
+    >
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
       价格在 EMA200 附近缠绕（距离小于 0.5 ATR），属于策略不适用的震荡环境，建议暂停交易。
     </div>

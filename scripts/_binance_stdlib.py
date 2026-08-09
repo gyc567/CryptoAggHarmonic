@@ -28,7 +28,14 @@ _INTERVAL_MS = {
     "1w": 604_800_000,
 }
 
-BINANCE_URL = "https://api.binance.com/api/v3/klines"
+# Prefer data-api.binance.vision — api.binance.com often returns HTTP 451
+# from restricted networks; vision host is the public historical data API.
+BINANCE_URLS = (
+    "https://data-api.binance.vision/api/v3/klines",
+    "https://api.binance.com/api/v3/klines",
+    "https://api.binance.us/api/v3/klines",
+)
+BINANCE_URL = BINANCE_URLS[0]
 
 _RAW_COLUMNS = [
     "open_time", "open", "high", "low", "close", "volume",
@@ -65,6 +72,8 @@ def fetch_binance_klines(
     rows: list = []
     cursor = end_ms  # walk backwards from end
     batch_limit = 1000
+    # Pick first host that answers for this symbol (sticky for pagination).
+    active_base: Optional[str] = None
     while cursor > start_ms:
         params = (
             f"symbol={symbol.upper()}"
@@ -72,22 +81,30 @@ def fetch_binance_klines(
             f"&endTime={cursor}"
             f"&limit={batch_limit}"
         )
-        url = f"{BINANCE_URL}?{params}"
-        # Note: max_retries means we attempt up to max_retries times total.
-        # Loop: attempt=0 (1st), attempt=1 (2nd), attempt=2 (3rd).
-        for attempt in range(max_retries):
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=timeout) as r:
-                    batch = json.loads(r.read())
-                break  # Success
-            except Exception as e:
-                last_err = e
-                if attempt < max_retries - 1:
-                    time.sleep(0.5 * (2 ** attempt))
-        else:
+        batch = None
+        last_err: Exception | None = None
+        bases = (active_base,) if active_base else BINANCE_URLS
+        for base in bases:
+            if base is None:
+                continue
+            url = f"{base}?{params}"
+            for attempt in range(max_retries):
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=timeout) as r:
+                        batch = json.loads(r.read())
+                    active_base = base
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    if attempt < max_retries - 1:
+                        time.sleep(0.5 * (2 ** attempt))
+            if batch is not None:
+                break
+        if batch is None:
             raise RuntimeError(
-                f"Binance stdlib fetch failed after {max_retries} attempts: {last_err}"
+                f"Binance stdlib fetch failed after trying {bases}: {last_err}"
             ) from last_err
         if not batch:
             break

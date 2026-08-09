@@ -65,7 +65,7 @@ export function ResultPanel({ result, loading, error, className }: ResultPanelPr
           <Info className="h-10 w-10 text-muted-foreground/50" />
           <h3 className="mt-4 text-base font-medium text-foreground">暂无分析结果</h3>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            在上方填写参数并点击"开始分析"，结果将在这里展示
+            在上方填写参数并点击&quot;开始分析&quot;，结果将在这里展示
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             {["BTCUSDT", "AAPL", "ETHUSDT", "TSLA"].map((symbol) => (

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { analyze, getAnalysis, getHistory, getMarkets } from "@/lib/api";
 
 const ORIGINAL_FETCH = global.fetch;

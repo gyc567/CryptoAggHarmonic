@@ -20,10 +20,6 @@ export default function RsiStrategyPage() {
   const router = useRouter();
   const { user, loading: authLoading, getToken } = useAuth();
   const {
-    scanResult,
-    scanLoading,
-    scanError,
-    runScan,
     backtestResult,
     backtestLoading,
     backtestError,
