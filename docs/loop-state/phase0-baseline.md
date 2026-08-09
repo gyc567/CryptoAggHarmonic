@@ -57,10 +57,34 @@ Record results here when a live run completes:
 
 | Metric | Baseline value | Date | Notes |
 |--------|----------------|------|-------|
-| avg fitness | _TBD_ | | |
-| Pareto size | _TBD_ | | |
-| mean candidate seconds | _TBD_ | | |
-| LLM $ / gen | $0 (MC off) | | |
+| history_records | 20 | 2026-08-08 | phase0_live run, C1 Geometry, BTC/ETH/SOL |
+| accepted | 20 | 2026-08-08 | trade-count floor ≥ 30 |
+| avg fitness | +4.267 | 2026-08-08 | mean across accepted |
+| Pareto size | 2 | 2026-08-08 | both points are duplicates (same metrics) |
+| max fitness | +6.377 | 2026-08-08 | params_sha `16c414e73197`, sharpe +0.24, calmar +10.23, PF 2.56, 161 trades |
+| LLM $ / gen | $0.00 | 2026-08-08 | MAKER_CHECKER_ENABLED=true (default) but mock backend |
+
+## v3 follow-ups (closed in this run)
+
+- `scripts/backtest_harmonic_lib._maybe_relax_filters` no longer mutates
+  `signal_engine.MIN_CANDLES` via setattr. Uses
+  `app.config.tuning.TuningScope` (ADR-0003 D9). Live alias untouched.
+- `signal_engine.build_signal` reads `min_candles` via the new
+  `app.config.tuning.get_min_candles()` accessor; `TuningScope` /
+  `apply_tuning()` overrides now propagate into the hot path.
+- `loop/loop_context.load_episodic()` no longer raises
+  `UnboundLocalError` — JSONL lines are parsed and only the last
+  ``limit`` are returned.
+- `/metrics` endpoint now publishes every metric promised in plan §7.2:
+  `tuning_proposals_total`, `loop_generation_duration_seconds`,
+  `llm_maker_calls_total`, `llm_checker_calls_total`, `llm_tokens_total`,
+  `llm_latency_seconds`, `llm_cost_usd_total`, `llm_cache_hit_total`,
+  `pareto_front_size`, `mc_agreement_rate`, `suspicious_to_human_rate`,
+  `worker_timeout_total`, `runs_disk_bytes`, `loop_readiness_score`.
+  Producers are wired into `app/loop/driver.py`,
+  `app/loop/worker.py`, and `app/loop/maker_checker/runner.py`.
+  Metrics live in a private `CollectorRegistry` to avoid
+  `DuplicateTimeseries` on Flask reload.
 
 ## Metrics
 
@@ -71,4 +95,3 @@ curl -s localhost:5000/metrics | grep tuning_proposals
 ```
 
 Driver increments `tuning_proposals_total{decision=...}` per candidate and
-observes `loop_generation_duration_seconds`.

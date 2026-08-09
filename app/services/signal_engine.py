@@ -27,7 +27,7 @@ from typing import Any, NamedTuple, Optional
 import pandas as pd
 from icontract import require
 
-from app.config.tuning import TUNING, get_tuning
+from app.config.tuning import TUNING, get_min_candles, get_tuning
 from app.domain.signals import (
     Candidate,
     Signal,
@@ -54,8 +54,6 @@ from app.domain.validation import (
 
 logger = logging.getLogger(__name__)
 
-# Legacy module-level aliases (import-time snapshots). Hot paths use
-# ``get_tuning()``; ``apply_tuning`` still refreshes these for tests.
 
 ATR_WINDOW = TUNING.atr_window
 ATR_LONG_WINDOW = TUNING.atr_long_window
@@ -897,8 +895,7 @@ def build_signal(
         return None
 
     _check_inputs(interval=interval, stop_level=stop_level)
-
-    if df is None or len(df) < get_tuning().min_candles or not candidates:
+    if df is None or len(df) < get_min_candles() or not candidates:
         return None
 
     ctx = _prepare_score_context(df, interval, divergences, stop_buffer_atr=stop_buffer_atr)

@@ -130,6 +130,11 @@ def run_candidate(
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
+        try:
+            from app.api.metrics_routes import record_worker_timeout
+            record_worker_timeout()
+        except Exception:  # pragma: no cover
+            pass
         return CandidateResult(
             candidate_id=candidate_id,
             params_sha=sha,
@@ -140,7 +145,6 @@ def run_candidate(
             elapsed_seconds=time.time() - started,
             error=f"subprocess timed out after {timeout_seconds}s: {exc}",
         )
-
     # Resolve the metrics file AFTER the subprocess ran — the v3 harness
     # writes ``summary.json``; some earlier harnesses wrote ``metrics.json``.
     metrics_path = run_dir / "summary.json"

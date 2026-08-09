@@ -404,6 +404,25 @@ def get_extended_patterns() -> frozenset:
     return get_tuning().extended_patterns
 
 
+def get_min_candles() -> int:
+    """Read ``min_candles`` live from the active :class:`TuningScope`.
+
+    Use this in hot paths (e.g. ``signal_engine.build_signal``) instead of
+    the module-level ``MIN_CANDLES`` alias — the alias is an import-time
+    snapshot and ignores later ``TuningScope``/``apply_tuning`` updates.
+    """
+    return get_tuning().min_candles
+
+
+def get_atr_window() -> int:
+    return get_tuning().atr_window
+
+
+def get_rsi_window() -> int:
+    return get_tuning().rsi_window
+
+
+
 # --- Hot-swap support --------------------------------------------------------
 #
 # Path A (ADR-0003 D9): hot paths read via ``get_tuning()`` only.

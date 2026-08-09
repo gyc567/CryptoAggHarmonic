@@ -105,31 +105,47 @@ class MakerCheckerRunner:
         # 1. M4 heuristic.
         m4 = check_candidate(candidate, parent_metrics=parent_metrics)
 
-        # 2. LLM Checker on isolated payload.
+        # 2. LLM Checker on isolated payload. Time the call so we can
+        #    publish llm_latency_seconds / llm_checker_calls_total.
+        import time as _time
+        payload = {
+            "metrics": candidate.metrics or {},
+            "fitness": candidate.fitness,
+            "decision": candidate.decision,
+            "elapsed_seconds": candidate.elapsed_seconds,
+        }
+        _t0 = _time.monotonic()
         llm = self.checker_agent.verify(
             candidate.candidate_id,
-            {
-                "metrics": candidate.metrics or {},
-                "fitness": candidate.fitness,
-                "decision": candidate.decision,
-                "elapsed_seconds": candidate.elapsed_seconds,
-            },
+            payload,
         )
+        _latency = _time.monotonic() - _t0
+        try:
+            from app.api.metrics_routes import record_llm_call
+            record_llm_call("checker", latency=_latency)
+        except Exception:  # pragma: no cover - defensive
+            pass
 
         # 3. Arbiter fuses them. Maker self_score is not available
         # at evaluation time (the proposal has already been realised
         # into a TuningConstants + CandidateResult), so we pass None
         # and the Arbiter falls back to 0.5.
-        return self.arbiter.resolve(
+        result = self.arbiter.resolve(
             candidate_id=candidate.candidate_id,
             m4=m4,
             llm=llm,
             maker=None,
         )
+        # Publish Maker-Checker agreement rate.
+        try:
+            from app.api.metrics_routes import record_arbiter_agreement
+            record_arbiter_agreement(bool(result.agreement))
+        except Exception:  # pragma: no cover
+            pass
+        return result
 
 
 # ---- Convenience factory --------------------------------------------------
-
 
 def make_runner(
     *,

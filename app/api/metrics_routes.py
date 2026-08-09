@@ -45,80 +45,103 @@ except ImportError:
     logger.warning("prometheus_client not installed; /metrics endpoint will return empty response")
 
 
+# Private registry — keeps our metrics out of the default global registry,
+# which avoids DuplicateTimeseries on re-init in tests and on reload.
+_LOOP_REGISTRY: CollectorRegistry | None = None
+
 # --- Metric definitions (created lazily) ---
 
 _metrics: dict = {}
 
-
 def _init_metrics():
-    """Initialize all metrics. Called once on first request."""
+    """Initialize all metrics into the private :data:`_LOOP_REGISTRY`.
+
+    Uses a private :class:`CollectorRegistry` so re-initialising in tests
+    (or after a Flask reload) does not clash with the default ``REGISTRY``
+    (which also carries ``python_gc_*`` collectors).
+    """
+    global _metrics, _LOOP_REGISTRY
     if not HAS_PROMETHEUS:
         return
+    if _metrics and _LOOP_REGISTRY is not None:
+        return
 
-    global _metrics
-    if _metrics:
-        return  # already initialized
-
+    registry = CollectorRegistry()
+    _LOOP_REGISTRY = registry
     _metrics = {
         "tuning_proposals_total": Counter(
             "tuning_proposals_total",
             "Total tuning proposals",
             ["decision"],
+            registry=registry,
         ),
         "loop_generation_duration_seconds": Histogram(
             "loop_generation_duration_seconds",
             "Generation duration in seconds",
             buckets=[1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600],
+            registry=registry,
         ),
         "llm_maker_calls_total": Counter(
             "llm_maker_calls_total",
             "Total Maker LLM calls",
+            registry=registry,
         ),
         "llm_checker_calls_total": Counter(
             "llm_checker_calls_total",
             "Total Checker LLM calls",
+            registry=registry,
         ),
         "llm_tokens_total": Counter(
             "llm_tokens_total",
             "Total LLM tokens",
             ["type"],  # input or output
+            registry=registry,
         ),
         "llm_latency_seconds": Histogram(
             "llm_latency_seconds",
             "LLM call latency",
             buckets=[0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
+            registry=registry,
         ),
         "llm_cost_usd_total": Counter(
             "llm_cost_usd_total",
             "Total LLM cost in USD",
+            registry=registry,
         ),
         "llm_cache_hit_total": Counter(
             "llm_cache_hit_total",
             "LLM cache hits",
+            registry=registry,
         ),
         "pareto_front_size": Gauge(
             "pareto_front_size",
             "Current Pareto front size",
+            registry=registry,
         ),
         "mc_agreement_rate": Gauge(
             "mc_agreement_rate",
             "Maker-Checker agreement rate (rolling average)",
+            registry=registry,
         ),
         "suspicious_to_human_rate": Gauge(
             "suspicious_to_human_rate",
             "Rate of suspicious_to_human verdicts",
+            registry=registry,
         ),
         "worker_timeout_total": Counter(
             "worker_timeout_total",
             "Worker timeouts",
+            registry=registry,
         ),
         "runs_disk_bytes": Gauge(
             "runs_disk_bytes",
             "Total disk usage of runs/ directory in bytes",
+            registry=registry,
         ),
         "loop_readiness_score": Gauge(
             "loop_readiness_score",
             "Current Loop Readiness Score",
+            registry=registry,
         ),
     }
 
@@ -142,7 +165,7 @@ def make_metrics_blueprint() -> Blueprint:
         _update_dynamic_gauges()
 
         return Response(
-            generate_latest(REGISTRY),
+            generate_latest(_LOOP_REGISTRY or REGISTRY),
             mimetype=CONTENT_TYPE_LATEST,
         )
 
@@ -181,10 +204,19 @@ def _update_dynamic_gauges():
     except Exception:
         pass
 
+    # Loop readiness score (loop.loop_audit.compute_score) — only compute
+    # on demand; calling it on every scrape is cheap (filesystem checks)
+    # and keeps the gauge honest.
+    try:
+        from loop.loop_audit import compute_score
+        score, _ = compute_score()
+        if "loop_readiness_score" in _metrics:
+            _metrics["loop_readiness_score"].set(score)
+    except Exception:
+        pass
+
 
 # --- Convenience helpers for internal use ---
-
-
 def record_proposal(decision: str) -> None:
     """Record a tuning proposal decision."""
     _init_metrics()
@@ -192,8 +224,67 @@ def record_proposal(decision: str) -> None:
         _metrics["tuning_proposals_total"].labels(decision=decision).inc()
 
 
-def record_llm_call(call_type: str, tokens: int = 0, latency: float = 0.0, cost: float = 0.0) -> None:
-    """Record an LLM call."""
+def record_arbiter_agreement(agreement: bool) -> None:
+    """Update the rolling Maker-Checker agreement rate gauge.
+
+    Called by the runner after each arbiter resolve. Sets the gauge to a
+    moving average (last 50 calls) — sufficient for L1 monitoring without
+    adding a dedicated Counter+derive overhead.
+    """
+    _init_metrics()
+    if "mc_agreement_rate" not in _metrics:
+        return
+    state = _mc_state.setdefault("rolling", [])
+    state.append(1.0 if agreement else 0.0)
+    if len(state) > 50:
+        del state[: len(state) - 50]
+    rate = sum(state) / len(state)
+    _metrics["mc_agreement_rate"].set(rate)
+
+
+_mc_state: dict[str, list[float]] = {}
+
+
+def record_suspicious_to_human(decision: str) -> None:
+    """Update the rolling rate of ``suspicious_to_human`` verdicts.
+
+    ``decision`` is the final arbiter verdict. Anything other than
+    ``"suspicious_to_human"`` is counted as a non-escalation.
+    """
+    _init_metrics()
+    if "suspicious_to_human_rate" not in _metrics:
+        return
+    state = _suspicious_state.setdefault("rolling", [])
+    state.append(1.0 if decision == "suspicious_to_human" else 0.0)
+    if len(state) > 50:
+        del state[: len(state) - 50]
+    rate = sum(state) / len(state)
+    _metrics["suspicious_to_human_rate"].set(rate)
+
+
+_suspicious_state: dict[str, list[float]] = {}
+
+
+def record_worker_timeout() -> None:
+    """Bump the worker-timeout counter; called from the worker on TimeoutExpired."""
+    _init_metrics()
+    if "worker_timeout_total" in _metrics:
+        _metrics["worker_timeout_total"].inc()
+
+
+def update_loop_readiness(score: float) -> None:
+    """Set the loop-readiness gauge from ``loop.loop_audit.compute_score``."""
+    _init_metrics()
+    if "loop_readiness_score" in _metrics:
+        _metrics["loop_readiness_score"].set(float(score))
+
+
+def record_llm_call(call_type: str, tokens: int = 0, latency: float = 0.0, cost: float = 0.0, hit: bool = False) -> None:
+    """Record an LLM call.
+
+    ``call_type`` is ``"maker"`` or ``"checker"``. ``hit`` records a cache hit
+    separately from the cost/latency counters.
+    """
     _init_metrics()
     if not _metrics:
         return
@@ -203,11 +294,13 @@ def record_llm_call(call_type: str, tokens: int = 0, latency: float = 0.0, cost:
         _metrics["llm_checker_calls_total"].inc()
     if tokens > 0:
         _metrics["llm_tokens_total"].labels(type="input").inc(tokens // 2)
-        _metrics["llm_tokens_total"].labels(type="output").inc(tokens // 2)
+        _metrics["llm_tokens_total"].labels(type="output").inc(tokens - tokens // 2)
     if latency > 0:
         _metrics["llm_latency_seconds"].observe(latency)
     if cost > 0:
         _metrics["llm_cost_usd_total"].inc(cost)
+    if hit:
+        _metrics["llm_cache_hit_total"].inc()
 
 
 def record_generation(duration_seconds: float) -> None:

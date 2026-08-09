@@ -183,23 +183,27 @@ def _maybe_relax_filters(relax: bool) -> Optional[list]:
             return None
 
         _val.rejection_reason = _noop_rejection_reason
-
     # build_signal's pipeline also uses the symbol-level ``MIN_CANDLES``
-    # gate (signal_engine.py:700). Lower it to 30 so a 60-bar window still
-    # passes the guard.
-    import app.services.signal_engine as _se
-    if hasattr(_se, "MIN_CANDLES"):
-        original = _se.MIN_CANDLES
-        _se.MIN_CANDLES = 30
-        saved.append((_se, "MIN_CANDLES", original))
+    # gate (signal_engine.py:900). Lower it to 30 so a 60-bar window still
+    # passes the guard. Done via ``TuningScope`` (ADR-0003 D9) so the
+    # module-level alias is no longer mutated.
+    from app.config.tuning import TuningScope, from_dict as _tuning_from_dict
+    _relaxed_scope = TuningScope(_tuning_from_dict({"min_candles": 30}))
+    _relaxed_scope.__enter__()
+    saved.append(("__tuning_scope__", _relaxed_scope))
     return saved
+
 
 
 def _restore_filters(saved) -> None:
     if not saved:
         return
-    for target, name, original in saved:
-        setattr(target, name, original)
+    for entry in saved:
+        if entry[0] == "__tuning_scope__":
+            entry[1].__exit__(None, None, None)
+        else:
+            target, name, original = entry[0], entry[1], entry[2]
+            setattr(target, name, original)
 
 
 def extract_signal(

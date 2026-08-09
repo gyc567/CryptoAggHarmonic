@@ -187,10 +187,11 @@ def main():
 
     # Optional metrics (no-op if prometheus_client missing).
     try:
-        from app.api.metrics_routes import record_generation, record_proposal
+        from app.api.metrics_routes import record_generation, record_proposal, record_suspicious_to_human
     except Exception:  # pragma: no cover - defensive
         record_generation = None  # type: ignore[assignment]
         record_proposal = None  # type: ignore[assignment]
+        record_suspicious_to_human = None  # type: ignore[assignment]
 
     for r in results:
         # Run the second-opinion checker (plan §4). When a Maker-Checker
@@ -254,6 +255,11 @@ def main():
                 },
                 root=state_root,
             )
+        if record_suspicious_to_human is not None:
+            try:
+                record_suspicious_to_human(getattr(verdict, "decision", "unknown") or "unknown")
+            except Exception:  # pragma: no cover
+                pass
 
         if r.decision == "accepted":
             accepted_count += 1
@@ -267,7 +273,6 @@ def main():
             )
             moved = pareto.add(point)
             if moved:
-                # Snap the tuning so the user can recover it.
                 with open(Path(r.run_dir) / "tuning.yaml") as f:
                     payload = f.read()
                 (state_root / "tuning_snapshots" / f"pareto-{point.params_sha}.yaml").write_text(payload)

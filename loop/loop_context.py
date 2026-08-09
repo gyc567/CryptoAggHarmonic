@@ -121,6 +121,12 @@ def load_episodic(limit: int = 100) -> list[dict[str, Any]]:
     if not EPISODIC_FILE.exists():
         return []
     lines = EPISODIC_FILE.read_text().strip().splitlines()
+    records: list[dict[str, Any]] = []
+    for line in lines:
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
     return records[-limit:]
 
 

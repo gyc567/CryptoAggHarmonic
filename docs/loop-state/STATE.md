@@ -9,9 +9,15 @@
 
 - [x] 2026-08-08: GitHub Issues **enabled** on `gyc567/pyharmonics-gpt` (smoke #1 closed)
 - [x] 2026-08-08: Triage + loop labels created (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `maker-checker`, `release-prep`, `code-health`, `dependencies`, `automated`, `loop`)
-- [x] 2026-08-08: #2 loop honesty gaps — budget defaults, strategy_version, pending_issues, TUNING gate
 - [x] 2026-08-08: #3 apply_tuning Path A (get_tuning live reads)
-- [x] 2026-08-08: Phase 0 scaffolding — baseline CLI + dry-run smoke; apply_tuning alias setattr removed
+- [x] 2026-08-09: **Loop engineering v3 follow-ups** — wired 14-metric /metrics
+  (private CollectorRegistry), closed `MIN_CANDLES` setattr bug via
+  `TuningScope` in `scripts/backtest_harmonic_lib`, fixed
+  `loop.loop_context.load_episodic` UnboundLocal, added
+  `get_min_candles` / `get_atr_window` / `get_rsi_window` accessors
+  consumed by `signal_engine.build_signal`. 24 new tests pass; full
+  loop / maker-checker / signal-engine suites green (407/407).
+- [x] 2026-08-09: Frontend **deployed to Vercel** (`https://www.cryptoagg.xyz`)
 
 ## Watch List
 
