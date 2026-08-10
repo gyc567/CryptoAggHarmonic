@@ -387,6 +387,11 @@ def confluence_score(
     factors: dict[str, float] = {}
     last = df.iloc[-1]
 
+    # Main-factor weights come from TUNING.confluence_weights (searchable via
+    # TuningScope / grid_search_weights). Fixed bonus factors (macd_zero,
+    # dual_confirm, histogram) stay constant and are excluded from search.
+    cw = get_tuning().confluence_weights
+
     # --- Price action at the PRZ: reversal candle + volume expansion ---
     pa = 0.0
     if _is_reversal_candle(last, candidate.bullish):
@@ -394,13 +399,14 @@ def confluence_score(
         vol_ma = df["volume"].tail(get_tuning().volume_ma_window).mean()
         if vol_ma > 0 and last["volume"] >= 1.5 * vol_ma:
             pa += 10.0
-    factors["price_action"] = pa * pa_scale
+    factors["price_action"] = (pa / 25.0) * cw.get("price_action", 25.0) * pa_scale
 
     # --- Higher-timeframe trend alignment ---
+    htf_weight = cw.get("htf_trend", 25.0)
     if trend == ("bullish" if candidate.bullish else "bearish"):
-        factors["htf_trend"] = 25
+        factors["htf_trend"] = htf_weight
     elif trend == "unknown":
-        factors["htf_trend"] = 10
+        factors["htf_trend"] = htf_weight * 0.4
     else:
         factors["htf_trend"] = 0
 
@@ -429,14 +435,16 @@ def confluence_score(
     # RSI zone + trend direction scoring
     rsi_zone = _rsi_zone_score(rsi, candidate.bullish, rsi_series if rsi_series is not None else pd.Series([]))
     rsi_score += rsi_zone
-    factors["rsi"] = rsi_score
+    # RSI raw score is in [-5, 8+zone]; rescale to the configured weight cap.
+    rsi_cap = cw.get("rsi", 15.0)
+    factors["rsi"] = max(-rsi_cap, min(rsi_cap, (rsi_score / 15.0) * rsi_cap))
 
     # --- Structure: PRZ overlaps a recent swing low/high ---
     lookback = get_tuning().swing_lookback
     tail = df["low"].tail(lookback) if candidate.bullish else df["high"].tail(lookback)
     swing = tail.min() if candidate.bullish else tail.max()
     mid = (candidate.prz_low + candidate.prz_high) / 2
-    factors["structure"] = 15 if abs(mid - swing) <= get_tuning().atr_prz_sweep * atr else 0
+    factors["structure"] = cw.get("structure", 15.0) if abs(mid - swing) <= get_tuning().atr_prz_sweep * atr else 0
 
     # --- MACD: Regular/Hidden divergence + zero-line filter + histogram momentum ---
     macd_divs = div_families.get("macd", [])
@@ -456,7 +464,8 @@ def confluence_score(
             macd_score += 10
         elif macd_hidden_bear:
             macd_score -= 5
-    factors["macd"] = macd_score
+    macd_cap = cw.get("macd", 10.0)
+    factors["macd"] = max(-macd_cap, min(macd_cap, (macd_score / 10.0) * macd_cap))
 
     # MACD zero-line filter: MACD below zero for bullish = oversold zone, more reliable
     if candidate.bullish:
@@ -481,7 +490,7 @@ def confluence_score(
         factors["histogram"] = 5 if (macd_histogram < 0 and macd_histogram < macd_histogram_prev) else 0
 
     # --- Funding: neutral without futures feed ---
-    factors["funding"] = 5
+    factors["funding"] = cw.get("funding", 10.0) * 0.5
 
     return sum(factors.values()), factors
 
@@ -932,3 +941,79 @@ def build_signal(
 
     best = rank_signals(scored)
     return apply_stability(df, best, stability_detector)
+
+
+# --- Weight grid-search (loop-driven calibration) ------------------------------
+
+MAIN_WEIGHT_KEYS = ("price_action", "htf_trend", "rsi", "structure", "macd")
+
+
+def _complete_weights(w5: dict[str, float]) -> dict[str, float]:
+    """Derive the 6th weight (funding) from the sum-to-100 constraint.
+
+    ``w5`` covers price_action/htf_trend/rsi/structure/macd; funding is
+    100 - sum(w5). The result passes TuningConstants.__post_init__.
+    """
+    assert set(w5) == set(MAIN_WEIGHT_KEYS), f"expected {set(MAIN_WEIGHT_KEYS)}, got {set(w5)}"
+    return {**w5, "funding": 100.0 - sum(w5.values())}
+
+
+def grid_search_weights(
+    df: pd.DataFrame,
+    symbol: str,
+    interval: str,
+    candidates: list[dict[str, float]],
+    window: int = 240,
+    step: int = 24,
+    horizon: int = 24,
+    n_workers: int = 1,
+) -> dict:
+    """Evaluate confluence-weight combinations via walk-forward backtest.
+
+    Each candidate is a full 6-key weight dict (summing to 100); it is
+    applied through TuningScope so ``confluence_score`` reads it live.
+
+    Returns:
+        {
+          "best_weights": {...},
+          "results": [{"weights": {...}, "win_rate": float, "avg_r": float, "n": int}, ...],
+        }
+    """
+    import dataclasses
+
+    from app.config.tuning import TUNING, TuningScope
+    from scripts.backtest_harmonic_lib import walk_forward
+
+    outcomes = []
+
+    def _eval(cand_weights: dict[str, float]) -> dict:
+        tuned = dataclasses.replace(TUNING, confluence_weights=cand_weights)
+        with TuningScope(tuned):
+            records = walk_forward(
+                df, symbol, interval,
+                window=window, step=step, horizon=horizon,
+            )
+        wins = sum(1 for r in records if r.result == "win")
+        losses = sum(1 for r in records if r.result == "loss")
+        n = wins + losses
+        win_rate = wins / n if n else 0.0
+        total_r = sum(r.r_multiple for r in records)
+        avg_r = total_r / n if n else 0.0
+        return {"weights": cand_weights, "win_rate": win_rate, "avg_r": avg_r, "n": n}
+
+    if n_workers <= 1 or len(candidates) == 1:
+        outcomes = [_eval(c) for c in candidates]
+    else:
+        import multiprocessing
+        # NOTE: workers need module-level imports; keep single-process for
+        # correctness unless the caller pre-imports everything.
+        outcomes = [_eval(c) for c in candidates]
+
+    scored = [
+        o for o in outcomes
+        if o["n"] >= 5  # require a minimum sample before trusting win_rate
+    ]
+    if not scored:
+        return {"best_weights": candidates[0], "results": outcomes}
+    best = max(scored, key=lambda o: o["win_rate"] * 0.4 + o["avg_r"] * 0.6)
+    return {"best_weights": best["weights"], "results": outcomes}
