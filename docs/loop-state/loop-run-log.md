@@ -26,9 +26,9 @@
 ### 2026-08-09T22:50:00Z [issue-triage] loop=1 candidates=1 cost=0.00 outcome=escalated scope=auth-magic-link-redirect bug=email-uses-localhost site_url=piomgijwxpbsvnigtbmt fix_owner=human required=supabase-dashboard-auth-url-config
 ### 2026-08-09T22:51:00Z [pr-babysitter] loop=1 candidates=0 cost=0.00 outcome=success code_review=use-auth.ts signInWithOtp_passes_emailRedirectTo=correct verdict=not-a-code-bug
 ### 2026-08-09T22:55:00Z [pr-babysitter] loop=1 candidates=4 cost=0.00 outcome=error probe=admin-generate_link results=requested-www-cryptoagg-xyz-but-redirect_to-still-localhost-3000 conclusion=supabase-dashboard-change-did-not-take-effect fix_owner=human
+### 2026-08-09T23:05:00Z [pr-babysitter] loop=1 candidates=7 cost=0.00 outcome=success probe=admin-generate_link results=action_link-redirect_to-https-www-cryptoagg-xyz-for-every-input conclusion=supabase-dashboard-fix-verified fix_closed=v3ver02
 ```
 
 | Value | Meaning |
-| `errors=N` | N candidates errored |
 | `paused` | Loop paused due to budget or gate |
 | `escalated` | Required human intervention |

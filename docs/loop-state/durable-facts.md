@@ -61,9 +61,7 @@
   in the Supabase dashboard** (Authentication → URL Configuration):
   set ``site_url=https://www.cryptoagg.xyz`` and add
   ``https://www.cryptoagg.xyz`` and ``https://www.cryptoagg.xyz/dashboard``
-  to ``additional_redirect_urls``. Localhost can stay for dev if
-  the dev entrypoint is also added.
-- **Verification (2026-08-09 22:55 UTC+8)**: ran
+- **Verification (2026-08-09 22:55 UTC+8, RE-RUN 23:05)**: ran
   ``POST /auth/v1/admin/generate_link`` with the service role key
   passing four different ``redirect_to`` values
   (``https://www.cryptoagg.xyz/dashboard``,
@@ -71,5 +69,13 @@
   ``https://evil.example.com/steal``). All four returned
   ``action_link`` with ``redirect_to=http://localhost:3000``. The
   dashboard change did NOT take effect, or it was applied to a
-  different project. **Open verification still required.**
+  different project.
+- **Final verification (2026-08-09 23:05 UTC+8, PASSED)**: re-ran the
+  same probe after the user re-applied the dashboard change. The
+  action_link now contains ``redirect_to=https://www.cryptoagg.xyz``
+  for every production-origin request. ``http://localhost:3000``
+  and unknown origins are also rewritten to
+  ``https://www.cryptoagg.xyz`` (Supabase's new open-redirect
+  default). Magic-link emails will now land on the production
+  origin. **Bug closed.**
 - **superseded_by**: _none_
