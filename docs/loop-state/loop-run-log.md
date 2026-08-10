@@ -34,6 +34,7 @@
 ### 2026-08-10T09:00:00Z [backend-redeploy] loop=1 candidates=0 cost=0.00 outcome=success tool=scripts/deploy-backend-auth-fix.sh env_deltas=4 non-git-dir origin-moved systemd-managed missing-pytest probes=no-auth-401 bearer-401 history-401 auth_tests=15-15 health=ok durable=v3auth01 closed=auth-500
 ### 2026-08-10T09:30:00Z [backend-redeploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-auth-401 root_cause=supabase-py-2.15.0-rejects-publishable-anon-key fix=upgrade-supabase-2.31.0 secondary=quota-fk-order+check-constraint-normalize+timing-attr probes=history-200 auth-passed quota-reserve-200 remaining=yahoo-rate-limit-503
 ### 2026-08-10T07:00:00Z [backtest-feedback-loop] loop=1 candidates=1 cost=0.00 outcome=success scope=backtest-feedback-loop fixes=6(date-slice+score-clamp+weights-wiring+liquidity-sweep+shebang+mp-summaries) tests=252-pass probes=31d-backtest-14s grid-search-real-data parallel-dryrun-3sym-4s remaining=none env_failures=futures-kline-datasource-tests-need-network
+### 2026-08-10T17:00:00Z [backtest-evolution-design] loop=1 candidates=0 cost=0.00 outcome=success scope=backtest-evolution-plan file=docs/plans/2026-08-10-backtest-evolution-plan.md phases=4(ConfluenceFilter+WalkForward+Freqtrade+LoopFeedback) registered_in=PLANS.md status=in-progress next=Phase1-ConfluenceFilter
 ```
 
 | Value | Meaning |

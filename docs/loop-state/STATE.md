@@ -7,6 +7,13 @@
 
 <!-- 由循环自动填充 -->
 
+- [ ] 2026-08-10: **Backtest Evolution Plan — IN PROGRESS.** Designed
+  auto-evolution backtest + optimization system using loop engineering
+  methodology. Output: `docs/plans/2026-08-10-backtest-evolution-plan.md`.
+  Covers: Confluence Filter + Confidence Score + standard SL/TP rules +
+  Walk-forward backtest + Freqtrade integration (Phase 1-4 roadmap).
+  Registered in `PLANS.md`. Next step: Phase 1 implementation
+  (ConfluenceFilter in `app/domain/signals.py`).
 - [x] 2026-08-10: **Backtest feedback loop — CLOSED (deployed).**
   Daily pipeline: cron 20:00 UTC → run_backtest.py → backtest_results.json
   + tuning_snapshots/daily_*.yaml (candidate) → human PR → tuning.py.
