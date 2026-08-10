@@ -290,9 +290,11 @@ def main() -> None:
     write_results(result, RESULT_DIR / "backtest_results.json")
 
     if args.snapshot:
-        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        # write_tuning_snapshot treats `root` as the *state root* and appends
+        # tuning_snapshots/ itself. Passing ROOT lands candidates in the
+        # repo-visible tuning_snapshots/ dir for the human PR gate.
         label = f"daily_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
-        snapshot_path = write_tuning_snapshot(TUNING, label, root=SNAPSHOT_DIR)
+        snapshot_path = write_tuning_snapshot(TUNING, label, root=ROOT)
         log.info("Wrote tuning snapshot to %s", snapshot_path)
 
     log.info("Backtest complete: run_id=%s signals=%d",
