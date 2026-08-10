@@ -7,6 +7,23 @@
 
 <!-- 由循环自动填充 -->
 
+- [x] 2026-08-10: **Backend 401 — CLOSED (deployed).** Frontend reported
+  401 on /api/analyze and /api/history. Root cause: SUPABASE_ANON_KEY
+  uses the new `sb_publishable_...` format which supabase-py 2.15.0
+  rejects at create_client (Invalid API key) — verify_user_token
+  returned None for every request. Fixed by upgrading to
+  supabase-py 2.31.0 (accepts publishable keys). Secondary fixes found
+  while verifying: (1) routes.py reserved quota BEFORE creating the
+  analyses row — usage_ledger.analysis_id FK 23503 → reordered to
+  create record first, added delete_analysis_record cleanup on quota
+  rejection; (2) analysis_type/market/interval/status now normalized
+  to live schema CHECK constraints (auto→forming placeholder,
+  futures→binance, 1m/5m→15m, failed→failed_upstream) + resolved_type
+  written back on completion; (3) result.timing.get() AttributeError
+  (TimingInfo is a pydantic model, not dict) — token counts not
+  tracked yet, pass None. Verified live: /api/history 200 with real
+  token; /api/analyze passes auth+quota (reserve_quota 200, release
+  on failure), only remaining blocker is Yahoo rate-limit 503 (external).
 - [x] 2026-08-08: GitHub Issues **enabled** on `gyc567/pyharmonics-gpt` (smoke #1 closed)
 - [x] 2026-08-08: Triage + loop labels created (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `maker-checker`, `release-prep`, `code-health`, `dependencies`, `automated`, `loop`)
 - [x] 2026-08-08: #3 apply_tuning Path A (get_tuning live reads)

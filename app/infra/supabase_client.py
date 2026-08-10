@@ -368,6 +368,20 @@ def create_analysis_record(
             "user_id": user_id,
             **data,
         }
+        # Normalize values to the LIVE schema's CHECK constraints. The
+        # analyses table on Supabase only allows analysis_type IN
+        # ('forming','formed','divergence'), market IN ('binance','yahoo'),
+        # interval IN ('15m','1h','4h','1d','1w'). The app enum is wider
+        # (auto, futures, 1m, 5m) and the resolved type is only known after
+        # the analysis runs — so we persist a legal placeholder here and the
+        # record is updated to the final type/status after the run.
+        _ANALYSIS_TYPE_MAP = {"auto": "forming"}
+        _MARKET_MAP = {"futures": "binance"}
+        _INTERVAL_MAP = {"1m": "15m", "5m": "15m"}
+        record["analysis_type"] = _ANALYSIS_TYPE_MAP.get(record.get("analysis_type"), record.get("analysis_type"))
+        record["market"] = _MARKET_MAP.get(record.get("market"), record.get("market"))
+        record["interval"] = _INTERVAL_MAP.get(record.get("interval"), record.get("interval"))
+
         client = get_supabase_client(use_service_role=True)
         client.table("analyses").insert(record).execute()
         return record_id
@@ -392,6 +406,29 @@ def update_analysis_record(analysis_id: str, updates: dict[str, Any]) -> bool:
         return True
     except Exception:
         logger.exception("Analysis update failed")
+        return False
+
+
+def delete_analysis_record(analysis_id: str) -> bool:
+    """Delete an analysis record.
+
+    Used to clean up a placeholder "created" row when quota reservation
+    fails after the record was inserted (the row would otherwise be an
+    orphan: usage_ledger FK requires the analyses row to exist BEFORE the
+    quota RPC inserts its ledger entry).
+
+    Args:
+        analysis_id: Analysis UUID.
+
+    Returns:
+        True if successful.
+    """
+    try:
+        client = get_supabase_client(use_service_role=True)
+        client.table("analyses").delete().eq("id", analysis_id).execute()
+        return True
+    except Exception:
+        logger.exception("Analysis delete failed")
         return False
 
 

@@ -36,6 +36,7 @@ from app.infra.health_check import run_health_checks
 from app.infra.supabase_client import (
     consume_ledger_quota,
     create_analysis_record,
+    delete_analysis_record,
     get_analysis_by_idem_key,
     log_audit_event,
     release_ledger_quota,
@@ -134,28 +135,9 @@ def analyze(user):
                 200,
             )
 
-    # Reserve quota.
+    # Create analysis record FIRST so the quota reservation below can
+    # reference it (usage_ledger.analysis_id has an FK to analyses).
     analysis_id = str(uuid.uuid4())
-    if is_local_dev_mode():
-        reserved, remaining, ledger_id = True, 100, None
-    else:
-        reserved, remaining, ledger_id = check_quota(user_id, analysis_id, units=1)
-    if not reserved:
-        return (
-            jsonify(
-                ErrorResponse(
-                    error={
-                        "code": "QUOTA_EXCEEDED",
-                        "message": f"Daily quota exceeded. Remaining: {remaining}",
-                        "retryable": False,
-                        "request_id": "",
-                    }
-                ).model_dump()
-            ),
-            429,
-        )
-
-    # Create analysis record.
     record_payload = {
         "input_mode": "form",
         "market": req.market.value,
@@ -176,18 +158,41 @@ def analyze(user):
     if is_local_dev_mode() and not record_id:
         logging.warning("Local dev: analysis record creation skipped/failed")
 
+    # Reserve quota (after record creation so usage_ledger FK resolves).
+    if is_local_dev_mode():
+        reserved, remaining, ledger_id = True, 100, None
+    else:
+        reserved, remaining, ledger_id = check_quota(user_id, analysis_id, units=1)
+    if not reserved:
+        # Remove the placeholder record so we don't leave orphaned "created" rows.
+        if record_id and not is_local_dev_mode():
+            try:
+                delete_analysis_record(record_id)
+            except Exception:
+                logging.exception("Failed to clean up analysis record after quota rejection")
+        return (
+            jsonify(
+                ErrorResponse(
+                    error={
+                        "code": "QUOTA_EXCEEDED",
+                        "message": f"Daily quota exceeded. Remaining: {remaining}",
+                        "retryable": False,
+                        "request_id": "",
+                    }
+                ).model_dump()
+            ),
+            429,
+        )
+
     # Run analysis.
     try:
         orchestrator = get_orchestrator()
         result = orchestrator.analyze(req, user_id=user_id, analysis_id=analysis_id)
 
-        # Consume quota.
+        # Consume quota. Token counts are not tracked yet (TimingInfo has no
+        # token fields), so pass None — consume_ledger_quota accepts Optional.
         if ledger_id:
-            consume_ledger_quota(
-                ledger_id,
-                input_tokens=result.timing.get("input_tokens") if hasattr(result, "timing") else None,
-                output_tokens=result.timing.get("output_tokens") if hasattr(result, "timing") else None,
-            )
+            consume_ledger_quota(ledger_id, input_tokens=None, output_tokens=None)
 
         # Persist completion status.
         result_summary = None
@@ -204,6 +209,12 @@ def analyze(user):
                 record_id,
                 {
                     "status": "completed",
+                    # Persist the engine's resolved type for auto requests
+                    # (the placeholder row was created with a legal CHECK
+                    # value; the real answer arrives after the run).
+                    "analysis_type": result.technical_result.resolved_type
+                    if result.technical_result and result.technical_result.resolved_type
+                    else None,
                     "result_summary": result_summary,
                 },
             )
@@ -223,13 +234,13 @@ def analyze(user):
         if ledger_id:
             release_ledger_quota(ledger_id)
         if record_id:
-            update_analysis_record(record_id, {"status": "failed", "error_message": str(e)})
+            update_analysis_record(record_id, {"status": "failed_upstream", "error_message": str(e)})
         raise
     except Exception as e:
         if ledger_id:
             release_ledger_quota(ledger_id)
         if record_id:
-            update_analysis_record(record_id, {"status": "failed", "error_message": "Internal error"})
+            update_analysis_record(record_id, {"status": "failed_upstream", "error_message": "Internal error"})
         logging.exception("Analysis failed")
         raise AppError(
             ErrorCode.INTERNAL_ERROR,
