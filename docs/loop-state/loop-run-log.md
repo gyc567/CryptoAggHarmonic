@@ -33,6 +33,7 @@
 ### 2026-08-10T08:42:00Z [issue-triage] loop=1 candidates=0 cost=0.00 outcome=escalated user_reported_500_persists_after_fix_pushed root_cause=fix-not-deployed-to-backend fix_status=code-in-main-deploy-pending status=human-action-required
 ### 2026-08-10T09:00:00Z [backend-redeploy] loop=1 candidates=0 cost=0.00 outcome=success tool=scripts/deploy-backend-auth-fix.sh env_deltas=4 non-git-dir origin-moved systemd-managed missing-pytest probes=no-auth-401 bearer-401 history-401 auth_tests=15-15 health=ok durable=v3auth01 closed=auth-500
 ### 2026-08-10T09:30:00Z [backend-redeploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-auth-401 root_cause=supabase-py-2.15.0-rejects-publishable-anon-key fix=upgrade-supabase-2.31.0 secondary=quota-fk-order+check-constraint-normalize+timing-attr probes=history-200 auth-passed quota-reserve-200 remaining=yahoo-rate-limit-503
+### 2026-08-10T07:00:00Z [backtest-feedback-loop] loop=1 candidates=1 cost=0.00 outcome=success scope=backtest-feedback-loop fixes=6(date-slice+score-clamp+weights-wiring+liquidity-sweep+shebang+mp-summaries) tests=252-pass probes=31d-backtest-14s grid-search-real-data parallel-dryrun-3sym-4s remaining=none env_failures=futures-kline-datasource-tests-need-network
 ```
 
 | Value | Meaning |

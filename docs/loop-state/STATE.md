@@ -7,6 +7,22 @@
 
 <!-- 由循环自动填充 -->
 
+- [x] 2026-08-10: **Backtest feedback loop — CLOSED (deployed).**
+  Daily pipeline: cron 20:00 UTC → run_backtest.py → backtest_results.json
+  + tuning_snapshots/daily_*.yaml (candidate) → human PR → tuning.py.
+  Fixes found: (1) _load_history ignored start/end — walked the full
+  17521-row cache (720 windows ≈ 6min); now date-slices (31d backtest 14s);
+  (2) score_candidate overflow: Q4 pattern bump pushed confluence score
+  past 100 → grade() @require violations skipped valid signals; clamped;
+  (3) confluence weights were hardcoded and TUNING.confluence_weights was
+  inert — wired to tuning + grid_search_weights() with sum-to-100
+  constraint; (4) liquidity-sweep gate added (D-bar volume > 3x 20-bar
+  mean → trap marker, not veto); (5) shebang pinned to .venv (PATH python3
+  is a 3.12 dist-scripts 'scripts' package that shadows repo module);
+  (6) multiprocessing returns per-symbol summaries, not raw records.
+  Verified: 252 signal/backtest tests pass; real-data grid-search runs;
+  3-symbol parallel dry-run 4s. Known env failures (unrelated): futures/
+  kline datasource tests need external network feeds.
 - [x] 2026-08-10: **Backend 401 — CLOSED (deployed).** Frontend reported
   401 on /api/analyze and /api/history. Root cause: SUPABASE_ANON_KEY
   uses the new `sb_publishable_...` format which supabase-py 2.15.0

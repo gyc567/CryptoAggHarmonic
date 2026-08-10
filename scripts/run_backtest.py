@@ -173,6 +173,27 @@ def _run_symbol(
     return records
 
 
+def _run_symbol_aggregated(
+    symbol: str,
+    interval: str,
+    start: str,
+    end: str,
+    window: int,
+    step: int,
+    horizon: int,
+    min_grade: str | None,
+) -> tuple[str, dict]:
+    """Worker: run walk-forward for one symbol, return (symbol, summary).
+
+    Aggregates inside the worker so only a small summary dict crosses the
+    process boundary (returning raw records blew the Pool pipe on long
+    datasets).
+    """
+    records = _run_symbol(symbol, interval, start, end, window, step, horizon, min_grade)
+    agg = aggregate_records(records) if records else {}
+    return symbol, {"total": len(records), "aggregated": agg}
+
+
 def run(
     symbols: list[str],
     interval: str,
@@ -192,24 +213,28 @@ def run(
         for s in symbols
     ]
     if n_workers <= 1 or len(tasks) == 1:
-        records_by_symbol: list[list[BacktestSignalRecord]] = []
-        for t in tasks:
-            records_by_symbol.append(_run_symbol(*t))
+        summaries = [_run_symbol_aggregated(*t) for t in tasks]
     else:
         with multiprocessing.Pool(n_workers) as pool:
-            records_by_symbol = pool.starmap(_run_symbol, tasks)
+            summaries = pool.starmap(_run_symbol_aggregated, tasks)
 
-    all_records = [r for records in records_by_symbol for r in records]
-    agg = aggregate_records(all_records) if all_records else {}
+    by_symbol = dict(summaries)
+    total_signals = sum(s["total"] for s in by_symbol.values())
+    # Roll up per-symbol aggregates into one overall summary for the JSON.
+    overall: dict = {"total_signals": total_signals}
+    for s in by_symbol.values():
+        for k, v in (s["aggregated"] or {}).items():
+            if isinstance(v, (int, float)):
+                overall[k] = overall.get(k, 0) + v
     return {
         "run_id": f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "symbols": symbols,
         "interval": interval,
         "param_snapshot": to_dict(TUNING),
-        "total_signals": len(all_records),
-        "aggregated": agg,
-        "records": [r.__dict__ for r in all_records],
+        "total_signals": total_signals,
+        "aggregated": overall,
+        "per_symbol": {s: {"total": v["total"]} for s, v in by_symbol.items()},
     }
 
 
@@ -249,11 +274,11 @@ def main() -> None:
                     help="YAML config with symbols/intervals/time_range")
     ap.add_argument("--symbols", nargs="+", default=None,
                     help=f"Symbols to backtest (overrides --config; default: {' '.join(DEFAULT_SYMBOLS)})")
-    ap.add_argument("--interval", default=DEFAULT_INTERVAL,
-                    help="Bar interval: 15m/1h/4h/1d/1w (default: 1h)")
-    ap.add_argument("--start", default=DEFAULT_START,
-                    help="Start date YYYY-MM-DD (default: 2024-01-01)")
-    ap.add_argument("--end", default=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    ap.add_argument("--interval", default=None,
+                    help="Bar interval: 15m/1h/4h/1d/1w (default from config: 1h)")
+    ap.add_argument("--start", default=None,
+                    help="Start date YYYY-MM-DD (default from config: 2024-01-01)")
+    ap.add_argument("--end", default=None,
                     help="End date YYYY-MM-DD (default: today)")
     ap.add_argument("--window", type=int, default=240,
                     help="Walk-forward window size in bars (default: 240 = 10d @ 1h)")
@@ -272,10 +297,11 @@ def main() -> None:
     cfg: dict = {}
     if args.config:
         cfg = _load_config(args.config)
+    # Explicit CLI flags win over config; config wins over defaults.
     symbols = args.symbols or cfg.get("symbols") or DEFAULT_SYMBOLS
-    interval = cfg.get("interval") or args.interval
-    start = cfg.get("start") or args.start
-    end = cfg.get("end") or args.end
+    interval = args.interval or cfg.get("interval") or DEFAULT_INTERVAL
+    start = args.start or cfg.get("start") or DEFAULT_START
+    end = args.end or cfg.get("end") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     log.info(
         "Starting backtest: symbols=%s interval=%s window=%d step=%d horizon=%d workers=%d",
