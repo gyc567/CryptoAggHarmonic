@@ -68,6 +68,27 @@
   Post-restart probes: ``/api/analyze`` no-auth=401, Bearer=401,
   ``/api/history`` Bearer=401 (was 500). ``tests/test_auth.py``
   15/15. Durable fact `[v3auth01]` verified closed.
+- [x] 2026-08-10: **hapi.cryptoagg.xyz local deployment — DONE.**
+  Local backend (`/root/code/CryptoAggHarmonic/`) now serving
+  ``https://hapi.cryptoagg.xyz``. Key findings: (1) this machine IS
+  the backend server (racknerd-8502b6d, 107.174.96.244); (2) old
+  backend at ``/var/www/pyharmonics/`` managed by ``systemd
+  pyharmonics.service`` — must stop unit before starting new process;
+  (3) ``requirements.txt`` has unsolvable websockets conflict on
+  Python 3.12 (alpaca<11 vs supabase>=11); resolved by using the
+  old Python 3.11 venv at ``/var/www/pyharmonics/.venv`` with
+  ``PYTHONPATH=/root/code/CryptoAggHarmonic``; (4) Caddy already had
+  ``hapi.cryptoagg.xyz`` reverse-proxy configured and SSL cert issued
+  (Let's Encrypt, valid to Nov 7 2026); (5) ``supabase`` health
+  check shows ``degraded`` from this server due to DNS failure
+  (``[Errno -2] Name or service not known``) — upstream network
+  restriction on this VPS, not a code issue. Test results:
+  ``/api/health`` → 200 (version 0.2.0 new code confirmed);
+  ``/api/markets`` → 200; ``/api/history`` → 200; ``/api/analyze``
+  → 422 (params validation, no 500); `/api/analyze` with full
+  params → 503 (Yahoo rate limit, external). Auth 500 bug
+  confirmed closed. Full report:
+  ``docs/test-report-hapi-domain-2026-08-10.md``.
 - [x] 2026-08-09: **Backend auth 500 — fixed in repo, awaits backend
   redeploy.** ``app/api/auth.py`` referenced ``ErrorCode``,
   ``verify_user_token``, and ``reserve_user_quota`` without
