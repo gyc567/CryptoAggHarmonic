@@ -1,5 +1,0 @@
-# Constraint file for CI — overrides conflicting transitive deps.
-# alpaca-trade-api declares websockets<11 but imports OK with 11.x in practice.
-# pyharmonics/yfinance/supabase require websockets>=11.
-# Solution: allow 11.x, pip resolver picks compatible version.
-websockets>=10.0,<12.0
