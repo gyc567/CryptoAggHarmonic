@@ -27,8 +27,9 @@
 ### 2026-08-09T22:51:00Z [pr-babysitter] loop=1 candidates=0 cost=0.00 outcome=success code_review=use-auth.ts signInWithOtp_passes_emailRedirectTo=correct verdict=not-a-code-bug
 ### 2026-08-09T22:55:00Z [pr-babysitter] loop=1 candidates=4 cost=0.00 outcome=error probe=admin-generate_link results=requested-www-cryptoagg-xyz-but-redirect_to-still-localhost-3000 conclusion=supabase-dashboard-change-did-not-take-effect fix_owner=human
 ### 2026-08-09T23:05:00Z [pr-babysitter] loop=1 candidates=7 cost=0.00 outcome=success probe=admin-generate_link results=action_link-redirect_to-https-www-cryptoagg-xyz-for-every-input conclusion=supabase-dashboard-fix-verified fix_closed=v3ver02
+### 2026-08-09T23:20:00Z [issue-triage] loop=1 candidates=2 cost=0.00 outcome=escalated scope=api-auth-500-affected=/api/analyze-/api/history root_cause=app-api-auth-missing-imports file=app/api/auth.py missing=ErrorCode-verify_user_token-reserve_user_quota
+### 2026-08-09T23:21:00Z [code-health-audit] loop=1 candidates=1 cost=0.00 outcome=success fix=add-three-imports tests_added=2 auth_tests=15-15 total_tests=1772-0 status=ready-for-backend-redeploy
 ```
 
 | Value | Meaning |
-| `paused` | Loop paused due to budget or gate |
 | `escalated` | Required human intervention |

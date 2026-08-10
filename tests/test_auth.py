@@ -15,6 +15,18 @@ from app.api.auth import (
 from app.domain.enums import ErrorCode
 
 
+# Regression: prior production 500 on /api/analyze and /api/history was
+# caused by ``app.api.auth`` referencing ``verify_user_token`` and
+# ``reserve_user_quota`` without importing them, plus ``ErrorCode`` from
+# the wrong module. This guard ensures the module-level names resolve.
+def test_module_level_names_resolve():
+    import app.api.auth as auth
+    assert callable(auth.verify_user_token)
+    assert callable(auth.reserve_user_quota)
+    assert hasattr(auth, "ErrorCode")
+    assert auth.ErrorCode.UNAUTHORIZED.value == "UNAUTHORIZED"
+
+
 # Create minimal Flask app for testing
 @pytest.fixture
 def app():
@@ -182,6 +194,37 @@ class TestCheckQuota:
         assert success is True
         assert remaining == 4
         assert ledger_id == "ledger-123"
+
+
+class TestAuthEndToEnd:
+    """End-to-end regression: a request with a valid token must reach the
+    handler. Pre-fix the ``verify_user_token`` name was unbound inside the
+    decorator body and any authenticated request 500'd.
+    """
+
+    @patch.dict(os.environ, {"DISABLE_AUTH": ""}, clear=True)
+    @patch("app.api.auth.verify_user_token")
+    @patch("app.api.auth.get_auth_token")
+    def test_valid_token_reaches_handler(self, mock_get_token, mock_verify, app, client):
+        mock_get_token.return_value = "valid-token"
+        mock_verify.return_value = {
+            "id": "user-123",
+            "email": "test@example.com",
+            "role": "user",
+            "status": "active",
+            "daily_quota": 5,
+            "used_quota": 0,
+        }
+        @app.route("/api/analyze", methods=["POST"])
+        @require_auth
+        def handler(user=None):
+            from flask import jsonify
+            return jsonify({"reached": True, "user_id": user["id"]})
+
+        resp = client.post("/api/analyze", json={"symbol": "BTCUSDT"})
+        # Pre-fix this was 500 with NameError; must be 200 here.
+        assert resp.status_code == 200
+        assert resp.get_json() == {"reached": True, "user_id": "user-123"}
 
     @patch("app.api.auth.reserve_user_quota")
     def test_quota_exceeded(self, mock_reserve):

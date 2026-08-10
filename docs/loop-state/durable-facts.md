@@ -79,3 +79,32 @@
   default). Magic-link emails will now land on the production
   origin. **Bug closed.**
 - **superseded_by**: _none_
+
+### [v3auth01] — Backend /api/analyze and /api/history returned 500 due to missing imports in app/api/auth.py
+- **Created**: 2026-08-09 23:21 UTC+8
+- **Source**: app/api/auth.py + tests/test_auth.py
+- **Content**: ``app/api/auth.py`` referenced three names without
+  importing them: ``ErrorCode`` (used at three call sites),
+  ``verify_user_token`` (called inside ``require_auth`` after a valid
+  Bearer token is seen), and ``reserve_user_quota`` (called inside
+  ``check_quota``). With no token, ``require_auth`` short-circuits to
+  401 — which is what every unauthenticated probe saw. With a valid
+  token (the production user flow), the decorator reached
+  ``verify_user_token(token)``, raised ``NameError``, and the Flask
+  global error handler returned 500. The frontend correctly surfaced
+  the 500. **The bug masqueraded as "401 from the wire"** because
+  unauthenticated traffic is the only thing curl/regression tests
+  ever saw.
+- **Fix**: added the three missing imports
+  (``from app.domain.enums import ErrorCode``,
+  ``from app.infra.supabase_client import reserve_user_quota, verify_user_token``)
+  in commit ``<this-commit>``. The backend at ``hapi.cryptoagg.xyz``
+  still runs the pre-fix code; redeploy required.
+- **Tests added**: ``test_module_level_names_resolve`` (asserts the
+  module-level names resolve, guards against a future regression) and
+  ``TestAuthEndToEnd.test_valid_token_reaches_handler`` (full
+  decorator → handler path with a valid token; pre-fix this 500'd).
+- **Verification**: ``pytest tests/`` → 1772 passed, 0 failed (up
+  from 1762 — the 7 prior auth-test failures + 1 rsi-trend-api
+  failure are all green).
+- **superseded_by**: _none_

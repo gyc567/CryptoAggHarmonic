@@ -8,6 +8,12 @@ from typing import Any
 
 from flask import jsonify, request
 
+from app.domain.enums import ErrorCode
+from app.infra.supabase_client import reserve_user_quota, verify_user_token
+
+logger = logging.getLogger(__name__)
+
+
 def get_auth_token() -> str | None:
     """Extract Bearer token from Authorization header or query param.
 

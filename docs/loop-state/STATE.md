@@ -27,10 +27,19 @@
   deploy at `https://www.cryptoagg.xyz` (T5 fully verified: `/`,
   `/login`, `/dashboard`, `/rsi-strategy`, `/api/health`,
   `/api/markets` all 200, no client-side backend-host leak).
-
-## Watch List
-
-- ~~[FIXED 2026-08-09 23:05] Auth: magic-link email used `localhost:3000`
+- [x] 2026-08-09: **Backend auth 500 — fixed in repo, awaits backend
+  redeploy.** ``app/api/auth.py`` referenced ``ErrorCode``,
+  ``verify_user_token``, and ``reserve_user_quota`` without
+  importing them. Any authenticated request to
+  ``/api/analyze`` or ``/api/history`` raised ``NameError`` and the
+  Flask global error handler returned 500 (the public-facing
+  symptom reported by the user). Unauthenticated traffic returned
+  401 normally, so the bug was invisible to unauthenticated
+  probes. Added the three imports in this commit; added a
+  ``TestAuthEndToEnd.test_valid_token_reaches_handler`` regression.
+  Suite: 1772/0. The live backend at ``hapi.cryptoagg.xyz`` still
+  runs the pre-fix code; **redeploy required** to clear the 500.
+  Durable fact `[v3auth01]`.
   instead of `www.cryptoagg.xyz`.~~ Supabase project
   `piomgijwxpbsvnigtbmt` Auth → URL Configuration now has
   ``Site URL = https://www.cryptoagg.xyz`` and
