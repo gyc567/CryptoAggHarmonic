@@ -1,0 +1,5 @@
+# 回测反馈闭环 — 每日定时任务
+# 安装: crontab crontab.txt
+# 说明: 每天 UTC 20:00 跑全品种回测并写候选快照
+# 日志: logs/backtest_cron.log
+0 20 * * * cd /root/code/pyharmonics-gpt && ./scripts/run_backtest.py --config config/backtest_symbols.yaml --snapshot >> logs/backtest_cron.log 2>&1

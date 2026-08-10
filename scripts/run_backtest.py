@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/root/code/pyharmonics-gpt/.venv/bin/python
 """Daily backtest scheduler — run via cron at 20:00 UTC.
 
 Runs walk-forward backtest across configured symbols, appends results to
