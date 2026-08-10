@@ -27,6 +27,14 @@
   deploy at `https://www.cryptoagg.xyz` (T5 fully verified: `/`,
   `/login`, `/dashboard`, `/rsi-strategy`, `/api/health`,
   `/api/markets` all 200, no client-side backend-host leak).
+- [x] 2026-08-10: **Backend auth 500 — CLOSED (deployed).** Ran the
+  loop-audited ``scripts/deploy-backend-auth-fix.sh`` on the server.
+  Audit found 4 env deltas vs the original script (non-git rsync
+  deploy dir, origin/main moved past c6c2d0e, systemd-managed
+  gunicorn, missing pytest) — script adapted accordingly.
+  Post-restart probes: ``/api/analyze`` no-auth=401, Bearer=401,
+  ``/api/history`` Bearer=401 (was 500). ``tests/test_auth.py``
+  15/15. Durable fact `[v3auth01]` verified closed.
 - [x] 2026-08-09: **Backend auth 500 — fixed in repo, awaits backend
   redeploy.** ``app/api/auth.py`` referenced ``ErrorCode``,
   ``verify_user_token``, and ``reserve_user_quota`` without

@@ -23,7 +23,11 @@ The 8 previously-failing tests in `tests/test_auth.py` (and 1 in `tests/test_rsi
 - [x] Regression coverage: `test_module_level_names_resolve` and `TestAuthEndToEnd.test_valid_token_reaches_handler` guard the path.
 - [x] Source fix pushed to `origin/main` (commit `c6c2d0e`).
 - [x] Full test suite green: 1772 passed, 0 failed (was 1762 passed, 8 failed).
-- [ ] **Backend redeploy at `hapi.cryptoagg.xyz`** — see `scripts/deploy-backend-auth-fix.sh`.
+- [x] **Backend redeploy at `hapi.cryptoagg.xyz`** — done 2026-08-10 via
+  `scripts/deploy-backend-auth-fix.sh` (loop-audited; 4 env deltas
+  fixed: non-git deploy dir, origin/main past c6c2d0e, systemd-managed
+  gunicorn, missing pytest). Probes: analyze no-auth=401, bearer=401,
+  history=401. auth tests 15/15.
 
 ## Tasks
 
@@ -81,8 +85,9 @@ Exit codes:
 
 - [x] `pytest tests/` exit 0 (1772/0).
 - [x] `app/api/auth.py` imports `ErrorCode`, `verify_user_token`, `reserve_user_quota`.
-- [ ] `https://hapi.cryptoagg.xyz/api/analyze` returns 401 (not 500) with a Bearer token.
-- [ ] User's 开始分析 action succeeds in the UI.
+- [x] `https://hapi.cryptoagg.xyz/api/analyze` returns 401 (not 500) with a Bearer token.
+      Verified 2026-08-10: bearer probe = 401, no-auth = 401, history = 401.
+- [ ] User's 开始分析 action succeeds in the UI. (待用户在前端确认)
 
 ## Rollback
 
