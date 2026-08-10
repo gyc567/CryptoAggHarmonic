@@ -5,7 +5,7 @@
 
 ## Project Identity
 
-**Name**: pyharmonics-gpt
+**Name**: cryptoagg
 **Type**: Harmonic pattern trading signal SaaS API
 **Stack**: Python 3.11, Flask, Supabase, Redis, RQ, Gunicorn
 

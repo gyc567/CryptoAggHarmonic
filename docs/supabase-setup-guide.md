@@ -1,6 +1,6 @@
 # Supabase 配置指南
 
-> 对应设计文档：docs/plans/2026-07-14-pyharmonics-saas-design.md
+> 对应设计文档：docs/plans/2026-07-14-cryptoagg-saas-design.md
 > 适用阶段：Phase 2（认证与数据层）+ Phase 3（分析 API 存储集成）
 
 ---
@@ -11,7 +11,7 @@
 2. 点击 **New Project**
 3. 填写：
    - **Organization**: 你的组织
-   - **Project Name**: `pyharmonics-saas`（或 `pyharmonics-saas-prod` / `pyharmonics-saas-preview`）
+   - **Project Name**: `cryptoagg-saas`（或 `cryptoagg-saas-prod` / `cryptoagg-saas-preview`）
    - **Database Password**: 生成强密码并保存到密码管理器
    - **Region**: 选择离 Vercel 函数区域最近的（如 `us-east-1`、`ap-southeast-1`）
 4. 等待项目初始化（约 2 分钟）

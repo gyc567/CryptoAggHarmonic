@@ -1,4 +1,4 @@
-# Loop Engineering 整合方案 — pyharmonics-gpt 自进化框架
+# Loop Engineering 整合方案 — cryptoagg 自进化框架
 
 > 本文件是 `app/loop/` 现有 M4 交易信号进化系统的**增量补充**，而非重新发明。
 > 所有已完成的模块（scheduler、pareto、oos_validator、walk_forward 等）在对应的"现状"节已标注"已存在"，
@@ -50,7 +50,7 @@ loop-engineering 的核心哲学：**"Stop prompting. Design the loop. Get a sco
 5. **Sub-agents** — Maker / Checker 分工
 6. **+ Memory / State** — 对话外持久化的脊柱
 
-### 1.2 pyharmonics-gpt 已有资产
+### 1.2 cryptoagg 已有资产
 
 | 资产 | 现状 | 与 loop-engineering 的关系 |
 |------|------|--------------------------|
@@ -110,7 +110,7 @@ loop-engineering 的核心哲学：**"Stop prompting. Design the loop. Get a sco
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                    pyharmonics-gpt LOOP ENGINEERING                     │
+│                    cryptoagg LOOP ENGINEERING                     │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                       │
 │  ┌────────────────────────────────────────────────────────────────┐  │
@@ -175,7 +175,7 @@ loop-engineering 的核心哲学：**"Stop prompting. Design the loop. Get a sco
 > 不能提交。所有共享的循环状态放在 `docs/loop-state/`（可追踪），`.claude/` 仅作为本机记忆存储。
 
 ```
-pyharmonics-gpt/
+cryptoagg/
 ├── .github/
 │   └── workflows/
 │       ├── daily-triage.yml         # L1: 工作日每天 → 更新 docs/loop-state/STATE.md  [NEW]
@@ -370,7 +370,7 @@ pyharmonics-gpt/
 
 ### 5.1 四层定义
 
-| Tier | 生命周期 | 信任级 | pyharmonics-gpt 示例 | 存储位置 |
+| Tier | 生命周期 | 信任级 | cryptoagg 示例 | 存储位置 |
 |------|----------|--------|---------------------|---------|
 | **Scratch** | 本次会话 | 低 | Agent 调试时的临时笔记、open questions | `.claude/MEMORY-STATE.md` scratch 节 |
 | **Episodic** | 天-周 | 中 | 上一次调参的决策、Pareto 移动记录 | `.claude/MEMORY-STATE.md` episodic 节 |

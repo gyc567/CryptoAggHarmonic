@@ -1,13 +1,13 @@
 # Loop Engineering 入门教程
 
-> 本教程面向所有想要理解并参与 pyharmonics-gpt 项目开发的工程师。
+> 本教程面向所有想要理解并参与 cryptoagg 项目开发的工程师。
 > 无需任何 AI Agent 或 GitHub Actions 经验，只需要熟悉 Python 和 Git。
 
 ## 目录
 
 1. [什么是 Loop Engineering？](#1-什么是-loop-engineering)
 2. [核心理念：三步走](#2-核心理念三步走)
-3. [pyharmonics-gpt 的三层循环](#3-pyharmonics-gpt-的三层循环)
+3. [cryptoagg 的三层循环](#3-cryptoagg-的三层循环)
 4. [快速上手：CLI 工具](#4-快速上手cli-工具)
 5. [七大开发循环](#5-七大开发循环)
 6. [记忆分层系统](#6-记忆分层系统)
@@ -79,9 +79,9 @@ Loop Engineering 的哲学可以概括为三句话：
 
 ---
 
-## 3. pyharmonics-gpt 的三层循环
+## 3. cryptoagg 的三层循环
 
-pyharmonics-gpt 有三层循环，它们相互协作但职责不同：
+cryptoagg 有三层循环，它们相互协作但职责不同：
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -115,7 +115,7 @@ pyharmonics-gpt 有三层循环，它们相互协作但职责不同：
 
 ## 4. 快速上手：CLI 工具
 
-pyharmonics-gpt 提供了一套 CLI 工具来管理循环系统。安装项目后即可使用：
+cryptoagg 提供了一套 CLI 工具来管理循环系统。安装项目后即可使用：
 
 ```bash
 # 检查核心文件是否完整
@@ -172,7 +172,7 @@ Overall: 100.0/100 [L3]
 
 ## 5. 七大开发循环
 
-pyharmonics-gpt 定义了七个开发循环，按自动化程度分为 L1-L3：
+cryptoagg 定义了七个开发循环，按自动化程度分为 L1-L3：
 
 ### L1：报告模式（只报告，人类决定）
 
@@ -193,7 +193,7 @@ pyharmonics-gpt 定义了七个开发循环，按自动化程度分为 L1-L3：
 
 ### L3：自动模式（在约束内自动执行）
 
-pyharmonics-gpt 目前没有 L3 开发循环（L3 主要用于 Layer 2 交易信号循环）。
+cryptoagg 目前没有 L3 开发循环（L3 主要用于 Layer 2 交易信号循环）。
 
 ---
 
@@ -201,7 +201,7 @@ pyharmonics-gpt 目前没有 L3 开发循环（L3 主要用于 Layer 2 交易信
 
 Loop Engineering 需要持久化 AI 的"记忆"，否则每次会话都是从零开始。
 
-pyharmonics-gpt 实现了四层记忆系统：
+cryptoagg 实现了四层记忆系统：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -263,7 +263,7 @@ Loop Readiness Score 是评估 Loop Engineering 成熟度的量化指标（满�
 | CLI Tools | 无 | 部分 | 完整 | 完整+测试 |
 | ADR | 无 | 有 | 完整 | 持续更新 |
 
-**当前 pyharmonics-gpt 分数：100/100 [L3]**
+**当前 cryptoagg 分数：100/100 [L3]**
 
 ---
 
