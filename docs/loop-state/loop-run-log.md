@@ -29,7 +29,8 @@
 ### 2026-08-09T23:05:00Z [pr-babysitter] loop=1 candidates=7 cost=0.00 outcome=success probe=admin-generate_link results=action_link-redirect_to-https-www-cryptoagg-xyz-for-every-input conclusion=supabase-dashboard-fix-verified fix_closed=v3ver02
 ### 2026-08-09T23:20:00Z [issue-triage] loop=1 candidates=2 cost=0.00 outcome=escalated scope=api-auth-500-affected=/api/analyze-/api/history root_cause=app-api-auth-missing-imports file=app/api/auth.py missing=ErrorCode-verify_user_token-reserve_user_quota
 ### 2026-08-09T23:21:00Z [code-health-audit] loop=1 candidates=1 cost=0.00 outcome=success fix=add-three-imports tests_added=2 auth_tests=15-15 total_tests=1772-0 status=ready-for-backend-redeploy
+### 2026-08-09T23:30:00Z [dependency-sweeper] loop=1 candidates=0 cost=0.00 outcome=success deploy_artifact=scripts/deploy-backend-auth-fix.sh plan=docs/plans/backend-auth-500-fix.md waiting_on=human-ssh-redeploy-of-hapi.cryptoagg.xyz
+### 2026-08-10T08:42:00Z [issue-triage] loop=1 candidates=0 cost=0.00 outcome=escalated user_reported_500_persists_after_fix_pushed root_cause=fix-not-deployed-to-backend fix_status=code-in-main-deploy-pending status=human-action-required
 ```
 
 | Value | Meaning |
-| `escalated` | Required human intervention |

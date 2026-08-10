@@ -5,11 +5,12 @@ Work-in-progress plans. See [AGENTS.md](AGENTS.md) → Project plans for lifecyc
 ## Active Plans
 
 - [Loop Engineering Integration v3.0](docs/loop-engineering-plan.md) — 引入 loop-engineering 框架，建立开发循环自进化体系（阶段 1-5）；含二次审计新增：`.claude/` gitignore 冲突修复、`apply_tuning()` 竞态条件修复、TUNING promotion gate、drawdown guardrails 等 26 项优化
+- [Backend Auth 500 Fix (and Deploy)](docs/plans/backend-auth-500-fix.md) — `app/api/auth.py` 漏 import 三个名字（`ErrorCode` / `verify_user_token` / `reserve_user_quota`），带 token 请求 → `NameError` → 500。源码已修 (commit `c6c2d0e`)，测试 1772/0；**后端 redeploy 待人工**（`scripts/deploy-backend-auth-fix.sh` 一键拉取+重启+探测）
 
 ## Completed Plans (archived in git)
 
-- [scripts-test-report](docs/plans/scripts-test-report.md) - 启动脚本测试验证
+- [Vercel Frontend Deployment (CLI)](docs/plans/vercel-frontend-deploy.md) — ...
 
 ---
 
-_Last updated: 2026-08-06_
+_Last updated: 2026-08-09_
