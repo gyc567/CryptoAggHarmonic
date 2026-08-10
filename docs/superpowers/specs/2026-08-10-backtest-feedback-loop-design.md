@@ -16,8 +16,9 @@
 - 历史表现数据未与实盘分析流程打通
 - 谐波形态识别代码（PRZ 投影、纪律过滤、评分权重）有优化空间
 
-**目标**：实现双向反馈闭环——每日收盘后自动跑回测、用更优参数覆盖
-`tuning.py`、实盘分析自动加载新参数。
+**目标**：实现双向反馈闭环——每日收盘后自动跑回测、将候选参数变更写入
+`tuning_snapshots/` 待审区、经 human PR 确认后合并入 `tuning.py`（遵守 ADR-003 D9），
+实盘分析通过 SIGHUP 热加载新参数。
 
 ---
 
@@ -35,8 +36,8 @@
 │  输入：品种列表 × 时间范围 × 参数网格                              │
 │  流程：walk-forward → 候选过滤 → 信号评分 → 模拟交易               │
 │  输出：backtest_results.json (详细记录)                           │
-│        tuning.py (若新参数优于基线则自动覆盖)                       │
-│        git commit + push (参数变更自动记录)                        │
+│        tuning_snapshots/YYYY-MM-DD_candidate.yaml (候选参数)       │
+│        git commit + push (候选快照自动记录)                          │
 └────────────────────────────┬────────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
@@ -131,7 +132,9 @@
 TP2 边界（价格是否已穿越第二目标）。
 
 **优化**：
-- TTL 门控增加 `MAX_D_AGE_BARS` 可配置（当前硬编码 20，需移入 TuningConstants）
+- `max_d_age_bars` 已在 TuningConstants 中（tuning.py:114），无需移动
+- `DEFAULT_TTL_BARS`（锚定 C 点，=40）和 `max_d_age_bars`（锚定 D 点，=20）是两条独立的 TTL
+  门控，均已可配置；Phase 3 需确保两条门控独立调参
 - 增加「流动性扫损检测」门控：若 D 点成交额 > 前 20 根 bar 均值的 3 倍，
   标记为 trap candidate，强制进入观察模式（不直接拒绝但降权）
 
@@ -142,18 +145,7 @@ TP2 边界（价格是否已穿越第二目标）。
 
 **问题**：权重未经过回测校准，可能偏离最优分布。
 
-**优化**：回测阶段用 grid-search 测试以下权重组合（每组跑全量数据）：
-
-```
-price_action: [15, 20, 25, 30]
-htf_trend:    [15, 20, 25, 30]
-rsi:          [10, 15, 20]
-structure:    [10, 15, 20]
-macd:         [5,  10, 15]
-funding:      [5,  10, 15]
-```
-
-取胜率 + avg_R 综合最优的一组，写入 `tuning.py` 的 `CONFLUENCE_WEIGHTS`。
+**优化**：回测阶段用网格搜索测试权重组合。由于 TuningConstants 验证六因子权重和必须等于 100，实际搜索空间为 5 自由度（6 个权重，第 6 个由 100 - sum(w1..w5) 决定）。每组权重跑全量数据，取 (胜率 × 0.4 + avg_R_norm × 0.6) 综合最优的一组。结果写入 `tuning_snapshots/YYYY-MM-DD_candidate.yaml`，不直接修改 tuning.py。
 
 #### 3.3.4 形态覆盖扩展
 
@@ -246,29 +238,33 @@ class C4Grade(TuningConstants):
 
 ## 6. 实施计划
 
-### Phase 1: 回测框架搭建（优先）
-- [ ] 新建 `scripts/run_backtest.py`
-- [ ] 接入现有 `scripts/backtest_harmonic_lib.py` 的 walk_forward / simulate_one
+### Phase 1: 回测框架复用 + 调度层
+- [ ] 新建 `scripts/run_backtest.py` 作为调度入口
+- [ ] 复用 `backtest_harmonic_lib.py` 已有函数：write_json / report / walk_forward / aggregate_records / BacktestSignalRecord DTO
+- [ ] 不重写已有的 walk_forward / simulate_one / aggregate_records
 - [ ] 实现 `backtest_results.json` 的读写逻辑
 - [ ] 品种列表配置化（`config/backtest_symbols.yaml`）
 - [ ] 单机并行化（`multiprocessing.Pool`）
 
-### Phase 2: 参数自动更新
-- [ ] 读取/写入 `app/config/tuning.py` 的函数
+### Phase 2: 参数候选区 + Human PR
+- [ ] 创建 `tuning_snapshots/YYYY-MM-DD_candidate.yaml`（候选参数）
+- [ ] tuning_promotion.py 已有 gate（ADR-003 D9），不覆盖 tuning.py
+- [ ] 参数判定规则（胜率提升 + 样本量 + 最大回撤）→ 写入候选 YAML
 - [ ] 参数判定规则实现（胜率提升 + 样本量 + 最大回撤）
-- [ ] Git 自动 commit + push
-- [ ] 文件锁并发保护
+- [ ] Git commit tuning_snapshots 候选 YAML（记录每次运行参数版本）
+- [ ] 不 push（human PR 是主动行为，不自动合并）
 
 ### Phase 3: 谐波代码优化
 - [ ] PRZ 投影汇聚评分优化
-- [ ] discipline_filters 可配置化（TTL/流动性扫损门控）
-- [ ] confluence_score 权重 grid-search
+- [ ] discipline_filters 流动性扫损门控（新增，其余已可配置）
+- [ ] confluence_score 权重 grid-search（5 自由度约束）
 - [ ] 形态覆盖扩展（Shark / Divergence 共振）
 
 ### Phase 4: 闭环验证
-- [ ] 每日 cron 接入真实运行
-- [ ] 验证 tuning.py 更新后实盘分析行为正确
-- [ ] 回滚机制（Git revert tuning.py）
+- [ ] 每日 cron 接入 `scripts/run_backtest.py`
+- [ ] tuning_snapshots 候选参数 → human PR → tuning.py 合并流程验证
+- [ ] SIGHUP 热加载验证（参数更新后 Flask 无重启实盘分析正确）
+- [ ] 回滚机制（丢弃 snapshot，Git revert tuning.py）
 
 ---
 
@@ -277,6 +273,7 @@ class C4Grade(TuningConstants):
 | 风险 | 缓解 |
 |------|------|
 | 自动更新参数反而降低胜率 | 判定阈值 5% + 样本量门控（≥30）双重保护 |
-| 并发写入 tuning.py 冲突 | `fcntl.flock` 文件锁 |
+| tuning.py 写入撞 gate | 不直接写 tuning.py，写入 tuning_snapshots/ + human PR |
+| tuning_snapshots 并发写入冲突 | `fcntl.flock` 文件锁 |
 | 回测过拟合实盘失效 | walk-forward 窗口错开 + 最大回撤约束 |
 | Git push 失败（网络） | 重试 3 次，失败则写 error log 人工介入 |
