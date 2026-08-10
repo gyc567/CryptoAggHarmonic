@@ -5,7 +5,7 @@ import pathlib
 import pandas as pd
 import pytest
 
-from scripts.run_backtest import _load_history, write_results
+from scripts.run_backtest import _load_history, _slice_range, write_results
 
 SAMPLE_RESULT = {
     "run_id": "run_test",
@@ -57,16 +57,45 @@ def test_load_history_from_cache(tmp_path, monkeypatch):
     df["dts"] = pd.to_datetime(df["close_time"], unit="ms", utc=True)
     df.to_parquet(cache)
 
-    monkeypatch.setattr(mod, "RESULT_DIR", tmp_path)
+    # Point the managed-cache lookup at tmp_path via a fake ROOT.
+    managed_root = tmp_path / "data" / "backtest" / "binance" / "BTCUSDT"
+    managed_root.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(managed_root / "1h.parquet")
+
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
+    monkeypatch.setattr(mod, "RESULT_DIR", tmp_path / "data")
     loaded = _load_history("BTC/USDT", "1h", "2024-01-01", "2026-01-01")
     assert len(loaded) == 2
     assert list(loaded.columns) == ["open", "high", "low", "close", "volume", "close_time", "dts"]
 
 
-def test_load_history_no_cache_returns_empty_without_network_error(monkeypatch, tmp_path):
-    """Empty cache dir with no network should raise httpx error, not crash silently."""
+def test_slice_range_filters_by_dates():
+    df = pd.DataFrame(
+        {
+            "open": [100.0] * 5,
+            "high": [102.0] * 5,
+            "low": [99.0] * 5,
+            "close": [101.0] * 5,
+            "volume": [1.0] * 5,
+            "close_time": [1704067200000 + i * 3600000 for i in range(5)],
+        }
+    )
+    df["dts"] = pd.to_datetime(df["close_time"], unit="ms", utc=True)
+    sliced = _slice_range(df, "2024-01-01", "2024-01-01T03:00:00")
+    assert len(sliced) == 3  # rows at 00:00, 01:00, 02:00 (03:00 excluded)
+
+
+def test_load_history_no_cache_raises_http_error(monkeypatch, tmp_path):
+    """Empty cache dir with unreachable network raises httpx error."""
     from scripts import run_backtest as mod
 
+    import httpx
+
+    def _boom(*a, **k):
+        raise httpx.ConnectError("no network")
+
+    monkeypatch.setattr(mod, "ROOT", tmp_path)
     monkeypatch.setattr(mod, "RESULT_DIR", tmp_path)
+    monkeypatch.setattr(httpx, "Client", _boom)
     with pytest.raises(Exception):
         _load_history("BTC/USDT", "1h", "2024-01-01", "2026-01-01")

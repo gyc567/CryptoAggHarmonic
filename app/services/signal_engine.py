@@ -741,6 +741,12 @@ def score_candidate(
     )
     # Q4 pattern-reliability bump (Gartley +5, Crab -3, ...).
     score += _pattern_base_score(candidate.name)
+    # Clamp to the grade() contract range [0, 100] — confluence factors can
+    # push the raw sum above 100 (regular RSI +8, dual-indicator resonance
+    # +8, ...), and the Q4 bump then violates grade()'s @require guard,
+    # which previously surfaced as noisy icontract violations that skipped
+    # valid signals in walk-forward backtests.
+    score = max(0.0, min(100.0, score))
 
     # Q6 PRZ width gate input. Computed here so grade() can apply its 4% cap
     # without each caller having to remember to thread the value through.

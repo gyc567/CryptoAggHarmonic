@@ -58,13 +58,39 @@ BINANCE_KLINE_COLS = [
 INTERVAL_MAP = {"15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d", "1w": "1w"}
 
 
+def _slice_range(df: pd.DataFrame, start: str, end: str) -> pd.DataFrame:
+    """Filter cached candles to [start, end) using the dts column."""
+    if "dts" not in df.columns or not start:
+        return df
+    t_start = pd.Timestamp(start, tz="UTC")
+    t_end = pd.Timestamp(end, tz="UTC") if end else pd.Timestamp.max
+    mask = (df["dts"] >= t_start) & (df["dts"] < t_end)
+    return df[mask].copy()
+
+
 def _load_history(symbol: str, interval: str, start: str, end: str) -> pd.DataFrame:
-    """Load cached parquet OHLCV data, else fetch from Binance public API."""
-    cache = RESULT_DIR / f"{symbol.replace('/', '')}_{interval}.parquet"
-    if cache.exists():
-        df = pd.read_parquet(cache)
+    """Load cached parquet OHLCV data, else fetch from Binance public API.
+
+    Cache lookup order:
+      1. ``data/backtest/binance/{SYMBOL}/{interval}.parquet`` (managed by
+         ``scripts/download_backtest_data.py``, reliable vision host)
+      2. ``data/{SYMBOL}_{interval}.parquet`` (legacy ad-hoc cache)
+    """
+    # Managed cache (preferred) — matches download_backtest_data.py layout.
+    managed = ROOT / "data" / "backtest" / "binance" / symbol.replace("/", "") / f"{interval}.parquet"
+    if managed.exists():
+        df = pd.read_parquet(managed)
         if len(df) > 0:
-            log.info("Loaded %d candles from cache for %s", len(df), symbol)
+            df = _slice_range(df, start, end)
+            log.info("Loaded %d candles from managed cache %s", len(df), managed)
+            return df
+
+    legacy = RESULT_DIR / f"{symbol.replace('/', '')}_{interval}.parquet"
+    if legacy.exists():
+        df = pd.read_parquet(legacy)
+        if len(df) > 0:
+            df = _slice_range(df, start, end)
+            log.info("Loaded %d candles from legacy cache for %s", len(df), symbol)
             return df
 
     log.info("Fetching %s %s from Binance public API", symbol, interval)
