@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyharmonics-gpt"
+name = "cryptoagg"
 version = "0.2.0"
-description = "Pyharmonics SaaS analysis API"
+description = "agent化加密货币交易策略，让天下没有难写的策略"
 requires-python = ">=3.11"
 dependencies = [
     "Flask>=2.3.2",
