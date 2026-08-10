@@ -32,3 +32,17 @@
      path.
   24 new tests pass; 407/407 in loop / maker-checker / signal scope.
 - **superseded_by**: _none_
+
+### [v3ver01] — Vercel frontend T1 recovery + ssoProtection fix
+- **Created**: 2026-08-09
+- **Source**: docs/plans/vercel-frontend-deploy.md + commit 1e36b71
+- **Content**: Vercel production was broken because (1) plan T1 (9 ESLint
+  fixes + RSI strategy API/types) was sitting uncommitted and (2) the
+  Vercel project had `ssoProtection` enabled, redirecting every
+  request to `vercel.com/sso-api`. Recovery: commit `1e36b71` ships
+  T1 + RSI alignment, git-integration auto-deployed
+  `pyharmonics-mhry7rpjx` (Ready, 12 routes, 0 ESLint errors); then
+  PATCH `https://api.vercel.com/v9/projects/prj_5uBO03IVLLmj3jdhHu3VsWKR1HKf`
+  with `{"ssoProtection": null}` to disable SSO. T5 fully verified at
+  `https://www.cryptoagg.xyz` (no client-side backend-host leak).
+- **superseded_by**: _none_

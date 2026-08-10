@@ -17,10 +17,18 @@
   `get_min_candles` / `get_atr_window` / `get_rsi_window` accessors
   consumed by `signal_engine.build_signal`. 24 new tests pass; full
   loop / maker-checker / signal-engine suites green (407/407).
-- [x] 2026-08-09: Frontend **deployed to Vercel** (`https://www.cryptoagg.xyz`)
+- [x] 2026-08-09: **Vercel frontend T1 recovery** — plan T1 (ESLint + RSI
+  strategy types) was never on main, so the git-based redeploy at
+  22:14 UTC+8 errored with the original 9 ESLint errors. Commit
+  `1e36b71` shipped the working-tree fixes; auto-deployed
+  `pyharmonics-mhry7rpjx` is Ready. Discovered and PATCHed
+  `ssoProtection=null` on the project (was redirecting every
+  request to `vercel.com/sso-api`). Public site now serves the new
+  deploy at `https://www.cryptoagg.xyz` (T5 fully verified: `/`,
+  `/login`, `/dashboard`, `/rsi-strategy`, `/api/health`,
+  `/api/markets` all 200, no client-side backend-host leak).
 
 ## Watch List
-
 <!-- 由循环自动填充 -->
 
 - Phase 0 **live** baseline (real harness + market data) — fill table in `docs/loop-state/phase0-baseline.md`
