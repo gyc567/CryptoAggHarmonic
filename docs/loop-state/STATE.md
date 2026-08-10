@@ -7,6 +7,13 @@
 
 <!-- 由循环自动填充 -->
 
+- [ ] 2026-08-10: **websockets pin cleanup — PENDING PR MERGE.** Branch
+  `fix/websockets-pin-cleanup` pushed; PR waiting for review at
+  https://github.com/gyc567/pyharmonics-gpt/pull/fix/websockets-pin-cleanup.
+  Restores `websockets==11.0.3` exact pin (PR #14 changed to range, which
+  causes CI Alpaca runtime ImportError with wheel-patch approach).
+  Local: 118 contract tests pass, websockets 11.0.3 installs cleanly.
+
 - [ ] 2026-08-10: **Backtest Evolution Plan — IN PROGRESS.** Designed
   auto-evolution backtest + optimization system using loop engineering
   methodology. Output: `docs/plans/2026-08-10-backtest-evolution-plan.md`.

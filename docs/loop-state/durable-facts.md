@@ -108,3 +108,26 @@
   from 1762 — the 7 prior auth-test failures + 1 rsi-trend-api
   failure are all green).
 - **superseded_by**: _none_
+
+### [wspx01] — websockets exact pin required for alpaca wheel-patch CI
+- **Created**: 2026-08-10
+- **Source**: `.github/workflows/ci.yml` + `requirements.txt`
+- **Content**: CI run 31368137868 / 31368833435 failed with
+  ``ResolutionImpossible``: ``alpaca-trade-api`` declares
+  ``Requires-Dist: websockets <11,>=9.0`` while ``supabase[realtime]``
+  and ``yfinance`` require ``websockets>=11``. No pip constraint solves
+  both. CI fix (PR #16) uses a wheel METADATA patch: download wheel →
+  unzip → remove the ``websockets<11`` constraint → repack → install
+  with ``--no-deps``. However PR #14 changed ``websockets==11.0.3``
+  (exact pin) to ``websockets>=11.0,<12.0`` (range). The range resolves
+  to latest 11.0.x at CI install time, but ``alpaca-trade-api`` still
+  imports ``websockets.client`` whose API changed between 11.0.x patch
+  versions — causing runtime ``ImportError`` in CI workers even after
+  the wheel patch. Fix: restore exact pin ``websockets==11.0.3`` so the
+  wheel-patch + exact-version combination is deterministic.
+- **Fix**: branch ``fix/websockets-pin-cleanup``, commit
+  ``155fb77``, PR pending at
+  https://github.com/gyc567/pyharmonics-gpt/pull/fix/websockets-pin-cleanup
+- **Verification**: 118 contract tests pass, ``import websockets``
+  returns 11.0.3, pip installs cleanly with no conflict
+- **superseded_by**: _none_
