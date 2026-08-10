@@ -1,6 +1,6 @@
-# Loop Definitions — pyharmonics-gpt
+# Loop Definitions — cryptoagg
 
-> 本文件定义了 pyharmonics-gpt 项目中所有开发循环的行为规范。
+> 本文件定义了 cryptoagg 项目中所有开发循环的行为规范。
 > 由 `loop/loop_sync.py` 与本文件保持一致。
 
 ## 循环成熟度等级

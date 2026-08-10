@@ -329,7 +329,7 @@ def fetch_quotes(
 
     owned_session = session is None
     sess = session or requests.Session()
-    sess.headers.setdefault("User-Agent", "pyharmonics-gpt/1.0")
+    sess.headers.setdefault("User-Agent", "cryptoagg/1.0")
     sess.headers.setdefault("Accept", "application/json")
 
     try:

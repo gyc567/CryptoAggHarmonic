@@ -1,4 +1,4 @@
-# Loop State — pyharmonics-gpt
+# Loop State — cryptoagg
 
 > 由 `daily-triage.yml` 等 workflow 自动更新。
 > 人类每周审查一次。
@@ -40,7 +40,7 @@
   tracked yet, pass None. Verified live: /api/history 200 with real
   token; /api/analyze passes auth+quota (reserve_quota 200, release
   on failure), only remaining blocker is Yahoo rate-limit 503 (external).
-- [x] 2026-08-08: GitHub Issues **enabled** on `gyc567/pyharmonics-gpt` (smoke #1 closed)
+- [x] 2026-08-08: GitHub Issues **enabled** on `gyc567/cryptoagg` (smoke #1 closed)
 - [x] 2026-08-08: Triage + loop labels created (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `maker-checker`, `release-prep`, `code-health`, `dependencies`, `automated`, `loop`)
 - [x] 2026-08-08: #3 apply_tuning Path A (get_tuning live reads)
 - [x] 2026-08-09: **Loop engineering v3 follow-ups** — wired 14-metric /metrics

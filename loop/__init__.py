@@ -1,4 +1,4 @@
-"""Loop engineering CLI tools for pyharmonics-gpt.
+"""Loop engineering CLI tools for cryptoagg.
 
 Subcommands:
     doctor   — check loop readiness
