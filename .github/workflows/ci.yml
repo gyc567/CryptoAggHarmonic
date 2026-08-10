@@ -17,10 +17,47 @@ jobs:
         with:
           python-version: "3.11"
 
+      # ------------------------------------------------------------------
+      # alpaca-trade-api 3.2.0 declares websockets<11 in METADATA, but
+      # pyharmonics and supabase require websockets>=11. pip resolver cannot
+      # satisfy both constraints. We patch the wheel's METADATA to remove
+      # the websockets<11 constraint before installation.
+      # ------------------------------------------------------------------
+      - name: Patch alpaca-trade-api (remove websockets<11 conflict)
+        run: |
+          set -e
+          WDIR=$(mktemp -d)
+          pip download alpaca-trade-api==3.2.0 --no-deps -d "$WDIR"
+          cd "$WDIR"
+          unzip -q *.whl -d extracted
+          # Remove "Requires-Dist: websockets <11,>=9.0" from METADATA
+          python3 -c "
+import re, os
+meta = 'extracted/alpaca_trade_api-3.2.0.dist-info/METADATA'
+m = open(meta).read()
+m = re.sub(r'Requires-Dist: websockets <11,>=9\.0\n', '', m)
+open(meta, 'w').write(m)
+"
+          # Rebuild wheel
+          cd extracted
+          python3 -c "
+import zipfile, os
+name = 'alpaca_trade_api-3.2.0-py3-none-any.whl'
+with zipfile.ZipFile(name, 'w', zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk('.'):
+        for f in files:
+            fp = os.path.join(root, f)
+            arc = os.path.relpath(fp, '.')
+            z.write(fp, arc)
+"
+          pip install "$WDIR/extracted/alpaca_trade_api-3.2.0-py3-none-any.whl" --no-deps
+          rm -rf "$WDIR"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt -c constraints.txt
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       # ------------------------------------------------------------------
       # Three-layer defense CI gates (mypy + pyright + contract tests).
