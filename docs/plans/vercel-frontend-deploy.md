@@ -1,8 +1,26 @@
 # Plan: Vercel Frontend Deployment (CLI)
 
-## Status: COMPLETED 2026-08-09 (re-validated 2026-08-09 22:35 UTC+8)
+## Status: PARTIAL REDEPLOY NEEDED (brand content not on live site)
 
-Production URL: **https://www.cryptoagg.xyz** (deployment `pyharmonics-mhry7rpjx-gyc567s-projects.vercel.app` after T1 recovery)
+**2026-08-10 audit**: Live site `https://www.cryptoagg.xyz` serves `<title>Pyharmonics</title>`
+but current main (`9d7c634`) has `<title>CryptoAgg</title>` (commit `45b62bf`). Brand phase
+frontend changes have NOT been deployed despite being on `main`.
+
+**Root cause**: Git-based auto-deploy from `1e36b71` (ESLint T1 recovery) is the currently
+serving production deploy. Subsequent `main` commits have not re-triggered a redeploy.
+
+**29 commits** on main since `1e36b71`, including:
+- `45b62bf` brand Phase 1: frontend UI "Pyharmonics" → "CryptoAgg"
+- `ba1e171` brand Phase 4: Supabase bucket `cryptoagg-bucket` / `cryptoagg:*`
+- Backend auth-fix (`c6c2d0e` → `616e701` → `a0adcda` → `17c1899`) — **already live on hapi**
+- Backtest loop improvements, dependency fixes
+
+**Action required**: `git push origin main` → Vercel auto-deploys → verify `<title>CryptoAgg`.
+
+**Backend auth-fix**: Confirmed live — `/api/analyze` and `/api/history` return 401 (not 500).
+
+---
+*Previous status (2026-08-09)*: COMPLETED — re-validated after T1 recovery + ssoProtection fix.
 
 Recovery note (22:35 UTC+8, same day):
 the original T1 was applied to the working tree but never committed.
@@ -32,6 +50,7 @@ Error. Two corrective actions:
 - T5 ✅ Verified: `/` 200, `/login` 200, `/dashboard` 200, `/rsi-strategy` 200, `/api/health` → backend JSON (redis ok, supabase Invalid API key = known backend-side issue, out of scope), `/api/markets` 200, no `hapi.cryptoagg.xyz` / `127.0.0.1:5000` in client chunks, status Ready
 
 ## Context
+
 Pyharmonics SaaS: Next.js 14 frontend (`frontend/`) + Flask backend (self-hosted at
 `https://hapi.cryptoagg.xyz`) + Supabase (auth/DB).
 
@@ -69,7 +88,7 @@ existing backend at `https://hapi.cryptoagg.xyz`.
 - [x] Green production deploy of the frontend via `vercel` CLI
 - [x] Project config fixed (nextjs framework, rootDirectory=`frontend`, node 22.x)
 - [x] Env vars set on Vercel: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-      `BACKEND_API_BASE=https://hapi.cryptoagg.xyz`, `NEXT_PUBLIC_DEFAULT_MARKET` (`NEXT_PUBLIC_API_BASE` left unset → same-origin)
+     `BACKEND_API_BASE=https://hapi.cryptoagg.xyz`, `NEXT_PUBLIC_DEFAULT_MARKET` (`NEXT_PUBLIC_API_BASE` left unset → same-origin)
 - [x] `npm run build` passes locally (ESLint + TS blockers fixed)
 - [x] Production URL serves the app; `/api/health` proxies through to the backend
 
