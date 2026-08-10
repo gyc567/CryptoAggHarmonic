@@ -607,7 +607,7 @@ def upload_chart(user_id: str, analysis_id: str, image_bytes: bytes) -> str | No
     try:
         client = get_supabase_client(use_service_role=True)
         path = f"{user_id}/{analysis_id}.png"
-        result = client.storage.from_("pyharmonics-gpt-bucket").upload(
+        result = client.storage.from_("cryptoagg-bucket").upload(
             path,
             image_bytes,
             {
@@ -635,7 +635,7 @@ def get_chart_url(path: str, expires_in: int = 300) -> str | None:
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        result = client.storage.from_("pyharmonics-gpt-bucket").create_signed_url(path, expires_in)
+        result = client.storage.from_("cryptoagg-bucket").create_signed_url(path, expires_in)
         return result.get("signedURL") if result else None
     except Exception:
         logger.exception("Chart URL generation failed")
@@ -653,7 +653,7 @@ def delete_chart(path: str) -> bool:
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        client.storage.from_("pyharmonics-gpt-bucket").remove([path])
+        client.storage.from_("cryptoagg-bucket").remove([path])
         return True
     except Exception:
         logger.exception("Chart deletion failed")

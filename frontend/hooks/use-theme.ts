@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 
 type Theme = "light" | "dark" | "system";
 
-const STORAGE_KEY = "pyharmonics-theme";
+const STORAGE_KEY = "cryptoagg-theme";
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>("system");
