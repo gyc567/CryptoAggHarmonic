@@ -25,11 +25,10 @@
 ### 2026-08-09T22:36:00Z [dependency-sweeper] loop=1 candidates=0 cost=0.00 outcome=success deleted_project=prj_T0D6PXcUQ6HLlA1jSQjkWM5xWdII reason=accidental-via-cd-frontend
 ### 2026-08-09T22:50:00Z [issue-triage] loop=1 candidates=1 cost=0.00 outcome=escalated scope=auth-magic-link-redirect bug=email-uses-localhost site_url=piomgijwxpbsvnigtbmt fix_owner=human required=supabase-dashboard-auth-url-config
 ### 2026-08-09T22:51:00Z [pr-babysitter] loop=1 candidates=0 cost=0.00 outcome=success code_review=use-auth.ts signInWithOtp_passes_emailRedirectTo=correct verdict=not-a-code-bug
+### 2026-08-09T22:55:00Z [pr-babysitter] loop=1 candidates=4 cost=0.00 outcome=error probe=admin-generate_link results=requested-www-cryptoagg-xyz-but-redirect_to-still-localhost-3000 conclusion=supabase-dashboard-change-did-not-take-effect fix_owner=human
 ```
 
 | Value | Meaning |
-| `accepted=N` | N candidates accepted (gen loop) |
-| `rejected=N` | N candidates rejected |
 | `errors=N` | N candidates errored |
 | `paused` | Loop paused due to budget or gate |
 | `escalated` | Required human intervention |

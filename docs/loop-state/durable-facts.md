@@ -48,7 +48,7 @@
 - **superseded_by**: _none_
 
 ### [v3ver02] — Magic-link email uses localhost:3000 instead of www.cryptoagg.xyz
-- **Created**: 2026-08-09
+- **Created**: 2026-08-09 (updated 2026-08-09 22:55 UTC+8 after verification)
 - **Source**: Supabase project piomgijwxpbsvnigtbmt + frontend/hooks/use-auth.ts:60-69
 - **Content**: Supabase Auth → URL Configuration has
   ``site_url=http://localhost:3000`` and empty
@@ -63,4 +63,13 @@
   ``https://www.cryptoagg.xyz`` and ``https://www.cryptoagg.xyz/dashboard``
   to ``additional_redirect_urls``. Localhost can stay for dev if
   the dev entrypoint is also added.
+- **Verification (2026-08-09 22:55 UTC+8)**: ran
+  ``POST /auth/v1/admin/generate_link`` with the service role key
+  passing four different ``redirect_to`` values
+  (``https://www.cryptoagg.xyz/dashboard``,
+  ``https://www.cryptoagg.xyz``, ``http://localhost:3000``,
+  ``https://evil.example.com/steal``). All four returned
+  ``action_link`` with ``redirect_to=http://localhost:3000``. The
+  dashboard change did NOT take effect, or it was applied to a
+  different project. **Open verification still required.**
 - **superseded_by**: _none_

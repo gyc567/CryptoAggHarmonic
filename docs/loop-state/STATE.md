@@ -30,16 +30,21 @@
 
 ## Watch List
 
-- **[!] Auth: magic-link email uses `localhost:3000` instead of `www.cryptoagg.xyz`.**
-  `site_url=http://localhost:3000` and empty `additional_redirect_urls`.
-  The frontend code is correct (passes per-request `emailRedirectTo`).
-  Fix: open the Supabase dashboard
-  (https://supabase.com/dashboard/project/piomgijwxpbsvnigtbmt/auth/url-configuration),
-  set `Site URL = https://www.cryptoagg.xyz`, and add
-  `https://www.cryptoagg.xyz` and `https://www.cryptoagg.xyz/dashboard`
-  to `Additional Redirect URLs`. Durable fact `[v3ver02]`.
-
-- Collect a production story for Post-Merge Cleanup
+- **[!] Auth: magic-link email STILL uses `localhost:3000` — Supabase
+  dashboard change did not take effect.**
+  ``POST /auth/v1/admin/generate_link`` with the service role key
+  confirms: for any ``redirect_to`` value
+  (``https://www.cryptoagg.xyz``, ``https://www.cryptoagg.xyz/dashboard``,
+  even ``https://evil.example.com/steal``), Supabase returns
+  ``action_link`` with ``redirect_to=http://localhost:3000``.
+  Project `piomgijwxpbsvnigtbmt` ``site_url`` is still
+  ``http://localhost:3000`` and ``additional_redirect_urls`` is
+  empty (or doesn't include ``www.cryptoagg.xyz``). Possible causes:
+  (a) dashboard change saved to a different project / wrong org,
+  (b) cache/propagation delay, (c) page submitted but the dialog
+  wasn't confirmed. Re-open
+  https://supabase.com/dashboard/project/piomgijwxpbsvnigtbmt/auth/url-configuration
+  and re-save. Durable fact `[v3ver02]`.
 - Validate `loop-init` scaffolds on fresh projects across all patterns
 
 ## Recent Noise (ignored this run)
