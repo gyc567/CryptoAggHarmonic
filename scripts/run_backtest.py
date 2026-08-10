@@ -200,10 +200,29 @@ def write_results(result: dict, path: Path) -> None:
     log.info("Wrote result to %s", path)
 
 
+def _load_config(path: Path) -> dict:
+    """Load backtest config YAML. Returns dict with symbols/interval/start."""
+    try:
+        import yaml
+    except ImportError:
+        log.warning("PyYAML not installed; ignoring --config %s", path)
+        return {}
+    data = yaml.safe_load(path.read_text()) or {}
+    cfg: dict = {}
+    cfg["symbols"] = data.get("symbols") or DEFAULT_SYMBOLS
+    cfg["interval"] = (data.get("intervals") or {}).get("default", DEFAULT_INTERVAL)
+    tr = data.get("time_range") or {}
+    cfg["start"] = tr.get("start") or DEFAULT_START
+    cfg["end"] = tr.get("end") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return cfg
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Daily backtest scheduler")
-    ap.add_argument("--symbols", nargs="+", default=DEFAULT_SYMBOLS,
-                    help=f"Symbols to backtest (default: {' '.join(DEFAULT_SYMBOLS)})")
+    ap.add_argument("--config", type=Path, default=None,
+                    help="YAML config with symbols/intervals/time_range")
+    ap.add_argument("--symbols", nargs="+", default=None,
+                    help=f"Symbols to backtest (overrides --config; default: {' '.join(DEFAULT_SYMBOLS)})")
     ap.add_argument("--interval", default=DEFAULT_INTERVAL,
                     help="Bar interval: 15m/1h/4h/1d/1w (default: 1h)")
     ap.add_argument("--start", default=DEFAULT_START,
@@ -224,13 +243,21 @@ def main() -> None:
                     help="Also write tuning_snapshots/ candidate YAML")
     args = ap.parse_args()
 
+    cfg: dict = {}
+    if args.config:
+        cfg = _load_config(args.config)
+    symbols = args.symbols or cfg.get("symbols") or DEFAULT_SYMBOLS
+    interval = cfg.get("interval") or args.interval
+    start = cfg.get("start") or args.start
+    end = cfg.get("end") or args.end
+
     log.info(
         "Starting backtest: symbols=%s interval=%s window=%d step=%d horizon=%d workers=%d",
-        args.symbols, args.interval, args.window, args.step, args.horizon, args.workers,
+        symbols, interval, args.window, args.step, args.horizon, args.workers,
     )
 
     result = run(
-        args.symbols, args.interval, args.start, args.end,
+        symbols, interval, start, end,
         args.window, args.step, args.horizon, args.workers, args.min_grade,
     )
 

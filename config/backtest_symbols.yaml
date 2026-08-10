@@ -1,0 +1,21 @@
+# 回测品种列表配置
+# 用法: ./scripts/run_backtest.py --config config/backtest_symbols.yaml
+# CLI --symbols 直接传入时覆盖此配置。
+
+# 主力币种
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+  - BNB/USDT
+  - SOL/USDT
+  - XRP/USDT
+
+# 每个品种的 interval 配置（可独立设置）
+intervals:
+  default: "1h"
+  overrides: {}
+
+# 时间范围
+time_range:
+  start: "2024-01-01"
+  end: ""  # 空 = 今天
