@@ -129,7 +129,7 @@ describe("Sidebar", () => {
 
     render(<Sidebar profile={baseProfile} />);
 
-    expect(screen.getByText("Pyharmonics")).toBeInTheDocument();
+    expect(screen.getByText("CryptoAgg")).toBeInTheDocument();
     expect(screen.getByText(/Beta 版本/)).toBeInTheDocument();
   });
 });
