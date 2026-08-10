@@ -39,5 +39,5 @@ function getPageTitle(pathname: string | null): string {
   if (pathname?.startsWith("/history")) return "历史记录";
   if (pathname?.startsWith("/settings")) return "账户设置";
   if (pathname?.startsWith("/admin")) return "管理员";
-  return "Pyharmonics";
+  return "CryptoAgg";
 }

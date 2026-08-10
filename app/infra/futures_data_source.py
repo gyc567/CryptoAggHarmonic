@@ -67,7 +67,7 @@ class FuturesDataSource:
         self._session = requests.Session()
         self._session.headers.update(
             {
-                "User-Agent": "pyharmonics-gpt/1.0",
+                "User-Agent": "cryptoagg/1.0",
                 "Accept": "application/json",
             }
         )

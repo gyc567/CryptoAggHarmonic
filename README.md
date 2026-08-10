@@ -1,4 +1,4 @@
-# Pyharmonics GPT
+# CryptoAgg
 
 ## Quick Start
 

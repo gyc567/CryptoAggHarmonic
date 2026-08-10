@@ -17,8 +17,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Pyharmonics - 谐波形态分析",
-  description: "邀请制谐波形态与背离分析 SaaS",
+  title: "CryptoAgg - Agent 化加密货币交易策略",
+  description: "agent化加密货币交易策略，让天下没有难写的策略",
 };
 
 export default function RootLayout({

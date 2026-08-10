@@ -1,6 +1,6 @@
-# Pyharmonics 前端
+# CryptoAgg 前端
 
-基于 Next.js 14 + TypeScript + Tailwind CSS 的 Pyharmonics SaaS 前端，风格参考 agentrade.space 的深色科技风 + 玻璃拟态。
+基于 Next.js 14 + TypeScript + Tailwind CSS 的 CryptoAgg SaaS 前端，风格参考 agentrade.space 的深色科技风 + 玻璃拟态。
 
 ## 快速开始
 

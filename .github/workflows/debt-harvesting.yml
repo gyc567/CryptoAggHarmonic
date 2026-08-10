@@ -125,7 +125,7 @@ jobs:
           # Append to Code Volume Trend table in durable-facts.md
           DEBT_FILE="docs/loop-state/durable-facts.md"
           if [ ! -f "$DEBT_FILE" ]; then
-            echo "# Durable Facts — pyharmonics-gpt" > "$DEBT_FILE"
+            echo "# Durable Facts — cryptoagg" > "$DEBT_FILE"
             echo "" >> "$DEBT_FILE"
           fi
 

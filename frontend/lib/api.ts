@@ -187,10 +187,10 @@ export async function getAnalysis(
 
 export async function appendLocalHistory(item: AnalysisHistoryItem) {
   try {
-    const stored = localStorage.getItem("ph_history");
+    const stored = localStorage.getItem("cryptoagg:history");
     const history: unknown[] = stored ? JSON.parse(stored) : [];
     history.unshift(item);
-    localStorage.setItem("ph_history", JSON.stringify(history.slice(0, 50)));
+    localStorage.setItem("cryptoagg:history", JSON.stringify(history.slice(0, 50)));
   } catch {
     // no-op in SSR
   }

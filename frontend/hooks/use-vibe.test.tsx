@@ -20,7 +20,7 @@ vi.mock("@/lib/api-vibe", () => ({
 }));
 
 const USER_ID = "user-1";
-const SESSIONS_KEY = `pyharmonics:vibe:sessions:${USER_ID}`;
+const SESSIONS_KEY = `cryptoagg:vibe:sessions:${USER_ID}`;
 
 function session(id: string): VibeSession {
   return {

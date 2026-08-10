@@ -16,9 +16,9 @@ import type { VibeMessage, VibeSession } from "@/types/vibe";
 
 // localStorage keys are namespaced by userId so that switching accounts in the
 // same browser does not leak cached sessions/messages across users.
-const SESSIONS_KEY = (userId: string) => `pyharmonics:vibe:sessions:${userId}`;
+const SESSIONS_KEY = (userId: string) => `cryptoagg:vibe:sessions:${userId}`;
 const MESSAGES_KEY = (userId: string, sessionId: string) =>
-  `pyharmonics:vibe:messages:${userId}:${sessionId}`;
+  `cryptoagg:vibe:messages:${userId}:${sessionId}`;
 
 function readSessions(userId: string): VibeSession[] {
   if (typeof window === "undefined" || !userId) return [];

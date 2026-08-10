@@ -2,7 +2,7 @@ import type { Page, BrowserContext } from "@playwright/test";
 
 export async function enableE2EAuth(context: BrowserContext) {
   await context.addInitScript(() => {
-    window.localStorage.setItem("pyharmonics:e2e-auth", "true");
+    window.localStorage.setItem("cryptoagg:e2e-auth", "true");
   });
 }
 

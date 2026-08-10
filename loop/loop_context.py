@@ -188,7 +188,7 @@ def promote_episodic_to_durable(
         content_text = durable_md.read_text()
     else:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        content_text = "# Durable Facts — pyharmonics-gpt\n\n> Append-only log of durable project facts.\n> NEVER delete entries — mark superseded with `superseded_by`.\n\n## Entries\n\n<!-- Entries are append-only. Format:\n\n### [uuid] — {fact summary}\n- **Created**: {date}\n- **Content**: {description}\n- **Source**: {git commit or decision reference}\n- **superseded_by**: {uuid if applicable}\n\n-->\n"
+        content_text = "# Durable Facts — cryptoagg\n\n> Append-only log of durable project facts.\n> NEVER delete entries — mark superseded with `superseded_by`.\n\n## Entries\n\n<!-- Entries are append-only. Format:\n\n### [uuid] — {fact summary}\n- **Created**: {date}\n- **Content**: {description}\n- **Source**: {git commit or decision reference}\n- **superseded_by**: {uuid if applicable}\n\n-->\n"
 
     # Replace the "## Entries" section's end marker with the new entry
     marker = "<!-- Entries are append-only. Format:"

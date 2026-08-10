@@ -38,7 +38,7 @@ REQUIRED_USDT = {"MUUSDT", "ORCLUSDT", "AAPLUSDT", "NVDAUSDT", "TSLAUSDT", "BTCU
 
 
 def _fetch_json(url: str, timeout: float = 10.0) -> object:
-    req = urllib.request.Request(url, headers={"User-Agent": "pyharmonics-watchlist-check/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "cryptoagg-watchlist-check/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — explicit URL
         return json.loads(resp.read().decode("utf-8"))
 

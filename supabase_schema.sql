@@ -275,9 +275,9 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================
--- 8. Storage Bucket (pyharmonics-gpt-bucket)
+-- 8. Storage Bucket (cryptoagg-bucket)
 -- ============================================
--- 在 Supabase Dashboard → Storage 中手动创建 bucket: pyharmonics-gpt-bucket
+-- 在 Supabase Dashboard → Storage 中手动创建 bucket: cryptoagg-bucket
 -- 设置为 Private
 -- 然后执行以下 SQL 设置策略：
 
@@ -285,7 +285,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 DROP POLICY IF EXISTS "Users can upload own charts" ON storage.objects;
 CREATE POLICY "Users can upload own charts" ON storage.objects
     FOR INSERT TO authenticated WITH CHECK (
-        bucket_id = 'pyharmonics-gpt-bucket' AND
+        bucket_id = 'cryptoagg-bucket' AND
         (storage.foldername(name))[1] = auth.uid()::text
     );
 
@@ -293,7 +293,7 @@ CREATE POLICY "Users can upload own charts" ON storage.objects
 DROP POLICY IF EXISTS "Users can read own charts" ON storage.objects;
 CREATE POLICY "Users can read own charts" ON storage.objects
     FOR SELECT TO authenticated USING (
-        bucket_id = 'pyharmonics-gpt-bucket' AND
+        bucket_id = 'cryptoagg-bucket' AND
         (storage.foldername(name))[1] = auth.uid()::text
     );
 
@@ -301,7 +301,7 @@ CREATE POLICY "Users can read own charts" ON storage.objects
 DROP POLICY IF EXISTS "Users can delete own charts" ON storage.objects;
 CREATE POLICY "Users can delete own charts" ON storage.objects
     FOR DELETE TO authenticated USING (
-        bucket_id = 'pyharmonics-gpt-bucket' AND
+        bucket_id = 'cryptoagg-bucket' AND
         (storage.foldername(name))[1] = auth.uid()::text
     );
 

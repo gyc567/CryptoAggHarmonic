@@ -1,7 +1,7 @@
 # 仓位管理页面设计方案（已审计版）
 
 > 状态：已审计，可直接进入编码  
-> 目标：作为独立新页面 `/position` 完全融入现有 Pyharmonics SaaS 前端  
+> 目标：作为独立新页面 `/position` 完全融入现有 CryptoAgg SaaS 前端  
 > 参考来源：
 > - https://www.liandu24.com/aihub/cwbox/cangwei.html（WU 仓位单位、账户隔离、风控等级、what-if 模拟）  
 > - https://x.com/CryptoMetac/status/2063434459207303365（访问受限，已预留情绪/纪律检查模块）  
@@ -293,7 +293,7 @@ BTC 趋势仓  = 常规管理资金 × BTC 目标比例
 
 ---
 
-## 6. 与现有 Pyharmonics 系统的融合
+## 6. 与现有 CryptoAgg 系统的融合
 
 ### 6.1 路由与导航
 

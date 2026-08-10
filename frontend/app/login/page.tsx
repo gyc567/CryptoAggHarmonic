@@ -58,7 +58,7 @@ export default function LoginPage() {
             <Zap className="h-7 w-7" />
           </div>
           <h1 className="mt-6 text-3xl font-bold text-gradient">
-            Pyharmonics
+            CryptoAgg
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             邀请制谐波形态与背离分析

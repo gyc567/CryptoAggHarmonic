@@ -1,4 +1,4 @@
-"""Pyharmonics GPT application package."""
+"""CryptoAgg application package."""
 
 from app.factory import get_app, get_orchestrator, reset_app
 

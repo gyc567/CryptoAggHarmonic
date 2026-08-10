@@ -45,7 +45,7 @@ export function Sidebar({ profile, className }: SidebarProps) {
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cy to-purple text-white shadow-glow-sm">
           <Zap className="h-5 w-5" />
         </div>
-        <span className="text-lg font-bold text-gradient">Pyharmonics</span>
+        <span className="text-lg font-bold text-gradient">CryptoAgg</span>
       </div>
 
       <nav className="flex-1 space-y-1 p-4">

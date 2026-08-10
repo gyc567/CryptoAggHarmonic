@@ -1,4 +1,4 @@
-# Pyharmonics 前端样式重构方案（Agentrade / Deep-Research 风格）
+# CryptoAgg 前端样式重构方案（Agentrade / Deep-Research 风格）
 
 > 目标：参考 https://agentrade.space/deep-research 的视觉语言，对当前 `frontend/` 做**纯样式重构**。不修改功能逻辑、Hook、API 调用或状态管理。保持测试 125 passed / 100% 覆盖率、`build` 与 `lint` 通过。
 

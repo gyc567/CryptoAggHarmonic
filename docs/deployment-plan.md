@@ -1,4 +1,4 @@
-# Pyharmonics-GPT 部署方案
+# CryptoAgg-GPT 部署方案
 
 > 日期: 2026-07-23
 > 架构版本: Flask + Next.js + Supabase SaaS
