@@ -69,6 +69,7 @@ class CandidateMetrics(_DomainModel):
     past_tp2: bool = False  # True => 现价已穿越 TP2(行情结束)
     in_prz: bool = False  # True => 现价落在 PRZ 区间内
     dist_pct: float = 0.0  # 现价到 PRZ 最近边缘距离(% 正数)
+    liquidity_sweep: bool = False  # True => D 点放量(扫损特征)，trap 标记不硬拒
 
 
 class MacroOverlay(_DomainModel):

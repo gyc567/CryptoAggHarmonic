@@ -171,6 +171,12 @@ def evaluate(
     # Gate 3: TP2 cross.
     past_tp2 = _past_tp2(current_price, candidate, bullish)
 
+    # Gate 4: liquidity sweep. A volume surge at the D point (the final leg
+    # into the PRZ) is a classic stop-hunt signature — flagged as a trap
+    # candidate rather than hard-rejected. Threshold: D-bar volume must
+    # exceed the prior 20-bar mean by LIQUIDITY_SWEEP_MULT (default 3.0).
+    liquidity_sweep = _liquidity_sweep(df, candidate)
+
     metrics = CandidateMetrics(
         bars_since_c=bars_since_c,
         stale=stale,
@@ -178,6 +184,7 @@ def evaluate(
         past_tp2=past_tp2,
         in_prz=candidate.prz_low <= current_price <= candidate.prz_high,
         dist_pct=_dist_pct(current_price, candidate, bullish),
+        liquidity_sweep=liquidity_sweep,
     )
 
     # Master rule:
@@ -186,6 +193,31 @@ def evaluate(
     #   stale=True          → downgrade only, keep visible
     passed = not breached and not past_tp2
     return DisciplineResult(passed=passed, metrics=metrics)
+
+
+LIQUIDITY_SWEEP_MULT = 3.0  # D-bar volume must exceed 20-bar mean by this factor
+
+
+def _liquidity_sweep(df: pd.DataFrame, candidate: Candidate) -> bool:
+    """Detect a stop-hunt volume surge at the D point.
+
+    Uses ``candidate.indices[-1]`` (D bar position in the source df). The
+    volume on that bar vs the mean of the 20 bars before it. Missing volume
+    data or indices short-circuit to False (no flag).
+    """
+    if "volume" not in df.columns or df["volume"].isna().all():
+        return False
+    idx = getattr(candidate, "indices", None)
+    if not idx or len(idx) < 2:
+        return False
+    d_idx = int(idx[-1])
+    if d_idx <= 0 or d_idx >= len(df):
+        return False
+    window = df["volume"].iloc[max(0, d_idx - 20):d_idx]
+    if len(window) == 0 or window.mean() <= 0:
+        return False
+    d_volume = float(df["volume"].iloc[d_idx])
+    return d_volume > window.mean() * LIQUIDITY_SWEEP_MULT
 
 
 def _dist_pct(current_price: float, candidate: Candidate, bullish: bool) -> float:
