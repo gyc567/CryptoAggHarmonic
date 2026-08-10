@@ -46,3 +46,21 @@
   with `{"ssoProtection": null}` to disable SSO. T5 fully verified at
   `https://www.cryptoagg.xyz` (no client-side backend-host leak).
 - **superseded_by**: _none_
+
+### [v3ver02] — Magic-link email uses localhost:3000 instead of www.cryptoagg.xyz
+- **Created**: 2026-08-09
+- **Source**: Supabase project piomgijwxpbsvnigtbmt + frontend/hooks/use-auth.ts:60-69
+- **Content**: Supabase Auth → URL Configuration has
+  ``site_url=http://localhost:3000`` and empty
+  ``additional_redirect_urls``. The frontend
+  ``useAuth.signInWithOtp`` correctly passes a per-request
+  ``emailRedirectTo`` (``${window.location.origin}/dashboard``) but
+  the project-level ``site_url`` wins, so the magic-link email
+  template renders ``http://localhost:3000/?code=...`` regardless of
+  where the user clicked "登录" from. Code is correct; **the fix is
+  in the Supabase dashboard** (Authentication → URL Configuration):
+  set ``site_url=https://www.cryptoagg.xyz`` and add
+  ``https://www.cryptoagg.xyz`` and ``https://www.cryptoagg.xyz/dashboard``
+  to ``additional_redirect_urls``. Localhost can stay for dev if
+  the dev entrypoint is also added.
+- **superseded_by**: _none_

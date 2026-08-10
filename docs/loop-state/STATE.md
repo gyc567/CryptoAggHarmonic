@@ -29,11 +29,16 @@
   `/api/markets` all 200, no client-side backend-host leak).
 
 ## Watch List
-<!-- 由循环自动填充 -->
 
-- Phase 0 **live** baseline (real harness + market data) — fill table in `docs/loop-state/phase0-baseline.md`
+- **[!] Auth: magic-link email uses `localhost:3000` instead of `www.cryptoagg.xyz`.**
+  `site_url=http://localhost:3000` and empty `additional_redirect_urls`.
+  The frontend code is correct (passes per-request `emailRedirectTo`).
+  Fix: open the Supabase dashboard
+  (https://supabase.com/dashboard/project/piomgijwxpbsvnigtbmt/auth/url-configuration),
+  set `Site URL = https://www.cryptoagg.xyz`, and add
+  `https://www.cryptoagg.xyz` and `https://www.cryptoagg.xyz/dashboard`
+  to `Additional Redirect URLs`. Durable fact `[v3ver02]`.
 
-- Expand contributor failure stories (dependency sweeper, multi-loop)
 - Collect a production story for Post-Merge Cleanup
 - Validate `loop-init` scaffolds on fresh projects across all patterns
 
