@@ -7,10 +7,11 @@
 
 <!-- 由循环自动填充 -->
 
-- [x] 2026-08-12: **Vercel Frontend 部署 — CLI 触发完成，READY.**
+- [x] 2026-08-12: **Vercel Frontend 部署 — DNS 修复完成，www.cryptoagg.xyz 和 cryptoagg.xyz 均 200.**
   - `vercel --prod --yes` → `frontend-odifnndxv-gyc567s-projects.vercel.app`
   - `npm run build` ✅（Next.js 14.2.35，15/15 路由）；node_modules 缺装已补
-  - 验证：/ → 200，/login → 200，/api/health → 重定向登录（auth middleware 正常）
+  - `vercel alias set` → `www.cryptoagg.xyz` + `cryptoagg.xyz` 均指向 CLI 部署
+  - 验证：https://www.cryptoagg.xyz/ → 200，标题 "CryptoAgg - Agent 化加密货币交易策略"
   - 详见 `docs/plans/vercel-frontend-deploy.md`
 
 - [ ] 2026-08-11: **Binance CLI 整合 — Loop #12 计划已写入 `docs/plans/binance-cli-integration.md`.**
