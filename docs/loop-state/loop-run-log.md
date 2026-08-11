@@ -38,6 +38,7 @@
 ### 2026-08-10T14:00:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=git-push commit=1cbd45a files=7(+513/-3) added=docs/plans/local-backend-deployment.md+docs/test-report-hapi-domain-2026-08-10.md+scripts/deploy-local-backend.sh+scripts/stop-old-backend.sh modified=PLANS.md+docs/loop-state/STATE.md+docs/loop-state/loop-run-log.md branch=main pushed_to=origin/main remote_url=git@github.com:gyc567/CryptoAggHarmonic.git
 ### 2026-08-10T15:30:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=binance-451-geo-block-fix file=app/infra/marketdata.py(+20/-3) root_cause=binance.com-HTTP-451-in-us-vps fix=DirectBinanceCandleData-get_candles-451-fallback-to-Binance.US verified=BTCUSDT-analyze-200-success-ETHUSDT-analyze-200-success pushed=e43dda7
 ### 2026-08-11T15:35:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-restart-new-code script=scripts/deploy-local-backend.sh fix=remove-DISABLE_AUTH_from-prod-fix reason=RuntimeError-on-boot DISABLE_AUTH-blocked-in-production health=/api/health-200-supabase-ok-redis-ok-tvbridge-ok analyze_bearer=401-auth-required pushed=7afab39
+### 2026-08-11T15:50:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=rsi-trend-429-fix root_cause=POST-rpc-reserve_quota-HTTP-409-pg_advisory_lock-conflict-treated-as-quota-exhausted file=app/infra/supabase_client.py(+27/-8) fix=extract-_reserve_quota_rpc-with-409-retry-once verified=backend-ok-health-supabase-ok pushed=7cad618
 ```
 
 | Value | Meaning |
