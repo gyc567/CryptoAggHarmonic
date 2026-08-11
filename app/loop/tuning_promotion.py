@@ -38,11 +38,29 @@ def promotion_allowed_for_files(paths: list[str]) -> tuple[bool, str]:
     return True, "ok"
 
 
-def promotion_checklist() -> list[str]:
-    """Human-readable promotion steps."""
-    return [
+def promotion_checklist(
+    max_drawdown: float | None = None,
+    calmar_ratio: float | None = None,
+    baseline_drawdown: float | None = None,
+) -> list[str]:
+    """Human-readable promotion steps (ADR-0010 D5: drawdown/Calmar/Shadow quant gates).
+
+    Args:
+        max_drawdown: Candidate max drawdown (fraction, e.g. 0.15 = 15%).
+        calmar_ratio: Candidate Calmar ratio.
+        baseline_drawdown: Baseline max drawdown for comparison.
+    """
+    checks = [
         "1. Accept candidate → write tuning_snapshots/pareto-{sha}.yaml",
         "2. Open PR editing app/config/tuning.py (never auto-merge)",
-        "3. Review backtest metrics (drawdown / Calmar gates)",
+        "3. Review backtest metrics:",
+        "   [ ] max_drawdown ≤ 2 × baseline_drawdown"
+        + (f" (baseline={baseline_drawdown:.1%}, threshold={2*baseline_drawdown:.1%})"
+           if baseline_drawdown else ""),
+        "   [ ] Calmar ratio ≥ threshold"
+        + (f" (candidate={calmar_ratio:.2f})" if calmar_ratio is not None else ""),
+        "   [ ] Shadow mode running ≥ 7 days without drawdown anomaly",
+        "   [ ] source=freqtrade_hyperopt salt_version traceable in HISTORY.jsonl",
         "4. Merge + SIGHUP/restart gunicorn workers",
     ]
+    return checks

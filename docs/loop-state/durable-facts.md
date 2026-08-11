@@ -108,3 +108,33 @@
   from 1762 — the 7 prior auth-test failures + 1 rsi-trend-api
   failure are all green).
 - **superseded_by**: _none_
+
+### [freqtrade-baseline-01] — Freqtrade MCP integration baseline (pre-freqtrade path)
+- **Created**: 2026-08-11
+- **Source**: `docs/loop-state/phase0-baseline.md` + `docs/plans/freqtrade-mcp-integration.md`
+- **Content**: cryptoagg signal loop baseline BEFORE enabling freqtrade downstream path.
+  Freqtrade hyperopt results will be evaluated against these numbers.
+
+  | Metric | Baseline value | Date | Notes |
+  |--------|----------------|------|-------|
+  | avg fitness | +4.267 | 2026-08-08 | mean across 20 accepted candidates |
+  | max fitness | +6.377 | 2026-08-08 | params_sha `16c414e73197` |
+  | Pareto size | 2 | 2026-08-08 | both points are duplicates |
+  | history_records | 20 | 2026-08-08 | C1 Geometry, BTC/ETH/SOL |
+  | accepted | 20 | 2026-08-08 | trade-count floor ≥ 30 |
+  | LLM $ / gen | $0.00 | 2026-08-08 | MAKER_CHECKER_ENABLED=true but mock backend |
+
+  **ADR-0010 D5 calibration needed** (to be filled after real freqtrade backtest run):
+  - `baseline_drawdown`: _TBD_ (from `/metrics` after real generation)
+  - `baseline_calmar`: _TBD_
+  - `shadow_mode_days`: _TBD_ (Phase 4 shadow mode required before live promotion)
+
+  Phase 0 run command:
+  ```bash
+  MAKER_CHECKER_ENABLED=false python -m app.loop.driver \
+    --candidates candidates-baseline.json \
+    --state-root .scratch/loop_state/phase0_live \
+    --workers 4 --timeout 900
+  curl -s localhost:5000/metrics | grep -E "(drawdown|calmar|tuning_proposals)"
+  ```
+- **superseded_by**: _none_

@@ -172,3 +172,5 @@ Ponytail 是横切质量层，不是循环。约束范围：
 CI Sweeper → PR Babysitter → Dependency Sweeper → Post-Merge / Changelog → Daily Triage
 
 详见：`docs/loop-state/outerloop-protocol.md`
+
+### 10. Freqtrade Strategy Loop

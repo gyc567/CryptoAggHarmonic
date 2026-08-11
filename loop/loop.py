@@ -94,12 +94,14 @@ def cmd_gate(action: str, path: str) -> int:
     return gate_main()
 
 
-def cmd_sync(action: str, path: str) -> int:
-    """Check LOOP.md / STATE.md consistency."""
+def cmd_sync(action: str, path: str, file: str | None = None) -> int:
+    """Check LOOP.md / STATE.md consistency, or add a loop."""
     from loop.loop_sync import main as sync_main
 
     os.chdir(path)
-    sys.argv = ["loop-sync", "--path", path]
+    sys.argv = ["loop-sync", action, "--path", path]
+    if action == "add-loop" and file:
+        sys.argv.append(file)
     return sync_main()
 
 
@@ -150,6 +152,7 @@ def main() -> int:
     # sync
     c = sub.add_parser("sync", help="Check LOOP/STATE consistency")
     c.add_argument("action", nargs="?", default="check")
+    c.add_argument("file", nargs="?", default=None)  # filename for add-loop
     c.add_argument("path", nargs="?", default=".")
 
     # cost
@@ -167,7 +170,7 @@ def main() -> int:
     elif args.cmd == "gate":
         return cmd_gate(args.action, args.path)
     elif args.cmd == "sync":
-        return cmd_sync(args.action, args.path)
+        return cmd_sync(args.action, args.path, args.file)
     elif args.cmd == "cost":
         return cmd_cost(args.pattern)
     return 0

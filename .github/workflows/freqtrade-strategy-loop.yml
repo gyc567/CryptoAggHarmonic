@@ -1,0 +1,64 @@
+name: Freqtrade Strategy Loop
+
+on:
+  schedule:
+    # Weekly — Sunday 10:00 UTC (aligned with Code Health Audit)
+    - cron: "0 10 * * 0"
+  push:
+    branches:
+      - main
+    paths:
+      # Trigger when cryptoagg tuning snapshots are updated
+      - "tuning_snapshots/**"
+      - "app/loop/**"
+      - "app/services/freqtrade/**"
+  workflow_dispatch:
+    # Manual trigger for immediate run
+
+jobs:
+  freqtrade-loop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -q -e .
+          pip install -q -r freqtrade_dev_mcp/requirements.txt
+
+      - name: Discover latest tuning snapshot
+        run: |
+          # Find most recent pareto tuning snapshot
+          SNAPSHOT=$(ls -t tuning_snapshots/pareto-*.yaml 2>/dev/null | head -1)
+          if [ -z "$SNAPSHOT" ]; then
+            echo "No tuning snapshot found — skip"
+            echo "snapshot_path=" >> $GITHUB_OUTPUT
+          else
+            echo "snapshot_path=$SNAPSHOT" >> $GITHUB_OUTPUT
+            echo "Found snapshot: $SNAPSHOT"
+          fi
+
+      - name: Run freqtrade strategy loop
+        if: env.snapshot_path != ''
+        run: |
+          python -m app.services.freqtrade.loop_runner \
+            --snapshot "${{ env.snapshot_path }}" \
+            --workers 2
+
+      - name: Check for pending issues
+        run: |
+          PENDING=$(ls -1 .scratch/loop_state/freqtrade/pending_issues/*.json 2>/dev/null || true)
+          if [ -n "$PENDING" ]; then
+            echo "pending_issues=$PENDING" >> $GITHUB_OUTPUT
+            echo "Found $(echo $PENDING | wc -w) pending issue(s)"
+          fi
+
+      - name: Report loop completion
+        run: |
+          echo "Freqtrade Strategy Loop completed"
+          echo "Results: .scratch/loop_state/freqtrade/backtest_results/"

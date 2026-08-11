@@ -196,5 +196,8 @@ app/cache/
 # Backtest data cache (downloaded K-line data)
 data/backtest/
 
+# Freqtrade user_data (contains exchange API keys via credentials.json)
+freqtrade_dev_mcp/user_data/
+
 # Coverage reports
 coverage.json

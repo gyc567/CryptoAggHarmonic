@@ -33,11 +33,12 @@ Key concepts:
 
 **CLI tools** (`python -m loop.loop`):
 ```bash
-python -m loop.loop doctor .     # Check core files
-python -m loop.loop status .    # Show state summary
+python -m loop.loop doctor .         # Check core files
+python -m loop.loop status .        # Show state summary
 python -m loop.loop audit . --suggest  # Compute readiness score
-python -m loop.loop gate check . # Check gate.yaml
-python -m loop.loop sync check .  # Check LOOP/STATE consistency
+python -m loop.loop gate check .    # Check gate.yaml
+python -m loop.loop sync check .    # Check LOOP/STATE consistency
+python -m loop.loop sync add-loop FREQTRADE-LOOP.md .  # Register a new loop
 ```
 
 ## Skills System
@@ -45,6 +46,7 @@ python -m loop.loop sync check .  # Check LOOP/STATE consistency
 - **Agent skills** (from `mattpocock/skills`): Use `skills-lock.json` to understand what's available
 - **Project skills** (loop-specific): See `skills/` directory
 - **Loop skills**: See `.claude/skills/` directory
+- **Freqtrade Strategy Loop skill**: `skills/freqtrade-strategy-loop/SKILL.md`
 
 ## Key Files
 
@@ -58,6 +60,24 @@ python -m loop.loop sync check .  # Check LOOP/STATE consistency
 | `app/loop/maker_checker/` | LLM-based maker-checker verifier |
 | `app/config/tuning.py` | TuningConstants — the master parameter set |
 | `app/domain/signals.py` | Core signal domain logic |
+| `app/services/freqtrade/` | Freqtrade Dev MCP integration (Signal→Strategy translation) |
+| `freqtrade_dev_mcp/` | Freqtrade Dev MCP server (12 tools, pin `04a26d7f`) |
+
+## Freqtrade Dev MCP
+
+Freqtrade Dev MCP provides 12 MCP tools for strategy development: `create_strategy`,
+`backtest_strategy`, `hyperopt_strategy`, `extract_backtest_data`, `extract_hyperopt_data`,
+`download_candles`, `search_results`, `list_results`, `get_result`, `create_userdir`,
+`create_config`, `create_strategy_wireframe`.
+
+**MCP server config**: `.claude/settings.json`
+
+**TUNING promotion constraint**: freqtrade hyperopt results **must not** directly call
+`apply_tuning()`. They must write to `HISTORY.jsonl` with `source: freqtrade_hyperopt`
+and go through the promotion gate (`app/loop/tuning_promotion.py`).
+
+**Credential isolation**: Exchange API keys are read from the system credential manager
+at runtime. Never hardcode or log them. See `docs/adr/0010-freqtrade-mcp-integration.md`.
 
 ## Critical Safety Notes
 

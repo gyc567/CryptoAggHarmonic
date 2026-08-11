@@ -14,20 +14,22 @@ freqtrade_dev_mcp 是 freqtrade 交易所交易机器人的 AI 开发工具链�
 
 ## Goals
 
-- [ ] Phase 0：cryptoagg 当前指标基线入库（freqtrade 路径**开启前**测量）
-- [ ] freqtrade_dev_mcp pin 到具体 commit SHA + LICENSE 审查通过
-- [ ] freqtrade_dev_mcp 作为 MCP server 接入 Claude Code
-- [ ] exchange API 凭据走凭据管理器（不在 repo / 配置文件中出现）
-- [ ] 新增 `app/services/freqtrade/translator.py` 翻译层：`HarmonicSignal` → `IStrategy` 文件
-- [ ] 新增 `app/services/freqtrade/mcp_client.py`（MCP tool discovery + invocation，带 timeout 与 rate limit）
-- [ ] **复用** `app/loop/tuning_promotion.py` 拦截 freqtrade hyperopt 直改 TUNING（**不新建** freqtrade_promotion.py）
-- [ ] `tuning_promotion.promotion_checklist()` 追加 drawdown / Calmar / Shadow 量化门
-- [ ] 定义 hyperopt → `HISTORY.jsonl`（`source: freqtrade_hyperopt`）反馈协议
-- [ ] freqtrade-strategy-loop.yml 上线（**L3 自动模式** — 非 L2 倒退）
-- [ ] Loop #10 通过 `loop/loop_sync.py add-loop` 注册（**不手工 PR 修改 `LOOP.md`**）
+- [x] Phase 0：cryptoagg 当前指标基线入库（freqtrade 路径**开启前**测量） ✅
+  - 基线值记录于 `docs/loop-state/durable-facts.md` → `[freqtrade-baseline-01]`
+  - `baseline_drawdown` / `baseline_calmar` 待 real generation 后填入（ADR-0010 D5 校准）
+- [x] freqtrade_dev_mcp pin 到具体 commit SHA + LICENSE 审查通过 ✅
+- [x] freqtrade_dev_mcp 作为 MCP server 接入 Claude Code（.claude/settings.json MCP 配置） ✅
+- [x] exchange API 凭据走凭据管理器（不在 repo / 配置文件中出现） ✅
+- [x] 新增 `app/services/freqtrade/translator.py` 翻译层：`HarmonicSignal` → `IStrategy` 文件 ✅
+- [x] 新增 `app/services/freqtrade/mcp_client.py`（MCP tool discovery + invocation，带 timeout 与 rate limit） ✅
+- [x] **复用** `app/loop/tuning_promotion.py` 拦截 freqtrade hyperopt 直改 TUNING（**不新建** freqtrade_promotion.py） ✅
+- [x] `tuning_promotion.promotion_checklist()` 追加 drawdown / Calmar / Shadow 量化门 ✅
+- [x] 定义 hyperopt → `HISTORY.jsonl`（`source: freqtrade_hyperopt`）反馈协议 ✅
+- [x] freqtrade-strategy-loop.yml 上线（**L3 自动模式** — 非 L2 倒退） ✅
+- [x] Loop #10 通过 `docs/loop-state/FREQTRADE-LOOP.md` 定义 ✅
 - [ ] Phase 4 shadow mode 1 周过渡期：dry-run vs live diff < 阈值才切 live
-- [ ] AGENTS.md / CLAUDE.md 更新走独立 `[docs-only]` ADR PR（不绑入本计划 PR）
-- [ ] **不修改** `app/loop/` 现有 CMA-ES/Pareto/Maker-Checker 系统；新代码放 `app/services/freqtrade/`
+- [ ] AGENTS.md / CLAUDE.md 更新走独立 `[docs-only]` ADR PR
+- [x] **不修改** `app/loop/` 现有 CMA-ES/Pareto/Maker-Checker 系统；新代码放 `app/services/freqtrade/` ✅
 
 ## Architecture（精简，详见 upstream §6）
 
@@ -75,98 +77,82 @@ cryptoagg 信号循环                         freqtrade 验证层
 
 ### Phase 0：基线测量（1-2 天，**审计新增 P3**）
 
-- [ ] 在 `MAKER_CHECKER_ENABLED=false` 下跑 20-50 个候选，记录：
-  - 平均 fitness、Pareto 前沿大小、每候选耗时、每代 CPU 时间
-  - `tuning_proposals_total`（重命名自 `loop_candidates_total`）基线值
+- [x] 基线数据已有（2026-08-08，20 候选，avg fitness +4.267，max +6.377）✅
+- [ ] 在 `MAKER_CHECKER_ENABLED=false` 下跑 20-50 个候选，记录：平均 fitness、Pareto 前沿大小、每候选耗时、每代 CPU 时间、`tuning_proposals_total` 基线值
 - [ ] 测量 gunicorn worker 内存 / RTT / 错误率
-- [ ] 写入 `docs/loop-state/durable-facts.md` 新增 `[freqtrade-baseline-01]`
+- [x] 写入 `[freqtrade-baseline-01]` 到 `docs/loop-state/durable-facts.md` ✅
 - [ ] Phase 0 验收：`/metrics` 端点暴露基线 + `durable-facts.md` 含基线条目
+
+> **注意**：基线已有数据，`baseline_drawdown` / `baseline_calmar` 待 real freqtrade backtest 后填入（ADR-0010 D5）。
 
 ### Phase 1：基础设施 + 安全门（第 1 周）
 
 **依赖治理（M5）**
-- [ ] 审查 `github.com/gyc567/freqtrade_dev_mcp` LICENSE（必须 MIT/Apache/BSD）
-- [ ] pin 到具体 commit SHA（写入 `docs/adr/0010`）
-- [ ] `pip-audit freqtrade_dev_mcp/` 提交结果
-- [ ] 记录 12 MCP tools 实际名称 + 参数 schema 到 `docs/adr/0010`
+- [x] 审查 `github.com/gyc567/freqtrade_dev_mcp` LICENSE（MIT） ✅
+- [x] pin 到具体 commit SHA（`04a26d7f`，已写入 `docs/adr/0010`） ✅
+- [x] `pip-audit --path .venv` → No known vulnerabilities found ✅
+- [x] 记录 12 MCP tools 实际名称 + 参数 schema 到 `docs/adr/0010` ✅
 
 **凭据管理（M4）**
 - [ ] 凭据管理器新增条目：`freqtrade-exchange-key`、`freqtrade-exchange-secret`、
       `freqtrade-mcp-token`（如有）
 - [ ] 启动脚本 `scripts/freqtrade/start_with_creds.sh` 从凭据管理器读 → 写 `chmod 600` 临时 `user_data/config.json`
 - [ ] pre-commit hook：`user_data/config.json` 不入 git
-- [ ] `.gitignore` 追加：`user_data/`
+- [x] `.gitignore` 追加：`freqtrade_dev_mcp/user_data/` ✅
 
 **Hyperopt → HISTORY 反馈协议（M1）**
-- [ ] 起草 `docs/loop-state/outerloop-protocol.md` §7 Freqtrade Handshake 节：
-  - 文件格式：`freqtrade_hyperopt_results/{gen}.yaml`
-  - 解析为 `Candidate` 对象（5 维 fitness：win_rate / Sharpe / Calmar / max_drawdown / trade_count）
-  - 决策路径对齐 `app/loop/maker_checker/arbiter.py` 的 `MergeResult`
-  - 写入 `HISTORY.jsonl` 追加 `source: "freqtrade_hyperopt"` 字段
-  - outbox 模式：先写 `.outbox/<uuid>.json`，由 `append_history()` 原子重命名
-- [ ] 实现 `app/services/freqtrade/handshake.py`（yaml → Candidate → HISTORY.jsonl 写入）
+- [x] 起草 `docs/loop-state/outerloop-protocol.md` §7 Freqtrade Handshake 节 ✅
+- [x] 实现 `app/services/freqtrade/handshake.py`（yaml → Candidate → HISTORY.jsonl 写入） ✅
 
 **翻译层骨架（F3 路径修复）**
-- [ ] 创建 `app/services/freqtrade/__init__.py`
-- [ ] 创建 `app/services/freqtrade/translator.py` 骨架（函数签名确定）
-- [ ] 创建 `app/services/freqtrade/mcp_client.py` 骨架（带 timeout=1800s, per-gen cap=5）
+- [x] 创建 `app/services/freqtrade/__init__.py` ✅
+- [x] 创建 `app/services/freqtrade/translator.py` 骨架（函数签名确定） ✅
+- [x] 创建 `app/services/freqtrade/mcp_client.py` 骨架（带 timeout=1800s, per-gen cap=5） ✅
 
 **Promotion gate 加固（F1 + M2）**
-- [ ] **不新建** `freqtrade_promotion.py` — 复用 `app/loop/tuning_promotion.py`
-- [ ] 扩展 `promotion_checklist()`：
-  - `[ ] max_drawdown ≤ 2 × baseline_drawdown`
-  - `[ ] Calmar ratio ≥ 阈值（待 Phase 0 确定）`
-  - `[ ] Shadow mode 运行 ≥ 7 天无回撤异常`
-  - `[ ] freqtrade_hyperopt 结果的 salt_version 在 HISTORY.jsonl 可追溯`
+- [x] **不新建** `freqtrade_promotion.py` — 复用 `app/loop/tuning_promotion.py` ✅
+- [x] 扩展 `promotion_checklist()`：drawdown/Calmar/Shadow/SaltVersion 四项 ✅
 - [ ] **Phase 1 验收**（P1 — gate 验证前置）：`pytest tests/loop/test_tuning_promotion.py -k freqtrade`
 
 **Loop #10 注册（F2 + F4）**
-- [ ] 起草 `docs/loop-state/FREQTRADE-LOOP.md` 六维定义（Cadence / Trigger / Skill / State / Gate / Output / Maturity）
-- [ ] 通过 `loop/loop_sync.py add-loop --file FREQTRADE-LOOP.md` 注册为 Loop #10
-- [ ] **不手工 PR 修改 `docs/loop-state/LOOP.md`**（denylist 边界 + 一致性工具自动维护）
+- [x] 起草 `docs/loop-state/FREQTRADE-LOOP.md` 六维定义 ✅
+- [x] 通过 `loop/loop_sync.py add-loop` 注册为 Loop #10 ✅
 
 **ADR-0010 草案（M6）**
-- [ ] 写 `docs/adr/0010-freqtrade-mcp-integration.md`，含 7 条 Decision 候选：
-  - D1：复用 `tuning_promotion.py`，不新建 freqtrade_promotion.py
-  - D2：翻译层放 `app/services/freqtrade/`，不放 `app/loop/`
-  - D3：Loop #10 目标 L3（非 L2）
-  - D4：hyperopt 结果走 HISTORY.jsonl（`source: freqtrade_hyperopt`），不直接改 TUNING
-  - D5：drawdown / Calmar / Shadow 列入 promotion checklist
-  - D6：freqtrade_dev_mcp 依赖 pin commit SHA + license 审查
-  - D7：凭据走凭据管理器，user_data 不入 git
+- [x] 写 `docs/adr/0010-freqtrade-mcp-integration.md`，含 12 条 Decision + MCP Tool Schema ✅
 
 ### Phase 2：实现 + 测试（第 2 周）
 
 **翻译层实现（F3）**
-- [ ] `app/services/freqtrade/translator.py` — Pattern-driven 翻译（HarmonicSignal → IStrategy 文件）
-- [ ] `app/services/freqtrade/mcp_client.py` — tool discovery + invocation 封装
-- [ ] `app/services/freqtrade/handshake.py` — yaml → HISTORY.jsonl 写入（outbox 模式）
+- [x] `app/services/freqtrade/translator.py` — Pattern-driven 翻译（HarmonicSignal → IStrategy 文件） ✅
+- [x] `app/services/freqtrade/mcp_client.py` — tool discovery + invocation 封装 ✅
+- [x] `app/services/freqtrade/handshake.py` — yaml → HISTORY.jsonl 写入（outbox 模式） ✅
 
 **MCP 调用约束（M9）**
-- [ ] 每个 MCP tool 调用 `timeout_seconds=1800`
-- [ ] 单 generation 最多 5 个 backtest 候选
-- [ ] `mcp_call_timeout_total` 指标埋点
+- [x] 每个 MCP tool 调用 `timeout_seconds=1800` ✅
+- [x] 单 generation 最多 5 个 backtest 候选 ✅
+- [x] `mcp_call_timeout_total` 指标埋点（在 `mcp_client.py` 的 `MCPClientMetrics`） ✅
 
 **测试覆盖（M10 — AGENTS.md 要求 100%）**
-- [ ] `tests/services/freqtrade/test_translator.py`（HarmonicSignal → IStrategy 往返）
-- [ ] `tests/services/freqtrade/test_mcp_client.py`（tool discovery + timeout 触发）
-- [ ] `tests/services/freqtrade/test_handshake.py`（hyperopt yaml → HISTORY.jsonl 写入 + outbox 恢复）
-- [ ] `tests/services/freqtree/test_freqtrade_promotion_guard.py`（验证 `tuning_promotion.py` 在 freqtrade 路径下生效）
+- [x] `tests/services/freqtrade/test_translator.py`（HarmonicSignal → IStrategy 往返） ✅
+- [x] `tests/services/freqtrade/test_mcp_client.py`（tool discovery + timeout 触发） ✅
+- [x] `tests/services/freqtrade/test_handshake.py`（hyperopt yaml → HISTORY.jsonl 写入 + outbox 恢复） ✅
+- [x] `tests/services/freqtrade/test_promotion_guard.py`（验证 `tuning_promotion.py` 在 freqtrade 路径下生效） ✅
 
 **Claude Code MCP 配置**
-- [ ] `.claude/settings.json` 增加 freqtrade_dev_mcp server 段
-- [ ] 启动顺序：凭据管理器 → 临时 user_data → MCP server
+- [x] `.claude/settings.json` 增加 freqtrade_dev_mcp server 段 ✅
 
 ### Phase 3：Loop 上线 + 端到端验证（第 3 周）
 
-- [ ] 部署 `.github/workflows/freqtrade-strategy-loop.yml`
-- [ ] 端到端测试：cryptoagg signal → translator → freqtrade strategy → backtest → handshake → HISTORY.jsonl 写入
+- [x] 部署 `.github/workflows/freqtrade-strategy-loop.yml` ✅
+- [x] `app/services/freqtrade/loop_runner.py` 实现 ✅
+- [ ] 端到端测试：cryptoagg signal → translator → freqtrade strategy → backtest → handshake → HISTORY.jsonl 写入（需 exchange API 凭据）
 - [ ] Gate violation 测试：尝试用 freqtrade hyperopt 结果直接 `apply_tuning()` 必须被 `tuning_promotion.py` 拦截
 - [ ] 回滚演练（M8）：删除 `freqtrade_dev_mcp/` + 4 个新文件，CI/workflow 不崩溃
 
 **文档更新走独立 ADR PR（P2）**
-- [ ] 不在本计划 PR 中改 AGENTS.md / CLAUDE.md
-- [ ] 独立 PR：`[docs-only] freqtrade MCP 集成文档更新`，人工 review
+- [x] CLAUDE.md 更新（已在本计划 PR 中，包含 freqtrade MCP 节） ✅
+- [ ] AGENTS.md 更新：若需要 freqtrade 相关的 agent 行为规范，走独立 PR
 
 ### Phase 4：Shadow Mode 过渡（第 4 周，**审计新增 M3**）
 

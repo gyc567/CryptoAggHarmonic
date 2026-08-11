@@ -7,6 +7,14 @@
 
 <!-- 由循环自动填充 -->
 
+- [x] 2026-08-11: **Freqtrade Dev MCP 整合 — Phase 1-3 完成.**
+  克隆 `freqtrade_dev_mcp/` (MIT, `04a26d7f`) → `app/services/freqtrade/` 翻译层
+  (translator.py / mcp_client.py / handshake.py / loop_runner.py)。
+  Loop #10 (`FREQTRADE-LOOP.md`) 已注册，ADR-0010 已建立，22 测试全绿。
+  TUNING promotion gate 已加固（drawdown/Calmar/Shadow 量化门）。
+  待填充（ADR-0010 D5）: real backtest run 后 `baseline_drawdown` / `baseline_calmar`。
+  详见 `docs/plans/freqtrade-mcp-integration.md`。
+
 - [x] 2026-08-10: **Backtest feedback loop — CLOSED (deployed).**
   Daily pipeline: cron 20:00 UTC → run_backtest.py → backtest_results.json
   + tuning_snapshots/daily_*.yaml (candidate) → human PR → tuning.py.
@@ -112,6 +120,63 @@
   fact `[v3ver02]` carries the verification log.
 
 ---
+
+---
+
+## Triage Log
+
+### 2026-08-10 (this run)
+
+- **gh auth**: ✅ Authenticated as `gyc567` (active account, ssh protocol, scopes: delete:packages, project, read:org, repo, workflow, write:packages)
+- **Triage labels**: ✅ Created: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `automated`, `loop`
+- **Open issues**: None in `gyc567/cryptoagg`
+- **Open PRs**: None in `gyc567/cryptoagg`
+- **Loop readiness**: L3 (100/100) — `daily-triage` loop + harness foundry initialized today.
+- **Other loops**: Issue Triage, PR Babysitter, CI Sweeper, Dependency Sweeper defined in LOOP.md (workflows exist in `.github/workflows/`)
+- **Action items**:
+  1. ✅ GitHub auth configured
+  2. ✅ Triage labels created
+  3. ✅ `.github/workflows/daily-triage.yml` already exists — automation ready
+
+### 2026-08-11 (this run)
+
+- **Open issues**: 0
+- **Open PRs**: 0
+- **Status**: Clean — no action needed
+
+### 2026-08-11 (evening run)
+
+- **Open issues**: 0
+- **Open PRs**: 0
+- **Status**: Clean — no action needed
+
+### 2026-08-11 (manual run)
+
+- **Open issues**: 0
+- **Open PRs**: 0
+- **Status**: Clean — no action needed
+
+### 2026-08-11 (freqtrade-mcp integration)
+
+- **Open issues**: 0
+- **Open PRs**: 0
+- **Freqtrade MCP integration**: ✅ Phase 1-3 complete.
+  - `freqtrade_dev_mcp/` cloned (MIT, commit `04a26d7f`)
+  - `app/services/freqtrade/` — translator.py, mcp_client.py, handshake.py, loop_runner.py
+  - `skills/freqtrade-strategy-loop/`, `.github/workflows/freqtrade-strategy-loop.yml`
+  - `docs/adr/0010-freqtrade-mcp-integration.md` (11 decisions)
+  - `docs/loop-state/FREQTRADE-LOOP.md` → registered as Loop #10
+  - `loop/loop_sync.py` — `add-loop` command implemented
+  - `.claude/settings.json` — MCP server config for Claude Code
+  - `app/loop/tuning_promotion.py` — drawdown/Calmar/Shadow promotion gates
+  - `docs/loop-state/outerloop-protocol.md` — Freqtrade handshake protocol
+  - `docs/loop-state/durable-facts.md` — `[freqtrade-baseline-01]` recorded
+  - 22 new tests in `tests/services/freqtrade/`, all pass
+- **Loop Readiness Score**: 100/100 ✅
+- **pytest**: 1808 passed, 5 skipped (cryptoagg native + new freqtrade tests)
+- **ADR-0010 D5 calibration note**: `baseline_drawdown` / `baseline_calmar` need real
+  freqtrade backtest run to fill in (Phase 4 shadow mode)
+- **Status**: Clean — no action needed
 
 _Maintained by: `.github/workflows/daily-triage.yml`_
 _See also: `docs/loop-state/LOOP.md`_

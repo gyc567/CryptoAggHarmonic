@@ -60,6 +60,88 @@ When Maker-Checker verdict is `suspicious_to_human`:
 1. Write JSON to `.scratch/loop_state/pending_issues/<uuid>.json`
 2. `issue-sync.yml` (GitHub Actions) syncs to GitHub Issues
 
+## Freqtrade Handshake（ADR-0010 D4）
+
+```
+cryptoagg Signal Loop                    Freqtrade Strategy Loop
+(app/loop/)                             (app/services/freqtrade/)
+┌──────────────────┐   tuning snapshot   ┌──────────────────────────┐
+│ Pareto frontier  │ ──────────────────► │ translator.py             │
+│ fitness 突破     │                    │   → IStrategy file       │
+└──────────────────┘                    └────────────┬─────────────┘
+                                                     │ backtest
+                                                     ▼
+                                          ┌──────────────────────────┐
+                                          │ MCP tools (backtest,     │
+                                          │ hyperopt, extract)       │
+                                          └────────────┬─────────────┘
+                                                     │ results
+                                                     ▼
+                                          ┌──────────────────────────┐
+                                          │ handshake.py             │
+                                          │ write_hyperopt_to_      │
+                                          │ history() → HISTORY.jsonl│
+                                          │ source: freqtrade_       │
+                                          │ hyperopt                │
+                                          └────────────┬─────────────┘
+                                                     │ suspicious?
+                                                     ▼
+                                          ┌──────────────────────────┐
+                                          │ pending_issues/<uuid>.json│
+                                          │ → issue-sync.yml → gh    │
+                                          └──────────────────────────┘
+```
+
+### File Formats
+
+**tuning snapshot** (`tuning_snapshots/pareto-{sha}.yaml`):
+```yaml
+pattern_type: Gartley
+entry_price: 50000
+exit_price: 51000
+stop_loss: 49500
+zrpc_price: 50200
+confidence: 0.82
+regime: bullish
+timeframe: 1h
+```
+
+**hyperopt result → HISTORY.jsonl** (ADR-0010 D4):
+```json
+{
+  "candidate_id": "freqtrade-{uuid12}",
+  "gen": -1,
+  "cluster": "freqtrade_hyperopt",
+  "decision": "hyperopt_accepted",
+  "fitness": {
+    "win_rate": 0.62,
+    "sharpe_ratio": 1.34,
+    "calmar_ratio": 2.1,
+    "max_drawdown": 0.08,
+    "trade_count": 847
+  },
+  "params": { ... },
+  "timestamp": "2026-08-11T...",
+  "source": "freqtrade_hyperopt",
+  "salt_version": 1,
+  "strategy_name": "HarmonicGartley1h",
+  "hyperopt_epochs": 500
+}
+```
+
+### Promotion Path（ADR-0010 D1 + D4）
+
+```
+hyperopt result in HISTORY.jsonl
+  → suspicious_to_human verdict (if drawdown/Calmar gates fail)
+  → pending_issues/<uuid>.json → gh issue
+  → human review
+  → PR editing app/config/tuning.py
+  → gunicorn SIGHUP
+```
+
+**Forbidden**: hyperopt → apply_tuning() → gunicorn workers（violates ADR-0003 D9）
+
 ## Implementation
 
 The outerloop does NOT directly call `gh` or access GitHub API.
