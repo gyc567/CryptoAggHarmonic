@@ -491,7 +491,7 @@ def reset_idem_cache() -> None:
         _idem_cache.clear()
 
 
-def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[bool, int, str | None]:
+def reserve_user_quota(user_id: str, analysis_id: str | None, units: int = 1) -> tuple[bool, int, str | None]:
     """Reserve daily quota for user.
 
     Args:
@@ -513,12 +513,12 @@ def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[
         reserved = row.get("reserved", False)
         remaining = row.get("remaining", 0)
 
-        # Get ledger ID
+        # Get ledger ID — find the most-recently-created 'reserved' row for this user.
+        # analysis_id may be NULL (RSI-trend / vibe routes) so we can't filter on it.
         ledger_result = (
             client.table("usage_ledger")
             .select("id")
             .eq("user_id", user_id)
-            .eq("analysis_id", analysis_id)
             .eq("status", "reserved")
             .order("created_at", desc=True)
             .limit(1)
@@ -535,7 +535,14 @@ def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[
 def _reserve_quota_rpc(
     client, user_id: str, analysis_id: str, units: int, retry_on_409: bool = True
 ):
-    """Call the reserve_quota RPC. Retries once on HTTP 409 (pg_advisory lock conflict)."""
+    """Call the reserve_quota RPC. Retries once on PostgreSQL constraint/lock errors.
+
+    postgrest.APIError has no .response attribute — status code is not accessible.
+    PostgreSQL error codes 23xxx = constraint violations (FK, check); 40xxx =
+    transaction rollbacks (advisory lock conflicts). Both can occur when concurrent
+    requests race. Retry once; the outer reserve_user_quota() catches all failures
+    and returns (False, 0, None) so the caller gets a safe 429.
+    """
     try:
         return client.rpc(
             "reserve_quota",
@@ -546,14 +553,13 @@ def _reserve_quota_rpc(
             },
         ).execute()
     except Exception as e:
-        # HTTP 409 = pg_advisory_xact_lock conflict between concurrent requests.
-        # Retry once; the lock is held only for the transaction duration.
-        is_409 = (
-            getattr(e, "response", None) is not None
-            and e.response.status_code == 409
-        )
-        if is_409 and retry_on_409:
-            logger.warning("reserve_quota RPC got 409, retrying once: %s", e)
+        # APIError has no .response attribute — inspect the error code string.
+        # PostgreSQL error codes: 23xxx = constraint violations (FK, check, etc.)
+        # These can occur when two concurrent requests race; retry once.
+        # 40xxx = transaction rollback (advisory lock conflicts, serialization).
+        code = str(getattr(e, "code", "") or "")
+        if retry_on_409 and len(code) >= 2 and code[:2] in ("23", "40"):
+            logger.warning("reserve_quota RPC got PostgreSQL %s error, retrying once: %s", code, e)
             return _reserve_quota_rpc(client, user_id, analysis_id, units, retry_on_409=False)
         raise
 

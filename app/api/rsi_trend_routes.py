@@ -28,15 +28,19 @@ logger = logging.getLogger(__name__)
 rsi_trend_bp = Blueprint("rsi_trend", __name__, url_prefix="/api/rsi-trend")
 
 
-def _reserve_quota(user_id: str, ref_id: str):
-    """Reserve 1 quota unit unless running in local dev mode."""
+def _reserve_quota(user_id: str):
+    """Reserve 1 quota unit unless running in local dev mode.
+
+    Passes analysis_id=None because RSI-trend plan/scan/backtest do not
+    create an analyses table record, so there is no valid FK to link to.
+    The usage_ledger row is identified by (user_id, created_at DESC).
+    """
     if is_local_dev_mode():
         return None
-    reserved, _, ledger_id = reserve_user_quota(user_id, ref_id, units=1)
+    reserved, _, ledger_id = reserve_user_quota(user_id, analysis_id=None, units=1)
     if not reserved:
         return False
     return ledger_id
-
 
 @rsi_trend_bp.route("/scan", methods=["GET"])
 @require_auth
@@ -47,7 +51,7 @@ def scan(user):
         return err
 
     ref_id = str(uuid.uuid4())
-    ledger_id = _reserve_quota(user["id"], ref_id)
+    ledger_id = _reserve_quota(user["id"])
     if ledger_id is False:
         return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429)
 
@@ -72,7 +76,7 @@ def backtest(user):
         return err
 
     ref_id = str(uuid.uuid4())
-    ledger_id = _reserve_quota(user["id"], ref_id)
+    ledger_id = _reserve_quota(user["id"])
     if ledger_id is False:
         return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429)
 
@@ -101,9 +105,8 @@ def plan(user):
     req, err = parse_request(RsiTrendScanRequest, request.args.to_dict())
     if err is not None:
         return err
-
     ref_id = str(uuid.uuid4())
-    ledger_id = _reserve_quota(user["id"], ref_id)
+    ledger_id = _reserve_quota(user["id"])
     if ledger_id is False:
         return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429)
 

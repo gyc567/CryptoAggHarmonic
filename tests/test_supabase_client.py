@@ -306,9 +306,10 @@ class TestQuotaFunctions:
         mock_reserve_result.data = [{"reserved": True, "remaining": 4}]
         mock_client.rpc.return_value.execute.return_value = mock_reserve_result
 
+        # Ledger lookup: user_id + status + created_at DESC (no analysis_id filter)
         mock_ledger_result = MagicMock()
         mock_ledger_result.data = [{"id": "ledger-123"}]
-        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = (
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = (
             mock_ledger_result
         )
 
@@ -332,20 +333,68 @@ class TestQuotaFunctions:
         assert remaining == 0
 
     @patch("app.infra.supabase_client.get_supabase_client")
-    def test_consume_ledger_quota(self, mock_get_client):
+    def test_reserve_user_quota_null_analysis_id(self, mock_get_client):
+        """RSI-trend / vibe routes pass analysis_id=None (no analyses record exists).
+
+        The ledger lookup should find the most-recently-created 'reserved' row for
+        this user without filtering on analysis_id.
+        """
         mock_client = MagicMock()
+
+        mock_reserve_result = MagicMock()
+        mock_reserve_result.data = [{"reserved": True, "remaining": 3}]
+        mock_client.rpc.return_value.execute.return_value = mock_reserve_result
+
+        # Ledger lookup: no analysis_id filter when analysis_id is None
+        mock_ledger_result = MagicMock()
+        mock_ledger_result.data = [{"id": "ledger-null-456"}]
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = (
+            mock_ledger_result
+        )
+
         mock_get_client.return_value = mock_client
 
-        result = consume_ledger_quota("ledger-123", 100, 50, 5000)
-        assert result is True
+        success, remaining, ledger_id = reserve_user_quota("user-null", None, 1)
+        assert success is True
+        assert remaining == 3
+        assert ledger_id == "ledger-null-456"
 
     @patch("app.infra.supabase_client.get_supabase_client")
-    def test_release_ledger_quota(self, mock_get_client):
+    def test_reserve_user_quota_53xx_retry_then_success(self, mock_get_client):
+        from postgrest.exceptions import APIError
         mock_client = MagicMock()
+        call_count = [0]
+
+        def execute_effect():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise APIError({"code": "23503", "message": "FK violation"})
+            mr = MagicMock()
+            mr.data = [{"reserved": True, "remaining": 2}]
+            return mr
+
+        mock_client.rpc.return_value.execute.side_effect = execute_effect
+        mock_ledger_result = MagicMock()
+        mock_ledger_result.data = [{"id": "ledger-retry-789"}]
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = mock_ledger_result
         mock_get_client.return_value = mock_client
 
-        result = release_ledger_quota("ledger-123")
-        assert result is True
+        success, remaining, ledger_id = reserve_user_quota("user-retry", "analysis-retry", 1)
+        assert success is True
+        assert remaining == 2
+        assert ledger_id == "ledger-retry-789"
+        assert call_count[0] == 2
+
+    @patch("app.infra.supabase_client.get_supabase_client")
+    def test_reserve_user_quota_53xx_retry_exhausted(self, mock_get_client):
+        from postgrest.exceptions import APIError
+        mock_client = MagicMock()
+        mock_client.rpc.return_value.execute.side_effect = APIError({"code": "23503", "message": "FK violation"})
+        mock_get_client.return_value = mock_client
+        success, remaining, ledger_id = reserve_user_quota("user-fail", "analysis-fail", 1)
+        assert success is False
+        assert remaining == 0
+        assert ledger_id is None
 
 
 class TestAuditFunctions:
