@@ -102,9 +102,9 @@ if [[ -f /var/www/pyharmonics/.env ]]; then
   set +a
 fi
 
-# Local overrides
+# Local overrides — NOTE: do NOT set DISABLE_AUTH=1 in production.
+# factory.py blocks DISABLE_AUTH when ENVIRONMENT=production.
 export PYTHONPATH="$ROOT"
-export DISABLE_AUTH=1
 export PORT="$PORT"
 export FLASK_DEBUG=0
 # Use the old backend's upstash redis (already configured in /var/www/pyharmonics/.env)
