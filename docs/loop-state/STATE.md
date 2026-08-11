@@ -7,6 +7,12 @@
 
 <!-- 由循环自动填充 -->
 
+- [x] 2026-08-12: **Vercel Frontend 部署 — CLI 触发完成，READY.**
+  - `vercel --prod --yes` → `frontend-odifnndxv-gyc567s-projects.vercel.app`
+  - `npm run build` ✅（Next.js 14.2.35，15/15 路由）；node_modules 缺装已补
+  - 验证：/ → 200，/login → 200，/api/health → 重定向登录（auth middleware 正常）
+  - 详见 `docs/plans/vercel-frontend-deploy.md`
+
 - [ ] 2026-08-11: **Binance CLI 整合 — Loop #12 计划已写入 `docs/plans/binance-cli-integration.md`.**
   - Phase 0（基线测量）待启动；binance skill 已通过 `npx skills add` 安装到 `~/.agents/skills/binance`
   - 定位：read-only 行情补全层（funding rate / OI / mark price），不替代 Binance REST 主路径
