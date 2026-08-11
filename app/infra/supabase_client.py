@@ -504,14 +504,7 @@ def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        result = client.rpc(
-            "reserve_quota",
-            {
-                "p_user_id": user_id,
-                "p_analysis_id": analysis_id,
-                "p_units": units,
-            },
-        ).execute()
+        result = _reserve_quota_rpc(client, user_id, analysis_id, units)
 
         if not result.data:
             return False, 0, None
@@ -537,6 +530,32 @@ def reserve_user_quota(user_id: str, analysis_id: str, units: int = 1) -> tuple[
     except Exception:
         logger.exception("Quota reservation failed")
         return False, 0, None
+
+
+def _reserve_quota_rpc(
+    client, user_id: str, analysis_id: str, units: int, retry_on_409: bool = True
+):
+    """Call the reserve_quota RPC. Retries once on HTTP 409 (pg_advisory lock conflict)."""
+    try:
+        return client.rpc(
+            "reserve_quota",
+            {
+                "p_user_id": user_id,
+                "p_analysis_id": analysis_id,
+                "p_units": units,
+            },
+        ).execute()
+    except Exception as e:
+        # HTTP 409 = pg_advisory_xact_lock conflict between concurrent requests.
+        # Retry once; the lock is held only for the transaction duration.
+        is_409 = (
+            getattr(e, "response", None) is not None
+            and e.response.status_code == 409
+        )
+        if is_409 and retry_on_409:
+            logger.warning("reserve_quota RPC got 409, retrying once: %s", e)
+            return _reserve_quota_rpc(client, user_id, analysis_id, units, retry_on_409=False)
+        raise
 
 
 def consume_ledger_quota(
