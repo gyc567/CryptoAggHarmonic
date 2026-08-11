@@ -39,7 +39,41 @@ from typing import Any, Optional
 
 from app.config.tuning import TuningConstants, to_dict
 
-# --- Paths --------------------------------------------------------------------
+
+# --- Source mutex (ADR-0011 D11) ---------------------------------------------
+
+# Loop sources allowed to coexist on the same candidate_id. Pairs
+# not in this set raise SourceMutexError. freqtrade_hyperopt and
+# okx_live / okx_paper are the two known writer loops; they are
+# mutually exclusive because both target TUNING via different paths.
+_COMPATIBLE_SOURCES: frozenset[frozenset[str]] = frozenset({
+    frozenset({"freqtrade_hyperopt", "freqtrade_hyperopt"}),  # same source, allowed
+    frozenset({"okx_live", "okx_live"}),
+    frozenset({"okx_paper", "okx_paper"}),
+    frozenset({"okx_live", "okx_paper"}),  # paper -> live is a deliberate promotion
+    # No cross-pair: freqtrade_hyperopt vs okx_* must NOT share candidate_id
+})
+
+
+def _is_conflicting_source(existing: str | None, new: str) -> bool:
+    """True if writing ``new`` would conflict with ``existing`` for the
+    same candidate_id. ``None`` (missing source field) is always allowed
+    for backward compatibility with pre-ADR-0011 history.
+    """
+    if existing is None:
+        return False
+    if existing == new:
+        return False
+    return frozenset({existing, new}) not in _COMPATIBLE_SOURCES
+
+
+class SourceMutexError(RuntimeError):
+    """Raised by ``append_history`` when a candidate_id already has a
+    conflicting source. Caller should NOT retry; the conflict is
+    deliberate (two loops trying to write the same TUNING candidate).
+    See ADR-0011 D11.
+    """
+
 
 DEFAULT_ROOT = Path(os.environ.get("LOOP_STATE_ROOT", ".scratch/loop_state"))
 
@@ -103,6 +137,48 @@ def append_history(
     """
     root = ensure_root(root)
     path = root / "HISTORY.jsonl"
+
+    # Source mutex (ADR-0011 D11): reject concurrent or post-hoc writes
+    # to the same candidate_id from conflicting sources. Two loops
+    # (freqtrade + OKX) may independently try to write to the same
+    # candidate; that would mean TUNING promotion is being attempted
+    # by two sources at once, which the promotion gate forbids.
+    # Read is inside the flock so we don't race a concurrent writer.
+    candidate_id = record.get("candidate_id")
+    new_source = record.get("source")
+    if candidate_id is not None and new_source is not None:
+        try:
+            fd_check = os.open(path, os.O_RDONLY)
+        except FileNotFoundError:
+            fd_check = None
+        if fd_check is not None:
+            try:
+                fcntl.flock(fd_check, fcntl.LOCK_SH)
+                with os.fdopen(fd_check, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            existing = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if existing.get("candidate_id") != candidate_id:
+                            continue
+                        existing_source = existing.get("source")
+                        if _is_conflicting_source(existing_source, new_source):
+                            raise SourceMutexError(
+                                f"source mutex: candidate_id={candidate_id} already has "
+                                f"source={existing_source!r}; refusing to write "
+                                f"source={new_source!r} (ADR-0011 D11)"
+                            )
+            finally:
+                if fd_check is not None:
+                    try:
+                        fcntl.flock(fd_check, fcntl.LOCK_UN)
+                        os.close(fd_check)
+                    except OSError:
+                        pass
 
     line = json.dumps(record, sort_keys=True, default=str) + "\n"
 

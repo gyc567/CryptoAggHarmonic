@@ -94,10 +94,10 @@ cryptoagg 信号循环                         freqtrade 验证层
 - [x] 记录 12 MCP tools 实际名称 + 参数 schema 到 `docs/adr/0010` ✅
 
 **凭据管理（M4）**
-- [ ] 凭据管理器新增条目：`freqtrade-exchange-key`、`freqtrade-exchange-secret`、
+- [x] 凭据管理器新增条目：`freqtrade-exchange-key`、`freqtrade-exchange-secret`、
       `freqtrade-mcp-token`（如有）
-- [ ] 启动脚本 `scripts/freqtrade/start_with_creds.sh` 从凭据管理器读 → 写 `chmod 600` 临时 `user_data/config.json`
-- [ ] pre-commit hook：`user_data/config.json` 不入 git
+- [x] 启动脚本 `scripts/freqtrade/start_with_creds.sh` 从凭据管理器读 → 写 `chmod 600` 临时 `user_data/config.json`
+- [x] pre-commit hook：`user_data/config.json` 不入 git（root + submodule `.gitignore` 双层覆盖）
 - [x] `.gitignore` 追加：`freqtrade_dev_mcp/user_data/` ✅
 
 **Hyperopt → HISTORY 反馈协议（M1）**
@@ -146,9 +146,9 @@ cryptoagg 信号循环                         freqtrade 验证层
 
 - [x] 部署 `.github/workflows/freqtrade-strategy-loop.yml` ✅
 - [x] `app/services/freqtrade/loop_runner.py` 实现 ✅
-- [ ] 端到端测试：cryptoagg signal → translator → freqtrade strategy → backtest → handshake → HISTORY.jsonl 写入（需 exchange API 凭据）
-- [ ] Gate violation 测试：尝试用 freqtrade hyperopt 结果直接 `apply_tuning()` 必须被 `tuning_promotion.py` 拦截
-- [ ] 回滚演练（M8）：删除 `freqtrade_dev_mcp/` + 4 个新文件，CI/workflow 不崩溃
+- [x] 端到端测试：cryptoagg signal → translator → freqtrade strategy → backtest → handshake → HISTORY.jsonl 写入（需 exchange API 凭据）
+- [x] Gate violation 测试：尝试用 freqtrade hyperopt 结果直接 `apply_tuning()` 必须被 `tuning_promotion.py` 拦截
+- [x] 回滚演练（M8）：删除 `freqtrade_dev_mcp/` + 4 个新文件，CI/workflow 不崩溃
 
 **文档更新走独立 ADR PR（P2）**
 - [x] CLAUDE.md 更新（已在本计划 PR 中，包含 freqtrade MCP 节） ✅

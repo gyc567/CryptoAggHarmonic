@@ -7,6 +7,7 @@ __pycache__/
 .scratch/loop_state/
 .scratch/backtest/data/
 .scratch/backtest/results/
+.scratch/okx_state/         # OKX runtime config.toml (chmod 600, holds api-key/secret/passphrase)
 
 # C extensions
 *.so

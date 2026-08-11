@@ -138,3 +138,246 @@
   curl -s localhost:5000/metrics | grep -E "(drawdown|calmar|tuning_proposals)"
   ```
 - **superseded_by**: _none_
+
+### [freqtrade-creds-01] — Freqtrade exchange credentials sourced from Keychain only
+- **Created**: 2026-08-11
+- **Source**: `scripts/freqtrade/start_with_creds.sh` + ADR-0010 D7
+- **Content**: Exchange API key/secret/mcp-token live in macOS Keychain
+  under service `cryptoagg-freqtrade`. `scripts/freqtrade/start_with_creds.sh`
+  reads them via `security find-generic-password -w`, writes a
+  `chmod 600` JSON to `freqtrade_dev_mcp/user_data/config.json` via
+  temp-file + atomic rename, then `unset` the in-memory strings.
+  The submodule's own `.gitignore` rejects `user_data/` (root
+  `.gitignore` rules don't apply inside submodules). `--check`
+  reports existence only (exit 2 if any missing), `--rotate`
+  overwrites in place, `--help` prints the usage header.
+- **E2E verification**:
+  1. Mock Keychain entries (3) → script writes `chmod 600` config
+     with all 3 secrets inline; stdout contains 0 secrets
+     (grep `AAA111|BBB222|CCC333` over stdout = 0 matches).
+  2. Delete one entry → script fails fast at `read_secret`
+     (`set -e` triggers unbound variable) and exits 1.
+  3. `git check-ignore -v user_data/config.json` from inside
+     `freqtrade_dev_mcp/` returns `.gitignore:23:user_data/`.
+  4. Re-run leaves no config.json behind (manual `rm -f` after
+     test).
+- **superseded_by**: _none_
+
+### [freqtrade-e2e-01] — Freqtrade end-to-end loop verified with real Keychain creds
+- **Created**: 2026-08-11
+- **Source**: `.scratch/e2e/e2e_demo.py` + `.scratch/e2e/gate_violation_test.py` + `.scratch/e2e/rollback_drill.sh`
+- **Content**: Phase 1-3 E2E + gate + rollback drill all pass against
+  the real repo, real Keychain (`cryptoagg-freqtrade` service,
+  3 accounts), real `app/services/freqtrade/handshake.py →
+  app/loop/state.append_history()`.
+  1. **Credentials**: read from `.env` (not printed) → written to
+     macOS Keychain under `cryptoagg-freqtrade` / `exchange-key`,
+     `exchange-secret`, `mcp-token` (empty if not provided).
+     `scripts/freqtrade/start_with_creds.sh` reads via `security
+     find-generic-password -w` → writes `chmod 600`
+     `freqtrade_dev_mcp/user_data/config.json`. E2E grep over
+     stdout returned 0 secret matches. **NOTE**: the exchange
+     key/secret values were pasted in plain text in chat history
+     — the user opted NOT to rotate before this run. Strongly
+     recommend rotation in Binance console.
+  2. **Bug fixed during E2E**: `app/services/freqtrade/handshake.py`
+     was calling `append_history(history_path, record)` — wrong
+     signature. Real signature is `append_history(record,
+     root=Path(".scratch/loop_state"))`. Test suite did not catch
+     it because the unit test uses a mock `append_history`. Fixed
+     and re-ran; outbox cleanup now works.
+  3. **End-to-end** (`e2e_demo.py`): synthetic Gartley
+     `HarmonicSignal` → `translator.translate(mode="pattern")`
+     → `HarmonicGartley1h.py` (1263 bytes) →
+     synthetic `HyperoptResult` → `write_hyperopt_to_history()`
+     → `HISTORY.jsonl` (verified round-trip via grep on
+     candidate_id `freqtrade-*`); outbox cleaned up.
+  4. **Gate violation** (`gate_violation_test.py`):
+     `is_live_tuning_path("app/config/tuning.py")` returns True;
+     `promotion_allowed_for_files([..., "app/config/tuning.py"])`
+     returns `(False, "live TUNING promotion blocked: ...")`;
+     `promotion_checklist()` checklist includes all four quant
+     gates (`max_drawdown`, `Calmar`, `Shadow`, `salt_version`)
+     with correct baseline interpolation (baseline=10.0% →
+     threshold=20.0%).
+  5. **Rollback drill** (`rollback_drill.sh`): moved
+     `freqtrade_dev_mcp/`, `app/services/freqtrade/`,
+     `scripts/freqtrade/`, `.github/workflows/freqtrade-strategy-loop.yml`
+     to a quarantine dir. `python -m loop.loop doctor .` still
+     passes; pytest runs without crashing (deprecation warning
+     in test_domain.py is unrelated). All 4 artifacts restored
+     cleanly afterward.
+- **Remaining**: Phase 4 shadow mode (7-day dry-run vs live diff
+  collection) — separate timeline, requires real freqtrade
+  backtest output to compare.
+- **superseded_by**: _none_
+
+### [okx-baseline-01] — OKX integration baseline (pre-OKX path)
+- **Created**: 2026-08-11
+- **Source**: `/metrics` endpoint (gunicorn pid 26118) +
+  direct `curl_cffi` probe of `api.binance.com`
+- **Content**: cryptoagg baseline measured BEFORE enabling the OKX
+  Agent Trade Kit downstream path. OKX market data (Phase 1
+  module=market) will be evaluated against these numbers.
+
+  ### Loop /metrics baseline (gunicorn 0.2.0, fresh boot)
+
+  | Metric | Type | Value | Notes |
+  |--------|------|-------|-------|
+  | `tuning_proposals_total` | counter | 0 | no proposals yet (fresh boot) |
+  | `loop_generation_duration_seconds_count` | counter | 0 | no generations yet |
+  | `llm_maker_calls_total` | counter | 0 | MAKER_CHECKER disabled / mock |
+  | `llm_checker_calls_total` | counter | 0 | mock backend |
+  | `llm_tokens_total` | counter | 0 | mock backend |
+  | `llm_cost_usd_total` | counter | 0 | mock backend |
+  | `llm_cache_hit_total` | counter | 0 | no cache yet |
+  | `llm_latency_seconds` | histogram | 0 entries | no LLM calls yet |
+  | `pareto_front_size` | gauge | 0 | fresh boot |
+  | `mc_agreement_rate` | gauge | 0 | no MC verdicts yet |
+  | `suspicious_to_human_rate` | gauge | 0 | no verdicts yet |
+  | `worker_timeout_total` | counter | 0 | no workers run yet |
+  | `runs_disk_bytes` | gauge | 0 | fresh boot |
+  | `loop_readiness_score` | gauge | 100.0 | L3 (matches audit) |
+
+  ### Binance main market-data path baseline (curl_cffi, prod code path)
+
+  | Endpoint | Method | Latency (ms) | Status |
+  |----------|--------|--------------|--------|
+  | `https://api.binance.com/api/v3/ping` | GET | 355 | 200 |
+  | `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=2` | GET | 346 | 200, 2 rows |
+
+  urllib stdlib fallback (used by `scripts/_binance_stdlib.py`,
+  backtest-only) shows 377-786ms range (CN network jitter).
+
+  ### Environment
+  - Host: `127.0.0.1:5001` (gunicorn pid 26118, 1 worker / 10 threads)
+  - Supabase / Upstash / TradingView: not configured locally
+    (`/api/health` returns 503 with reason "supabase package not installed"
+    / "Upstash Redis REST connection failed" — pre-existing, not OKX related)
+  - Python: 3.11.15
+  - Capture time: 2026-08-11T14:23:13Z
+  - Metrics file: `.scratch/baseline_metrics.txt` (83 lines, 14 metrics)
+
+  ### OKX 路径开启后要测的对比项（ADR-0011 D5 Phase 1 验收）
+  - OKX `market_get_ticker BTC-USDT` latency vs Binance 355ms baseline
+  - OKX `market_get_candles BTC-USDT 1H limit=2` latency vs Binance 346ms
+  - funding rate / OI / mark price data availability (Binance 无)
+  - auth round-trip (`account_get_balance`) latency as passphrase 验证
+
+- **superseded_by**: _none_
+
+
+### [okx-cycle-pause-01] — OKX integration cycle paused at Phase 2; Phase 3 pending real credentials
+- **Created**: 2026-08-11T15:21:00Z
+- **Source**: explicit user "先停在这,记录下工作进度" at end of Phase 2 closure
+- **Cycle scope**: 4 phases of the OKX Agent Trade Kit integration
+  per `docs/plans/okx-agent-trade-kit-integration.md` (v2).
+  This entry is the pause marker; the per-phase records below are
+  the authoritative evidence trail.
+- **Status by phase**:
+  - **Phase 0 (基线 + ADR)** — CLOSED
+    - `.env.example` OKX 4 字段占位入库
+    - `[okx-baseline-01]` 入库：gunicorn 14 metric + Binance curl_cffi
+      355ms/346ms (PID 26118 fresh boot, no real signal yet)
+    - `docs/adr/0011-okx-agent-trade-kit-integration.md` Accepted,
+      12 Decision（8 用户答案 + 4 派生）
+  - **Phase 1A (依赖 + 凭据, mock 模式)** — CLOSED
+    - `scripts/okx/{install.sh, start_with_creds.sh, VERSION}` 三件套
+    - `install.sh {install,verify,version,--mock}` 4 子命令幂等
+    - `start_with_creds.sh {--check,--rotate,--mock}` 3 flag
+    - 8 mock E2E 验收点全过（check 3 entries / write chmod 600 / 0 secret
+      leak / --rotate / exec shim / .gitignore / shim 协议一致）
+    - `.scratch/okx_state/` 加入 .gitignore
+    - **真凭据未建立**（Keychain `cryptoagg-okx` service 仍空）
+  - **Phase 1B (gate 扩展 + skeleton + Loop #11)** — CLOSED
+    - `tuning_promotion.py` 加 `is_live_execution_tool()` (37 write
+      tools) + `execution_allowed_for_tools()`，**未修改**现有
+      3 API 签名（ADR-0011 D9）
+    - `app/services/okx/` 6 个 skeleton 就位
+      (__init__/translator/mcp_client/executor/audit/handshake/data_source)
+    - `app/loop/state.append_history` 加 source mutex
+      (`SourceMutexError`)，`STATE.md` 第 8-9 段
+    - `docs/loop-state/OKX-LOOP.md` 六维定义 + `loop/loop_sync.py
+      add-loop` 注册为 Loop #11（LOOP.md 11 loops）
+  - **Phase 2 (实现 + 端到端 round-trip)** — CLOSED
+    - 6 个 skeleton 全部完整实现（含 clOrdId nonce / 12 字段 audit
+      / outbox 模式 / 三重门 / data_source 5 个 read tool）
+    - `.scratch/e2e/okx_e2e_demo.py` 7 步全过：mock client + 合成
+      OKXFill 走完 translator → executor → audit → handshake →
+      HISTORY.jsonl；mutex (freqtrade_hyperopt 同 candidate 拒) +
+      promotion (okx_paper→okx_live 同 candidate 允许) 都真实验证
+    - 测试 98 pass + 1 skip (71 OKX + 27 freqtrade)；97.88% 覆盖
+      on `app/services/okx/`（8 行 defensive fallback 标 `ponytail:`）
+    - Pyright 0 errors
+  - **Phase 3 (Loop 上线 + workflow + 回滚)** — NOT STARTED
+  - **Phase 4 (7-day shadow + 首笔 $10 实盘)** — NOT STARTED
+- **Code-side state at pause**:
+  - `app/loop/tuning_promotion.py` — 186 lines; 5 public APIs (3
+    path-gate + 2 tool-gate)
+  - `app/loop/state.py` — source mutex check at `append_history`
+    entry; `_COMPATIBLE_SOURCES` frozen-set with 3 pairs
+  - `app/services/okx/{__init__,translator,mcp_client,executor,
+    audit,handshake,data_source}.py` — 7 files, 100% import OK
+  - `tests/services/okx/{__init__,test_translator,test_mcp_client,
+    test_executor,test_audit,test_handshake,test_data_source,
+    test_promotion_guard,test_coverage_extras}.py` — 9 test files
+  - `scripts/okx/{install.sh,start_with_creds.sh,VERSION}` — 3 files
+  - `docs/loop-state/OKX-LOOP.md` — Loop #11 definition (6 维)
+  - `docs/adr/0011-okx-agent-trade-kit-integration.md` — Accepted
+- **What's missing for resume**:
+  1. Real OKX three secrets in Keychain `cryptoagg-okx` service
+     (user must add via `security add-generic-password -s
+     cryptoagg-okx -a <api-key|secret-key|passphrase> -w <value>`)
+  2. Real npm install: `scripts/okx/install.sh install` (requires
+     real npm registry access; mock shim uninstalled at pause)
+  3. Phase 3 work: `.github/workflows/okx-strategy-loop.yml`
+     + `app/services/okx/loop_runner.py` + 5 场景回滚演练
+- **Resume command** (next session, after real creds available):
+  ```
+  # 1. Add real Keychain entries
+  security add-generic-password -s cryptoagg-okx -a api-key -w '<KEY>'
+  security add-generic-password -s cryptoagg-okx -a secret-key -w '<SECRET>'
+  security add-generic-password -s cryptoagg-okx -a passphrase -w '<PASS>'
+  # 2. Install real MCP server
+  scripts/okx/install.sh install
+  scripts/okx/install.sh verify          # expect: OK: 1.0.4
+  # 3. Re-run E2E with real server
+  scripts/okx/e2e_paper.sh               # to be authored in Phase 3
+  # 4. Continue with Phase 3 (workflow + rollback) and Phase 4 (shadow)
+  ```
+- **Status**: paused. No in-flight work; all state is durable and
+  re-bootable.
+- **superseded_by**: _none_
+
+### [okx-e2e-01] — OKX end-to-end loop verified end-to-end (mock client)
+- **Created**: 2026-08-11
+- **Source**: `.scratch/e2e/okx_e2e_demo.py`
+- **Content**: OKX Agent Trade Kit end-to-end round-trip verified
+  in paper mode WITHOUT real OKX credentials or a live
+  okx-trade-mcp subprocess. Flow validated:
+  1. Gartley HarmonicSignal → translator (3 modes, clOrdId nonce
+     of 12 hex chars in `OKX-LOOP-{uuid12}` format)
+  2. Mock MCP client returns synthetic spot fill (ordId, fillPx,
+     traceId, latency_ms)
+  3. executor.dispatch() runs all three gates (gate1=spot_place_order
+     is a known write tool; gate2=paper=True; gate3=execution_allowed
+     records mode)
+  4. audit.write() persists the 12-field record (ts, tool, args
+     [redacted for 10 secret keys], result_code, result_body_hash
+     [sha256:], user, salt_version, paper, cl_ord_id, latency_ms,
+     trace_id, gate)
+  5. handshake.write_fill_to_history() round-trips into
+     HISTORY.jsonl with source=okx_paper
+  6. **Source mutex (ADR-0011 D11)**: a freqtrade_hyperopt write for
+     the same candidate_id is rejected with SourceMutexError
+  7. **Promotion (ADR-0011 D11)**: okx_paper → okx_live for the
+     SAME candidate_id is allowed (deliberate human promotion;
+     documented in `_COMPATIBLE_SOURCES`)
+- **Coverage**: 71 tests pass + 1 skip, 97.88% line coverage on
+  `app/services/okx/`. 8 lines of defensive fallback (BrokenPipeError,
+  close kill, gate3 fail) marked `ponytail:`.
+- **Pyright**: 0 errors, 0 warnings.
+- **Phase 3 next**: requires real OKX credentials (write to
+  Keychain `cryptoagg-okx`) + real npm install of
+  `@okx_ai/okx-trade-mcp@1.0.4` via `scripts/okx/install.sh install`.
+- **superseded_by**: _none_

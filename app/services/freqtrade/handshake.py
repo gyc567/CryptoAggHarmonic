@@ -96,10 +96,10 @@ def write_hyperopt_to_history(result: HyperoptResult) -> None:
     outbox_file = OUTBOX_DIR / f"{result.uuid}.json"
     outbox_file.write_text(json.dumps(record))
 
-    # Step 2: atomic rename into HISTORY.jsonl
-    history_path = Path(".scratch/loop_state/HISTORY.jsonl")
+    # Step 2: atomic append into HISTORY.jsonl (outbox cleaned up on success)
+
     try:
-        append_history(history_path, record)
+        append_history(record, root=Path(".scratch/loop_state"))
         outbox_file.unlink()  # Clean up outbox entry on success
         logger.info(f"hyperopt result {result.uuid} written to HISTORY.jsonl")
     except Exception as e:
