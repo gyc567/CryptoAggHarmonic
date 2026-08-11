@@ -117,9 +117,26 @@ class DirectBinanceCandleData(CandleData):
         url = f"{self.BASE_URL}/api/v3/klines"
         try:
             rows = self._fetch_paginated(url, symbol.upper(), binance_interval, self.num_candles)
-        except Exception as e:
-            logger.exception("Binance direct API request failed for %s", symbol)
-            raise RuntimeError(f"Binance API request failed: {e}") from e
+        except Exception as binance_err:
+            # HTTP 451 = geo-blocked in the current region (e.g. US VPS).
+            # Fall back to Binance.US which serves the same pairs with the same schema.
+            is_451 = (
+                getattr(binance_err, "response", None) is not None
+                and binance_err.response.status_code == 451
+            )
+            if is_451 and self.BASE_URL == "https://api.binance.com":
+                logger.warning(
+                    "Binance.com returned 451 for %s (%s), trying Binance.US fallback",
+                    symbol,
+                    binance_err,
+                )
+                fallback_url = "https://api.binance.us/api/v3/klines"
+                rows = self._fetch_paginated(
+                    fallback_url, symbol.upper(), binance_interval, self.num_candles
+                )
+            else:
+                logger.exception("Binance direct API request failed for %s", symbol)
+                raise RuntimeError(f"Binance API request failed: {binance_err}") from binance_err
 
         if not rows:
             raise RuntimeError(f"Binance returned no data for {symbol}")
