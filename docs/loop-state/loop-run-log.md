@@ -40,6 +40,7 @@
 ### 2026-08-11T15:35:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-restart-new-code script=scripts/deploy-local-backend.sh fix=remove-DISABLE_AUTH_from-prod-fix reason=RuntimeError-on-boot DISABLE_AUTH-blocked-in-production health=/api/health-200-supabase-ok-redis-ok-tvbridge-ok analyze_bearer=401-auth-required pushed=7afab39
 ### 2026-08-11T15:50:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=rsi-trend-429-fix root_cause=POST-rpc-reserve_quota-HTTP-409-pg_advisory_lock-conflict-treated-as-quota-exhausted file=app/infra/supabase_client.py(+27/-8) fix=extract-_reserve_quota_rpc-with-409-retry-once verified=backend-ok-health-supabase-ok pushed=7cad618
 ### 2026-08-11T16:24:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-restart-new-code script=scripts/deploy-local-backend.sh health=api-health-200-supabase-ok-redis-ok-tvbridge-ok version=0.2.0
+### 2026-08-11T17:05:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=rsi-trend-plan-429-fix root_cause=APIError-23503-FK-violation-analysis_id-not-in-analyses-table file=app/infra/supabase_client.py-app/api/rsi_trend_routes.py-migrations/20260811_001_nullable_analysis_id.sql-tests/test_supabase_client.py fix=drop-FK-usage_ledger-analysis_id-pass-null-analysis_id-retry-on-23xxx-40xxx verified=5/5-TestQuotaFunctions-passed-111-related-tests-passed pushed=f5c149c
 ```
 
 | Value | Meaning |
