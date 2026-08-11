@@ -7,13 +7,89 @@
 
 <!-- 由循环自动填充 -->
 
-- [x] 2026-08-11: **Freqtrade Dev MCP 整合 — Phase 1-3 完成.**
-  克隆 `freqtrade_dev_mcp/` (MIT, `04a26d7f`) → `app/services/freqtrade/` 翻译层
-  (translator.py / mcp_client.py / handshake.py / loop_runner.py)。
-  Loop #10 (`FREQTRADE-LOOP.md`) 已注册，ADR-0010 已建立，22 测试全绿。
-  TUNING promotion gate 已加固（drawdown/Calmar/Shadow 量化门）。
-  待填充（ADR-0010 D5）: real backtest run 后 `baseline_drawdown` / `baseline_calmar`。
-  详见 `docs/plans/freqtrade-mcp-integration.md`。
+- [ ] 2026-08-11: **Binance CLI 整合 — Loop #12 计划已写入 `docs/plans/binance-cli-integration.md`.**
+  - Phase 0（基线测量）待启动；binance skill 已通过 `npx skills add` 安装到 `~/.agents/skills/binance`
+  - 定位：read-only 行情补全层（funding rate / OI / mark price），不替代 Binance REST 主路径
+  - L2 辅助模式；无 source mutex 互斥；凭据走 profile 不进 git
+  - 详见 `docs/plans/binance-cli-integration.md` + ADR-0012（6 条 Decision 草案）
+  - **待**: 基线测量入库 `[binance-baseline-01]` + `loop/loop_sync.py add-loop` 注册 #12
+
+- [x] 2026-08-11: **OKX Agent Trade Kit 整合 — v2 计划就绪 + Phase 0 闭环.**
+  - 🛑 **PAUSE @ 2026-08-11T15:21Z** — user requested stop after Phase 2; Phase 3+ pending real OKX creds. Durable marker `[okx-cycle-pause-01]` has full resume instructions.
+
+  - v1 计划 (`docs/plans/okx-agent-trade-kit-integration.md`, 495 行)
+  - v1 审计报告 (`docs/plans/okx-agent-trade-kit-integration-audit-report.md`, 466 行,
+    23 项修复：6 F + 12 M + 3 P + 5 D)
+  - v2 计划 (620 行, 63 tasks, 12 ADR 决策)
+  - 12 Decision 草案: D1 npm 全局 / D2 Phase 1 0.5 周 / D3 首笔 $10 / D4 锁 1.0.4
+    / D5 Phase 1 模块 market+account+spot paper / D6 audit 90 天 / D7 Keychain 3 accounts
+    / D8 三重门+第四门 / D9 promotion 扩展不动 / D10 audit outbox 模式 / D11 source mutex
+    / D12 --rotate flag
+  - **待 Phase 0 启动**：.env.example 加 OKX 4 字段占位、基线测量入库 `[okx-baseline-01]`、
+    `pip-audit` 扫描、ADR-0011 落地。
+  - 详见 `docs/plans/okx-agent-trade-kit-integration.md` (v2)
+  - **Phase 0 完成**：.env.example OKX 4 字段占位入库；本地依赖版本审计
+    (flask 2.3.2 / gunicorn 20.1.0 / curl_cffi 0.15.0 等，无新漏洞);
+    gunicorn 启动 + /metrics 14 指标全数抓取 (`.scratch/baseline_metrics.txt`,
+    loop_readiness_score=100); Binance 主路径 curl_cffi 延迟 355ms/346ms;
+    `[okx-baseline-01]` 入 durable-facts.md; **ADR-0011 转 Accepted**。
+  - **待 Phase 1A 启动**：npm install + Keychain `cryptoagg-okx` 3 accounts
+    + `scripts/okx/start_with_creds.sh` + `scripts/okx/install.sh {install,verify}`。
+
+  Phase 1-3（基础设施/实现/Loop #10 上线）已闭环；本轮新增：
+  `scripts/freqtrade/start_with_creds.sh`（Keychain → chmod 600
+  config.json 隔离脚本）+ submodule `.gitignore user_data/` 修复
+ （原 root .gitignore 对 submodule 内部路径无效的虚假勾选）。
+ E2E 全跑通（`.scratch/e2e/`）: Gartley HarmonicSignal →
+  - **Phase 1A 完成（mock 模式）**：`scripts/okx/{install.sh,start_with_creds.sh,VERSION}`
+    三件套就位；`install.sh --mock` 创建 `scripts/okx/.bin/okx-trade-mcp` shim
+    模拟真实 npm 包协议（`--version` 返回 `1.0.4`）；`start_with_creds.sh
+    --mock` 走通 8 个验收点 (--check 3 entries / write chmod 600
+    config.toml / stdout 0 secret leak / --rotate overwrite / exec
+    转发 / --help / .gitignore 覆盖 / shim 协议一致)。`.scratch/okx_state/`
+    加入 .gitignore。
+  - **Phase 1B 完成（纯代码）**：tuning_promotion 加 `is_live_execution_tool()` +
+    `execution_allowed_for_tools()`（不动现有 3 API 签名，ADR-0011 D9）；37
+    个 OKX write tools 入清单；app/loop/state.append_history 加 source
+    mutex（`SourceMutexError`，freqtrade_hyperopt <-> okx_* 互斥；
+    okx_paper -> okx_live 允许作为 promotion）；app/services/okx/ 6 个
+    skeleton 文件就位（__init__/translator/mcp_client/executor/audit/
+    handshake/data_source）；`docs/loop-state/OKX-LOOP.md` 六维定义 +
+    `loop/loop_sync.py add-loop` 注册为 Loop #11（LOOP.md 11 loops）。
+  - **测试**：71 passed, 1 skipped, **97.88% 覆盖**；8 行未覆盖为
+    defensive fallback (BrokenPipeError / close kill / gate3 fail)，
+    已用 `ponytail:` 标注。Pyright 0 errors。
+  - **Phase 2 完成（端到端 round-trip）**：6 个 skeleton 全部完整实现；
+    `.scratch/e2e/okx_e2e_demo.py` 7 步全过：HarmonicSignal → translator
+    (clOrdId nonce 12 字符) → mock MCP client → executor 三重门
+    (gate1=known tool / gate2=paper / gate3=recorded mode) → audit
+    (12 字段含 gate + sha256 body hash) → handshake → HISTORY.jsonl
+    (source: okx_paper)；source mutex 真实测（freqtrade_hyperopt 写同
+    candidate_id 拒）；paper→live promotion 真实测（okx_paper + okx_live
+    同 candidate_id 允许，ADR-0011 D11）。71 OKX 测试 pass + 1 skip，
+    97.88% 覆盖；98 总测试 pass。
+  - **Phase 3 启动条件**：用户提供真 OKX 三要素（写 Keychain `cryptoagg-okx`）
+    + `scripts/okx/install.sh install` 跑真 npm 全局装 okx-trade-mcp@1.0.4 +
+    workflow `.github/workflows/okx-strategy-loop.yml` 部署。
+
+    写入 `cryptoagg-okx` service；扩展 `tuning_promotion.py` 加
+    `is_live_execution_tool()` + `execution_allowed_for_tools()`；创建
+    `app/services/okx/` skeleton 5 个文件；注册 Loop #11。
+  translator → IStrategy 文件 → 合成 HyperoptResult →
+  `write_hyperopt_to_history` → HISTORY.jsonl round-trip。修
+  一处真实 bug：handshake 调用 `append_history` 用错签名
+ （传 path 而非 record，root 未指定），单测用了 mock 未
+  覆盖 — 已修，27/27 tests pass。Gate 拦截测试 4 项
+  (is_live_tuning / promotion_allowed / checklist drawdown /
+  salt_version) 全绿。回滚演练：临时移走 4 个 freqtrade 工件，
+  `loop doctor` 与 `pytest` 均不崩溃。
+  凭据：3 条已写入 macOS Keychain `cryptoagg-freqtrade`
+  service。**⚠️ 用户在 chat 中明文贴过 exchange key/secret，
+  选择不 rotate — 强烈建议在 Binance 控制台 rotate**。
+  详见 `docs/plans/freqtrade-mcp-integration.md` + durable-facts
+  `[freqtrade-creds-01]` / `[freqtrade-e2e-01]`。
+  待填充（ADR-0010 D5）: real backtest run 后 `baseline_drawdown`
+  / `baseline_calmar`。Phase 4 shadow mode 7 天观察期仍未启动。
 
 - [x] 2026-08-10: **Backtest feedback loop — CLOSED (deployed).**
   Daily pipeline: cron 20:00 UTC → run_backtest.py → backtest_results.json

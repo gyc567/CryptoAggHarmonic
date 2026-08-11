@@ -174,3 +174,7 @@ CI Sweeper → PR Babysitter → Dependency Sweeper → Post-Merge / Changelog �
 详见：`docs/loop-state/outerloop-protocol.md`
 
 ### 10. Freqtrade Strategy Loop
+
+### 11. OKX Agent Trade Kit Loop
+
+### 12. Binance Market Data Loop
