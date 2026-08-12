@@ -46,5 +46,6 @@
 ### 2026-08-12T00:40:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-restart-new-code script=scripts/deploy-local-backend.sh health=api-health-200-supabase-ok-redis-ok-tvbridge-ok version=0.2.0
 ### 2026-08-12T00:55:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=migration-verified root_cause=APIError-23503-FK-violation-migration=20260811_001_nullable_analysis_id_sql verification=grep-23503-no-errors-grep-analyze-no-errors-health-200 version=0.2.0
 ### 2026-08-12T01:10:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=df_index-fix root_cause=AttributeError-CachedCandleData-no-attribute-df_index-reset_index-called-before-attribute-set file=app/infra/pyharmonics_adapter.py(+4/-2) fix=pass-index='dts'-explicitly-to-reset_index verified=50-tests-passed health=api-health-200 pushed=62d1b55
+### 2026-08-12T01:20:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-restart-new-code script=scripts/deploy-local-backend.sh health=api-health-200-supabase-ok-redis-ok-tvbridge-ok version=0.2.0
 ```
 | Value | Meaning |
