@@ -206,8 +206,10 @@ def _df_to_candle_data(df: Any, symbol: str, interval: str) -> Any:
             self2.symbol = symbol
             self2.interval = interval
             self2.num_candles = len(df)
-            self2.reset_index()
-
+            # reset_index() uses self.df_index to find the datetime column.
+            # Pass index='dts' explicitly so it doesn't rely on a pre-existing
+            # instance attribute (which CachedCandleData does not have).
+            self2.reset_index(index="dts")
         def get_candles(
             self2,
             symbol: str,
