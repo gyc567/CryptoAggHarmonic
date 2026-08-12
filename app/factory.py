@@ -75,11 +75,14 @@ def _create_app() -> "Flask":
     from app.api.rsi_trend_routes import rsi_trend_bp
     from app.api.vibe_routes import vibe_bp
     from app.api.watchlist_routes import watchlist_bp
+    # Loop #13 — FT Strategy UI blueprint (Phase 4)
+    from app.api.ft_strategy_routes import ft_strategy_bp
 
     app.register_blueprint(api_bp)
     app.register_blueprint(vibe_bp)
     app.register_blueprint(rsi_trend_bp)
     app.register_blueprint(watchlist_bp)
+    app.register_blueprint(ft_strategy_bp)
 
     # Loop engineering: Prometheus metrics endpoint
     try:

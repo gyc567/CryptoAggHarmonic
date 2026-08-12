@@ -1,0 +1,61 @@
+name: FT Strategy UI Worker (Loop #13 — Phase 5 stub)
+
+# Workflow D-FT-12: the FT Strategy UI is a *UI driver*; the actual
+# hyperopt / backtest runs are dispatched to a worker via this workflow.
+# Phase 5 ships dry-run-only (default); live mode requires explicit
+# repository variable FT_STRATEGY_ALLOW_LIVE_DEPLOY=1.
+
+on:
+  workflow_dispatch:
+    inputs:
+      queue:
+        description: "RQ queue to consume"
+        required: true
+        type: choice
+        default: ft_hyperopt
+        options:
+          - ft_strategy_create
+          - ft_hyperopt
+          - ft_backtest
+          - ft_analyze
+      strategy_id:
+        description: "Target strategy UUID"
+        required: true
+        type: string
+      payload_json:
+        description: "Optional JSON payload"
+        required: false
+        type: string
+        default: "{}"
+      live:
+        description: "Live mode (NOT IMPLEMENTED in Phase 5; ignored)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    env:
+      # Live deploy opt-in: --live flag auto-rejects unless this is set.
+      FT_STRATEGY_ALLOW_LIVE_DEPLOY: ${{ vars.FT_STRATEGY_ALLOW_LIVE_DEPLOY || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -q -e .
+
+      - name: Run ft-strategy worker (dry-run)
+        run: |
+          python -m workers.ft_strategy_worker \
+            --queue "${{ github.event.inputs.queue }}" \
+            --job-id "gh-${{ github.run_id }}" \
+            --strategy-id "${{ github.event.inputs.strategy_id }}" \
+            --payload-json '${{ github.event.inputs.payload_json }}' \
+            --dry-run
