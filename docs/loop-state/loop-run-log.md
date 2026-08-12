@@ -44,5 +44,6 @@
 ### 2026-08-11T18:20:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-restart-new-code script=scripts/deploy-local-backend.sh health=api-health-200-supabase-ok-redis-ok-tvbridge-ok version=0.2.0
 ### 2026-08-12T00:25:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=quota-429-fix-complete root_cause=APIError-23503-routes.py-vibe_routes.py-still-using-UUID-analysis_id-after-record-creation-fails file=app/api/routes.py-app/api/vibe_routes.py fix=routes.py-pass-null-when-create_analysis_record-returns-None-vibe_routes.py-pass-null-always verified=60-tests-passed pushed=f51db71 note=completes-rsi-trend-plan-429-fix-loop
 ### 2026-08-12T00:40:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=backend-restart-new-code script=scripts/deploy-local-backend.sh health=api-health-200-supabase-ok-redis-ok-tvbridge-ok version=0.2.0
+### 2026-08-12T00:55:00Z [backend-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=migration-verified root_cause=APIError-23503-FK-violation-migration=20260811_001_nullable_analysis_id_sql verification=grep-23503-no-errors-grep-analyze-no-errors-health-200 version=0.2.0
 ```
 | Value | Meaning |
