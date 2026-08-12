@@ -149,11 +149,11 @@ def test_parity_talib_vs_strategy_core_pins_current_divergence(
     assert ema_diff.abs().mean() < 0.1
     assert ema_diff.abs().max() < 0.2
 
-    # ATR — pinned divergence. If the gap widens, fail. If a future
-    # refactor switches strategy_core.atr_series to Wilder smoothing,
-    # tighten these bounds to < 0.1.
-    assert atr_diff.abs().mean() < 1.0
-    assert atr_diff.abs().max() < 2.0
+    # ATR — pinned divergence. If the gap widens, fail.
+    # After the Wilder fix (see atr_series docstring): max_abs ≈ 0.0022,
+    # which is 700× tighter than the simple-rolling version.
+    assert atr_diff.abs().mean() < 1e-3
+    assert atr_diff.abs().max() < 1e-2
 
     # ── Signal divergence: rsi_prev <= 30 < rsi_now cross-up flag
     cross_up_pd = (rsi_pd.shift(1) <= 30) & (rsi_pd > 30)

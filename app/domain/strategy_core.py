@@ -112,14 +112,21 @@ def rsi_series(closes: pd.Series, window: int = RSI_WINDOW) -> pd.Series:
 
 
 def atr_series(df: pd.DataFrame, window: int = ATR_WINDOW) -> pd.Series:
-    """Average True Range (simple rolling mean of True Range)."""
+    """Average True Range — Wilder recursive smoothing.
+
+    Matches TA-Lib's ``ATR`` exactly (both use Wilder's smoothing with
+    ``alpha=1/N``). This aligns with the freqtrade IStrategy's TA-Lib
+    path so the API scan and freqtrade hyperopt produce identical
+    signals on the same input. See
+    ``tests/test_strategy_parity_talib.py`` for the pinned bounds.
+    """
     high, low, close = df["high"], df["low"], df["close"]
     prev_close = close.shift(1)
     tr = pd.concat(
         [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
         axis=1,
     ).max(axis=1)
-    return tr.rolling(window).mean()
+    return tr.ewm(alpha=1 / window, adjust=False).mean()
 
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
