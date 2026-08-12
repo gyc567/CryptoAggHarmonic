@@ -143,6 +143,20 @@ def _init_metrics():
             "Current Loop Readiness Score",
             registry=registry,
         ),
+        # ── Loop #12 — Binance market data ───────────────────────────────
+        "binance_market_fetch_total": Counter(
+            "binance_market_fetch_total",
+            "Binance market data fetch count by endpoint and status",
+            ["endpoint", "status"],
+            registry=registry,
+        ),
+        "binance_market_latency_seconds": Histogram(
+            "binance_market_latency_seconds",
+            "Binance market data fetch latency by endpoint",
+            ["endpoint"],
+            buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+            registry=registry,
+        ),
     }
 
 
@@ -308,3 +322,22 @@ def record_generation(duration_seconds: float) -> None:
     _init_metrics()
     if "loop_generation_duration_seconds" in _metrics:
         _metrics["loop_generation_duration_seconds"].observe(duration_seconds)
+
+
+# ── Loop #12 — binance market data ──────────────────────────────────────────
+
+
+def record_binance_market_fetch(endpoint: str, status: str, latency_s: float) -> None:
+    """Record one binance-cli fetch (counter + histogram).
+
+    Endpoint: ``mark_price`` / ``open_interest`` / ``funding_history``.
+    Status:   ``ok`` / ``timeout`` / ``cli_error`` / ``json_error``.
+
+    No-op if prometheus_client is unavailable; safe to call from
+    route handlers without a guard.
+    """
+    _init_metrics()
+    if "binance_market_fetch_total" not in _metrics:
+        return
+    _metrics["binance_market_fetch_total"].labels(endpoint=endpoint, status=status).inc()
+    _metrics["binance_market_latency_seconds"].labels(endpoint=endpoint).observe(latency_s)

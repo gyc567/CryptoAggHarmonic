@@ -257,3 +257,67 @@ def test_metrics_endpoint_returns_prometheus_text():
     assert r.content_type.startswith("text/plain")
     body = r.get_data(as_text=True)
     assert "tuning_proposals_total" in body
+
+
+# ---- record_binance_market_fetch --------------------------------------------
+
+
+def test_record_binance_market_fetch_ok():
+    """Successful fetch increments counter and observes latency."""
+    _init()
+    before = _scrape()
+    mr.record_binance_market_fetch("mark_price", "ok", 0.123)
+    body = _scrape()
+    assert (
+        _value(
+            body,
+            'binance_market_fetch_total{endpoint="mark_price",status="ok"}',
+        )
+        == "1.0"
+    )
+    assert (
+        _value(
+            body,
+            "binance_market_latency_seconds_count",
+            'endpoint="mark_price"',
+        )
+        == "1.0"
+    )
+    assert body != before
+
+
+def test_record_binance_market_fetch_timeout_and_cli_error():
+    """Status label distinguishes timeout vs cli_error outcomes."""
+    _init()
+    mr.record_binance_market_fetch("open_interest", "timeout", 5.0)
+    mr.record_binance_market_fetch("open_interest", "cli_error", 0.5)
+    body = _scrape()
+    assert (
+        _value(
+            body,
+            'binance_market_fetch_total{endpoint="open_interest",status="timeout"}',
+        )
+        == "1.0"
+    )
+    assert (
+        _value(
+            body,
+            'binance_market_fetch_total{endpoint="open_interest",status="cli_error"}',
+        )
+        == "1.0"
+    )
+
+
+def test_record_binance_market_fetch_safe_with_unknown_label():
+    """An unknown endpoint label still emits (Prometheus auto-creates it)."""
+    _init()
+    # Prometheus client lazily creates new label combinations.
+    mr.record_binance_market_fetch("weird_endpoint", "ok", 0.001)
+    body = _scrape()
+    assert (
+        _value(
+            body,
+            'binance_market_fetch_total{endpoint="weird_endpoint",status="ok"}',
+        )
+        == "1.0"
+    )
