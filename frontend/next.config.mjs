@@ -16,6 +16,10 @@ const nextConfig = {
 
       { source: "/api/vibe/:path*", destination: `${apiBase}/api/vibe/:path*` },
       { source: "/api/rsi-trend/:path*", destination: `${apiBase}/api/rsi-trend/:path*` },
+
+      // Loop #13 — FT Strategy UI (Phase 4)
+      { source: "/api/ft-strategies", destination: `${apiBase}/api/ft-strategies` },
+      { source: "/api/ft-strategies/:path*", destination: `${apiBase}/api/ft-strategies/:path*` },
     ];
   },
   images: {
