@@ -178,3 +178,8 @@ CI Sweeper → PR Babysitter → Dependency Sweeper → Post-Merge / Changelog �
 ### 11. OKX Agent Trade Kit Loop
 
 ### 12. Binance Market Data Loop
+
+### 13. FT Strategy UI Loop
+
+> 见 `docs/loop-state/FT-STRATEGY-LOOP.md` —— Phase 0–6（v3）
+> Plan: `docs/plans/ft-strategy-ui-integration.md` (911 行) · ADR: `docs/adr/0012-ft-strategy-ui-integration.md`

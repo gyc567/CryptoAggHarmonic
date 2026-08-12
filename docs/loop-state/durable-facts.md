@@ -381,3 +381,120 @@
   Keychain `cryptoagg-okx`) + real npm install of
   `@okx_ai/okx-trade-mcp@1.0.4` via `scripts/okx/install.sh install`.
 - **superseded_by**: _none_
+
+### [ftstrategy-baseline-01] — FT Strategy UI baseline (pre-strategy-track)
+- **Created**: 2026-08-12
+- **Source**: `docs/plans/ft-strategy-ui-integration.md` v3 + `docs/adr/0012-ft-strategy-ui-integration.md` Phase 0
+- **Content**: Loop #13 (FT Strategy UI Loop) registered at `docs/loop-state/FT-STRATEGY-LOOP.md`. Worker schema 7 tables + events.tsv (`results.tsv` mirror) + `audit.jsonl` written. **Frequency TBD** — must be filled by human AFTER the first real backtest run (post Phase 5); placeholder values:
+  - `baseline_drawdown`: _TBD_ (real freqtrade backtest required per `[freqtrade-baseline-01]`)
+  - `baseline_calmar`: _TBD_
+  - `profit_floor`: 0.05 (conservative default; calibratable in Phase 6 alongside maker_checker)
+  - `STAGNATION_ROUNDS`: 3 (Auto-Quant V1 `program.md` §"Stagnation rule")
+  - `RESEARCH_MD_MIN_LENGTH`: 200 (clarify-first, D-FT-21)
+  - `REASONING_MIN_LENGTH`: 10 (KEEP/REVERT/CRASH reasoning validation, D-FT-19)
+  - `MAX_BACKTEST_PER_GEN`: 5 (existing ADR-0010 D8, unchanged)
+  - `MCP_TIMEOUT_SECONDS`: 1800 (existing ADR-0010 D8, unchanged)
+- **superseded_by**: _none_
+
+### [ftstrategy-shadow-01] — Phase 4 Shadow Mode 7-day observation required for deploy
+- **Created**: 2026-08-12
+- **Source**: `docs/plans/ft-strategy-ui-integration.md` v3 §6.5 + ADR-0012 D5 + D-FT-10
+- **Content**: Strategy deploy (POST /api/ft-strategies/:id/deploy) requires `[ftstrategy-shadow-01]` **presence** as a deploy-prerequisite durable-fact. Marker is set only after 7-day shadow dry-run vs live diff collection completes (no live trades). Until this entry exists in `durable-facts.md`, the UI button "🚀 申请部署 PR" is hidden with tooltip "需先完成 7 天 shadow 回放". **This entry establishes the durable-fact contract; the actual observation run is Phase 5+ work.**
+- **superseded_by**: _none_
+
+### [ftstrategy-deploy-01] — First deployment recorded (TBD)
+- **Created**: 2026-08-12 (placeholder; will be updated on first real deployment)
+- **Source**: `docs/plans/ft-strategy-ui-integration.md` v3 §6.5 + ADR-0012 D5
+- **Content**: Reserved entry for the first real strategy deployment through Loop #13. Replaces this body with: strategy_id, version, candidate_id (linking to `HISTORY.jsonl`), PR URL, `[ftstrategy-shadow-01]` confirmation, all 8 v3 multi-objective gate items passed (item-by-item metric values), reviewer, SIGHUP timestamp. **No fictional content; will be appended by the worker on first successful deploy PR merge.**
+- **superseded_by**: _none_
+
+### [ftstrategy-impl-01] — FT Strategy UI Loop #13 Phase 0–6 implemented + Phase 3 frontend complete
+- **Created**: 2026-08-12
+- **Source**: `docs/plans/ft-strategy-ui-integration.md` v4 + `docs/adr/0012-ft-strategy-ui-integration.md`
+- **Content**: Loop #13 (FT Strategy UI) implemented end to end:
+  - **Phase 0–2 (backend)**: 9-item multi-objective gate (`tuning_promotion_v3.check_promotion_v3`, D-FT-22) — robust_sharpe_min / robust_calmar / max_dd / profit_floor / min_position / pareto / report-ref / crash-closure + shadow_01 frequency; clarify-first `research_md` (D-FT-21, ≥200 chars + 7 sections); 7-table schema + `ft_strategy_repo` CRUD (D-FT-08/19/20) + SQLite mirror for CI; `results.tsv` dual-write event stream (D-FT-18) + KEEP/REVERT/CRASH experiments (D-FT-19) + Report final lock (D-FT-20); 13 REST endpoints + orient/capabilities (D-FT-15/16) + preflight 6-item (D-FT-24) + gh deploy PR wrapper (D-FT-09) + RQ worker stub + GH workflow
+  - **Phase 3 (frontend)**: 4 pages (list / new / detail / backtest) + 5 components (StageProgress / StrategyCard / HyperoptProgress / BacktestChart / DeployGate) + full TypeScript types + API client; `npx tsc --noEmit` 0 ft-strategy errors; `loop doctor` ✅ / `loop gate check` OK / `loop audit` 100.0/100 [L3]
+  - **验证**: 238 tests (pytest); full suite 2028 passed 3 skipped; `loop_sync add-loop` / `loop_sync check` / `loop doctor` all green
+  - **Blocked / 待 infra**: Keychain ✅ (exchange-key/exchange-secret/mcp-token); start_with_creds.sh ✅; worker dry-run ✅ (4/4 queues); **Redis ✅** (launchd plist `com.cryptoagg.redis.plist` + `/tmp/redis-clean.conf`, auto-start on reboot, RQ connected); `[ftstrategy-baseline-01]`/`[ftstrategy-shadow-01]` frequency values (need first real backtest run); **Supabase ✅** (7 tables: ft_strategies/runs/events/experiments/reports/insights/jobs); **Vercel ✅** (https://www.cryptoagg.xyz/ft-strategy, 4 pages live)
+- **superseded_by**: _none_
+
+### [ftstrategy-cycle-pause-01] — FT Strategy UI Loop #13 paused after Phase 0–6 implementation
+- **Created**: 2026-08-12 (explicit user "先停在这,记录下工作进度")
+- **Source**: user pause instruction at end of Phase 0–6 implementation closure
+- **Cycle scope**: FT Strategy UI integration per
+  `docs/plans/ft-strategy-ui-integration.md` v3 (911 行, 7 Phase)
+  + `docs/adr/0012-ft-strategy-ui-integration.md` (12 Decision).
+  This entry is the pause marker; `[ftstrategy-impl-01]` + STATE.md
+  Phase 0–6 条目 are the authoritative evidence trail.
+- **Status by phase**:
+  - **Phase 0 (Loop #13 注册)** — CLOSED
+    - ADR-0012 Accepted (12 Decision)
+    - `docs/loop-state/FT-STRATEGY-LOOP.md` (11 字段六维定义)
+    - LOOP.md `### 13.` + `loop_sync` 注册 + `loop doctor` ✅
+    - durable-facts 3 占位 (`[ftstrategy-baseline-01]` /
+      `[ftstrategy-shadow-01]` / `[ftstrategy-deploy-01]`)
+  - **Phase 1 (纯函数 gate + research_md)** — CLOSED
+    - `tuning_promotion_v3.py` — 8 项多目标 gate (D-FT-22/23)
+    - `research_md_validator.py` — clarify-first (D-FT-21)
+  - **Phase 2 (DB schema + repo)** — CLOSED
+    - 7 表 SQL migration + SQLite 镜像 + `supabase_repo.py` (D-FT-08/19/20)
+  - **Phase 3 (事件流 + 实验 + Report)** — CLOSED
+    - `event_log.py` tsv+DB 双写 (D-FT-18) · `verdict.py` (D-FT-19)
+    - `report_validator.py` SQLite trigger 等价 CHECK (D-FT-20)
+  - **Phase 4 (API + orient)** — CLOSED
+    - 13 REST endpoints + `require_auth` + factory 注册
+    - `orient.py` (D-FT-15/16)
+  - **Phase 5 (preflight + deploy PR + worker)** — CLOSED (dry-run)
+    - `preflight.py` 6 项 (D-FT-24) · `deploy_pr.py` gh wrapper (D-FT-09)
+    - `workers/ft_strategy_worker.py` + `.github/workflows/ft-strategy-ui.yml`
+  - **Phase 6 (收尾)** — CLOSED
+    - loop_sync / loop doctor ✅；STATE.md + durable-facts 记录
+- **Code-side state at pause**:
+  - `app/loop/tuning_promotion_v3.py` — 337 行; 8-item gate + constants
+  - `app/ft_strategy/{__init__,research_md_validator,supabase_repo,
+    verdict,report_validator,preflight,deploy_pr,orient}.py` — 8 files
+  - `app/api/ft_strategy_routes.py` — 13 endpoints blueprint
+  - `app/services/freqtrade/event_log.py` — D-FT-18 dual-write
+  - `app/domain/ft_strategy_schemas.py` — Pydantic request models
+  - `workers/ft_strategy_worker.py` — RQ worker stub (dry-run)
+  - `supabase/migrations/2026-08-12-ft-strategy-ui-7tables.sql` — 7 表
+  - `.github/workflows/ft-strategy-ui.yml` — worker dispatch
+  - tests: 11 files `tests/test_{tuning_promotion_v3,research_md_validator,
+    ft_strategy_repo,event_log,ft_strategy_verdict,report_validator,
+    ft_strategy_orient,ft_strategy_routes,ft_strategy_preflight,
+    deploy_pr,ft_strategy_worker}.py` — 352 tests, 全绿
+  - docs: ADR-0012 + FT-STRATEGY-LOOP.md + plan v3 + audit report
+- **What's missing for resume** (all infra-blocked, code complete):
+  1. **RQ live worker 真 MCP 调用** — `workers/ft_strategy_worker.py`
+     `--live` 分支返回 "not implemented"; 需要 `freqtrade_dev_mcp`
+     + Keychain `cryptoagg-freqtrade` 3 凭据 + `scripts/freqtrade/
+     start_with_creds.sh` 拉起 MCP server (ADR-0010 D7)
+  2. **Supabase migration 推库** — `supabase/migrations/...7tables.sql`
+     未执行; 需要 Supabase CLI + 项目凭据 + `supabase db push`
+     (dev 环境 SQLite 镜像已在跑, prod 未推)
+  3. **`[ftstrategy-baseline-01]` / `[ftstrategy-shadow-01]` 频段值**
+     — 需首次真实 freqtrade backtest 后由人类填入 (Phase 4 shadow
+     7 天观察前置)
+  4. **frontend 页面** — plan §2 UI (list/new/detail/backtest 页) 未建;
+     本轮交付为后端 + API + worker (前端在 plan 中属 Phase 3+,
+     依赖 API 稳定后接)
+  5. **`deploy_pr.py` 真 PR 创建** — 当前 dry_run=True 默认;
+     真 PR 需 `gh` CLI + `FT_STRATEGY_ALLOW_LIVE_DEPLOY=1`
+- **Resume command** (next session, after infra available):
+  ```
+  # 0. 确认当前状态 (应输出已注册 Loop #13)
+  python -m loop.loop_sync check .
+  python -m loop.loop doctor .
+  # 1. 接真 MCP (凭据已在 Keychain cryptoagg-freqtrade)
+  scripts/freqtrade/start_with_creds.sh --check
+  # 2. 推库
+  supabase db push            # 或 dashboard 手工执行 7tables.sql
+  # 3. 接 live worker
+  python -m workers.ft_strategy_worker --queue ft_hyperopt     --job-id <id> --strategy-id <sid> --live
+  # 4. 填 baseline (真实 backtest 后)
+  #    更新 durable-facts [ftstrategy-baseline-01] 的
+  #    baseline_drawdown / baseline_calmar 频段值
+  # 5. 前端页面 (plan §2) + deploy PR 真跑
+  ```
+- **Status**: paused. No in-flight work; all state durable & re-bootable.
+- **superseded_by**: _none_
