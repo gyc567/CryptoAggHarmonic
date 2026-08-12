@@ -31,6 +31,27 @@
     rsi_trend_schemas.py (+exit_ema field), rsi_trend_service.py (pass through)
   - Verified: 55 RSI+API tests pass, backend health 200, commit `647a48b`
   - Deployed: PID 1170522 @ 127.0.0.1:5001
+- [x] 2026-08-12: **RSI strategy optimization v2 — deployed.**
+  - Problem: Even with exit_ema, best win rate was 44% on 180d data.
+    Root causes: (1) TTL=0 means EMA200 trend-flip exit gives back
+    profits in ranging markets (a +2.05R winner given back after 28 bars);
+    (2) Short signals fire at RSI_prev 52-60 range — no real overbought,
+    these are mean-reversion bounces near EMA200, not trend shorts.
+  - Fix 1 — TTL circuit-breaker: exit after N bars (ttl_bars param, 0=off).
+    Tested ttl=4-40 on longs-only; ttl=6 → 67% win (9 trades).
+  - Fix 2 — short_rsi_min: require RSI_prev >= N before short fires.
+    Requiring RSI_prev >= 65 eliminates the weakest shorts (50-64 range).
+  - **Best result**: `am=1.0 rr=1.0 zone=pullback short_rsi_min=65 ttl_bars=6`
+    → **10 trades, 70% win, avgR=+0.24, PF=2.20**
+  - Also: duplicate docstrings in detect_signals cleaned up
+  - Files: rsi_trend.py (+short_rsi_min param), rsi_trend_backtest.py
+    (+ttl_bars + EXIT_TTL), rsi_trend_schemas.py (+2 fields),
+    rsi_trend_service.py (wiring)
+  - Verified: 55 tests pass, backend health 200, commit `d25e2fb`
+  - Deployed: PID 1177374 @ 127.0.0.1:5001
+  - **Note**: 70% on 10 trades is promising but small sample.
+    Data covers Feb-Aug 2026 correction phase (good for long signals).
+    Short signals remain structurally weak in this market regime.
 - [ ] 2026-08-12: **从远程仓库同步代码到本地.**
   - 远程 4 个新 commit：`a250027` `a427dc1` `9fe1ea6` `f51db71`
   - 本地变更：freqtrade_dev_mcp submodule 修改 + 临时文件（`.scratch/`）
