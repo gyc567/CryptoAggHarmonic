@@ -498,3 +498,46 @@
   ```
 - **Status**: paused. No in-flight work; all state durable & re-bootable.
 - **superseded_by**: _none_
+
+### [binance-baseline-01] — Binance CLI integration baseline (pre-CLI path)
+- **Created**: 2026-08-12
+- **Source**: `docs/plans/binance-cli-integration.md` Phase 0
+- **Content**: Latency baseline of the existing `app/infra/futures_quote.py` REST path before introducing `binance-cli` as a secondary read-only data source (Loop #12).
+
+  **REST endpoints measured** (direct `requests.get` from this env, 5 samples each):
+  | Endpoint | URL pattern | avg ms | min ms | max ms | status |
+  |---|---|---:|---:|---:|---:|
+  | funding rate (BTC) | `/fapi/v1/fundingRate?symbol=BTCUSDT` | 408 | 393 | 427 | 200 |
+  | open interest (BTC) | `/fapi/v1/openInterest?symbol=BTCUSDT` | 649 | 375 | 1679 | 200 |
+  | mark price (BTC) | `/fapi/v1/premiumIndex?symbol=BTCUSDT` | 392 | 377 | 414 | 200 |
+  | premiumIndex full | `/fapi/v1/premiumIndex` | 515 | 478 | 561 | 200 |
+  | openInterest full | `/fapi/v1/openInterest` | 430 | 378 | 488 | 400 (auth-required) |
+
+  **`app.infra.futures_quote.fetch_quotes` baseline** (3 retries each):
+  | n_sym | avg ms | min ms | max ms | got_n |
+  |---:|---:|---:|---:|---:|
+  | 1 | 1140 | 760 | 1811 | 1 |
+  | 3 | 782 | 775 | 792 | 3 |
+  | 10 | 815 | 752 | 897 | 10 |
+  | 20 | 815 | 735 | 938 | 20 |
+
+  Two round-trips per call (`/fapi/v1/ticker/24hr` + `/fapi/v1/premiumIndex`); the per-symbol latency stays flat because both endpoints return the FULL list of ~250 USDT-M symbols — only 2 HTTP calls regardless of n_sym.
+
+  **Coverage gaps** vs `binance-cli` plan §2.1:
+  | Field | Path in repo now | Notes |
+  |---|---|---|
+  | funding rate | ✅ `futures_quote.py` (premiumIndex) | ~400 ms per call |
+  | mark price | ✅ `futures_quote.py` (premiumIndex) | same call as above |
+  | next funding time | ✅ `futures_quote.py` | same call |
+  | open interest | ❌ not exposed | would need new REST path; binance-cli fills gap |
+  | algo orders / margin / staking | ❌ not in scope | binance-cli provides but Phase 2+ only |
+
+  **`binance-cli` install state**: ❌ NOT installed — `npm list -g @binance/binance-cli` returns empty (`/Users/jie/.hermes/node/lib/node_modules` is empty). Skill `~/.agents/skills/binance` SKILL.md v1.2.0 is registered; only the CLI binary is missing. Phase 1 prerequisite gap.
+
+  **Test environment caveat**: `fapi.binance.com` is reachable directly from this env (388–430 ms); the earlier `test_futures_datasource` failures were a different code path's proxy issue (curl_cffi over `pyharmonics`), not the REST endpoint itself.
+
+  **Direction after binance-cli Phase 1**:
+  - funding/mark fetch_quotes p50 should drop from 800 ms → ~400–500 ms (one CLI exec vs two round-trips)
+  - open interest becomes available without new REST code
+  - source mutex: `binance_market` exempt from `freqtrade_hyperopt` ↔ `okx_*`互斥 (read-only)
+- **superseded_by**: _none_
