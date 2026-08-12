@@ -132,7 +132,7 @@ def backtest(req: RsiTrendBacktestRequest) -> dict:
         reward_risk=req.reward_risk,
         min_quality_score=req.min_quality_score,
     )
-    result = run_backtest(df, signals, partial_mode=req.partial_mode, trailing_stop=req.trailing_stop)
+    result = run_backtest(df, signals, partial_mode=req.partial_mode, trailing_stop=req.trailing_stop, exit_ema=req.exit_ema)
     return {
         "market": req.market,
         "symbol": req.symbol.upper(),

@@ -8,8 +8,11 @@ Simulates each signal bar-by-bar with the strategy's exit discipline:
                                stop to breakeven, let the rest run
 3. RSI re-enters extreme    -> (partial_mode only) reduce half of the
                                remaining position at that bar's close
-4. close flips across EMA200 -> trend environment changed, exit at close
+4. close flips across EMA (configurable: ``exit_ema``) -> trend changed, exit at close
 5. end of data              -> close at the last close ("scratch" allowed)
+
+The exit trigger EMA is configurable via ``exit_ema`` ("ema200" or "ema50") to allow
+faster exit on shorter EMA crossovers.
 
 Conservative same-bar rule: if a bar touches both stop and target, the
 stop is assumed to be hit first.
@@ -121,6 +124,7 @@ def _simulate_one(
     *,
     partial_mode: bool,
     trailing_stop: bool,
+    exit_ema: str = "ema200",
     bar_time,
 ) -> StrategyTrade:
     """Simulate a single trade from its signal bar to its exit."""
@@ -146,7 +150,7 @@ def _simulate_one(
     for i in range(signal.index, len(data)):
         row = data.iloc[i]
         high, low, close = float(row["high"]), float(row["low"]), float(row["close"])
-        ema200 = row["ema200"]
+        ema_exit = row[exit_ema]
         rsi = row["rsi"]
         time = bar_time(data, i)
 
@@ -206,9 +210,9 @@ def _simulate_one(
                     if trail_candidate < stop:
                         stop = trail_candidate
 
-            # 4) Trend environment flipped across EMA200 -> exit at close.
-            if not pd.isna(ema200):
-                flipped = close < ema200 if long else close > ema200
+            # 4) Trend environment flipped across exit_ema -> exit at close.
+            if not pd.isna(ema_exit):
+                flipped = close < ema_exit if long else close > ema_exit
                 if flipped:
                     exit_price, exit_reason = close, EXIT_TREND_FLIP
                     realized_r += remaining * _r_multiple(direction, entry, initial_stop, close)
@@ -256,6 +260,7 @@ def run_backtest(
     *,
     partial_mode: bool = False,
     trailing_stop: bool = False,
+    exit_ema: str = "ema200",
 ) -> BacktestResult:
     """Simulate all signals over ``df`` and aggregate performance metrics.
 
@@ -269,7 +274,13 @@ def run_backtest(
     for signal in signals:
         if signal.index <= open_until:
             continue
-        trade = _simulate_one(data, signal, partial_mode=partial_mode, trailing_stop=trailing_stop, bar_time=_bar_time)
+        trade = _simulate_one(
+            data, signal,
+            partial_mode=partial_mode,
+            trailing_stop=trailing_stop,
+            exit_ema=exit_ema,
+            bar_time=_bar_time,
+        )
         trades.append(trade)
         open_until = signal.index + trade.bars_held
 

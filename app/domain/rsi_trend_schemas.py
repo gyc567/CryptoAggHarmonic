@@ -39,3 +39,4 @@ class RsiTrendBacktestRequest(RsiTrendScanRequest):
     lookback_days: int = Field(default=180, ge=60, le=365)
     partial_mode: bool = False
     trailing_stop: bool = False
+    exit_ema: Literal["ema200", "ema50"] = "ema200"
