@@ -8,11 +8,17 @@
 <!-- 由循环自动填充 -->
 
 - [x] 2026-08-12: **Vercel Frontend 部署 — DNS 修复完成，www.cryptoagg.xyz 和 cryptoagg.xyz 均 200.**
-  - `vercel --prod --yes` → `frontend-odifnndxv-gyc567s-projects.vercel.app`
-  - `npm run build` ✅（Next.js 14.2.35，15/15 路由）；node_modules 缺装已补
-  - `vercel alias set` → `www.cryptoagg.xyz` + `cryptoagg.xyz` 均指向 CLI 部署
+  - `vercel --prod --yes` → `cryptoaggharmonic-i94uiiyqb-gyc567s-projects.vercel.app`（项目名已更名）
+  - `npm run build` ✅（Next.js 14.2.35，15/15 路由）
+  - Vercel CLI 自动绑定 `www.cryptoagg.xyz`；`cryptoagg.xyz` 通过 `vercel alias set` 绑定
   - 验证：https://www.cryptoagg.xyz/ → 200，标题 "CryptoAgg - Agent 化加密货币交易策略"
   - 详见 `docs/plans/vercel-frontend-deploy.md`
+
+- [ ] 2026-08-12: **从远程仓库同步代码到本地.**
+  - 远程 4 个新 commit：`a250027` `a427dc1` `9fe1ea6` `f51db71`
+  - 本地变更：freqtrade_dev_mcp submodule 修改 + 临时文件（`.scratch/`）
+  - 流程：stash → pull(rebase) → restore stash
+  - 详见 `docs/loop-state/STATE.md`
 
 - [ ] 2026-08-11: **Binance CLI 整合 — Loop #12 计划已写入 `docs/plans/binance-cli-integration.md`.**
   - Phase 0（基线测量）待启动；binance skill 已通过 `npx skills add` 安装到 `~/.agents/skills/binance`
