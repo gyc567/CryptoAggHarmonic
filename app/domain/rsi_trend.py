@@ -170,19 +170,17 @@ def detect_signals(
     rsi_zone: str = "extreme",
     reward_risk: float = REWARD_RISK,
     min_quality_score: float = 0.0,
+    short_rsi_min: float = 0.0,
 ) -> list[StrategySignal]:
     """Scan ``df`` for entry signals.
 
     Long:  close > EMA200 and RSI crosses up through the configured zone.
-    Short: close < EMA200 and RSI crosses down through the configured zone.
+    Short: close < EMA200 and RSI crosses down through the configured zone,
+           and RSI_prev >= short_rsi_min (0 = off).
 
     ``rsi_zone``:
       - "extreme" (default, backward-compatible): 30/70 thresholds.
       - "pullback": 40/60 thresholds, generating more signals in strong
-        trends where RSI rarely reaches the classical extremes.
-
-    Optional filters: candle color (bullish/bearish close) and EMA50
-    alignment. The first ``WARMUP_BARS`` bars never produce signals.
     """
     if len(df) <= WARMUP_BARS:
         return []
@@ -243,6 +241,8 @@ def detect_signals(
             if use_ema50 and not close < row["ema50"]:
                 continue
             if require_candle_color and not close < float(row["open"]):
+                continue
+            if short_rsi_min > 0 and rsi_prev < short_rsi_min:
                 continue
             atr = float(row["atr"])
             stop = float(row["high"]) + atr_mult * atr

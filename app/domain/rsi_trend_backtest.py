@@ -37,13 +37,13 @@ from app.domain.rsi_trend import (
     enrich,
 )
 
-# Exit reasons
 EXIT_STOP = "stop_loss"
 EXIT_TARGET = "target"
 EXIT_PARTIAL_TARGET = "partial_target"  # informational, recorded in partials
 EXIT_RSI_EXTREME = "rsi_extreme"
 EXIT_TREND_FLIP = "trend_flip"
 EXIT_END = "end_of_data"
+EXIT_TTL = "ttl"  # circuit-breaker: max bars in trade exceeded
 
 
 @dataclass
@@ -125,6 +125,7 @@ def _simulate_one(
     partial_mode: bool,
     trailing_stop: bool,
     exit_ema: str = "ema200",
+    ttl_bars: int = 0,
     bar_time,
 ) -> StrategyTrade:
     """Simulate a single trade from its signal bar to its exit."""
@@ -209,7 +210,6 @@ def _simulate_one(
                     trail_candidate = close + atr
                     if trail_candidate < stop:
                         stop = trail_candidate
-
             # 4) Trend environment flipped across exit_ema -> exit at close.
             if not pd.isna(ema_exit):
                 flipped = close < ema_exit if long else close > ema_exit
@@ -219,6 +219,14 @@ def _simulate_one(
                     remaining = 0.0
                     exit_index, exit_time = i, time
                     break
+
+            # 5) TTL circuit-breaker: exit after N bars if enabled.
+            if ttl_bars > 0 and (i - signal.index) >= ttl_bars:
+                exit_price, exit_reason = close, EXIT_TTL
+                realized_r += remaining * _r_multiple(direction, entry, initial_stop, close)
+                remaining = 0.0
+                exit_index, exit_time = i, time
+                break
         else:
             # Signal bar itself: only an immediate same-bar stop is honoured
             # (entry at close, so only the close can take us out).
@@ -261,6 +269,7 @@ def run_backtest(
     partial_mode: bool = False,
     trailing_stop: bool = False,
     exit_ema: str = "ema200",
+    ttl_bars: int = 0,
 ) -> BacktestResult:
     """Simulate all signals over ``df`` and aggregate performance metrics.
 
@@ -279,6 +288,7 @@ def run_backtest(
             partial_mode=partial_mode,
             trailing_stop=trailing_stop,
             exit_ema=exit_ema,
+            ttl_bars=ttl_bars,
             bar_time=_bar_time,
         )
         trades.append(trade)

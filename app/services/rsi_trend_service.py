@@ -131,8 +131,15 @@ def backtest(req: RsiTrendBacktestRequest) -> dict:
         rsi_zone=req.rsi_zone,
         reward_risk=req.reward_risk,
         min_quality_score=req.min_quality_score,
+        short_rsi_min=req.short_rsi_min,
     )
-    result = run_backtest(df, signals, partial_mode=req.partial_mode, trailing_stop=req.trailing_stop, exit_ema=req.exit_ema)
+    result = run_backtest(
+        df, signals,
+        partial_mode=req.partial_mode,
+        trailing_stop=req.trailing_stop,
+        exit_ema=req.exit_ema,
+        ttl_bars=req.ttl_bars,
+    )
     return {
         "market": req.market,
         "symbol": req.symbol.upper(),
@@ -142,6 +149,9 @@ def backtest(req: RsiTrendBacktestRequest) -> dict:
             **_build_filters(req),
             "partial_mode": req.partial_mode,
             "trailing_stop": req.trailing_stop,
+            "exit_ema": req.exit_ema,
+            "ttl_bars": req.ttl_bars,
+            "short_rsi_min": req.short_rsi_min,
         },
         "bars": len(df),
         **result.to_dict(),
