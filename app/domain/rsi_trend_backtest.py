@@ -28,14 +28,16 @@ from typing import Optional
 
 import pandas as pd
 
-from app.domain.rsi_trend import (
+from app.domain.strategy_core import (
     LONG,
     OVERBOUGHT,
     OVERSOLD,
-    StrategySignal,
     _bar_time,
-    enrich,
+    compute_indicators as _enrich,
 )
+
+# StrategySignal lives in rsi_trend (the compat layer); keep import here.
+from app.domain.rsi_trend import StrategySignal
 
 EXIT_STOP = "stop_loss"
 EXIT_TARGET = "target"
@@ -276,7 +278,7 @@ def run_backtest(
     Only one position may be open at a time; signals that fire while a
     trade is still open are skipped.
     """
-    data = enrich(df)
+    data = _enrich(df)
 
     trades: list[StrategyTrade] = []
     open_until = -1  # last bar index covered by an open trade

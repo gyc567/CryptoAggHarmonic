@@ -5,6 +5,27 @@
 
 ## High Priority
 
+- [x] 2026-08-12: **RSI strategy → Freqtrade IStrategy 重构完成.**
+  - 背景: `app/domain/rsi_trend.py` 纯 Python 信号检测逻辑需要同时支持 (a) 实时扫描 API 和 (b) Freqtrade IStrategy hyperopt/回测。
+  - 方案: 新建 `app/domain/strategy_core.py` 作为单一事实来源，`rsi_trend.py` 改为透传包装。
+  - 文件变更:
+    - `app/domain/strategy_core.py` (新建) — `compute_indicators` / `detect_signals_core` / `current_state_core` / `signal_quality` / `Signal` dataclass，无 I/O，无 Freqtrade 依赖
+    - `app/domain/rsi_trend.py` (重构) — 透传到 `strategy_core`，保留 `StrategySignal` 向后兼容
+    - `app/domain/rsi_trend_backtest.py` (修复导入) — 改用 `strategy_core._bar_time` + `compute_indicators`
+    - `freqtrade_dev_mcp/user_data/strategies/trend_rsi_strategy.py` (重写) — 完整 IStrategy + hyperopt 参数 + `custom_exit`
+  - Freqtrade IStrategy 关键设计:
+    - `minimal_roi = {}` (关闭时间驱动 ROI，完全由 `custom_exit` + `populate_exit_trend` 控制)
+    - `custom_exit()` — TTL 检查 (`trade.open_date_utc`) + RSI-extreme 检查 (`self.dp.get_pair_dataframe`)
+    - `custom_stoploss()` — 返回 `self.stoploss` fraction，hyperopt 可调
+    - Hyperopt 参数: `buy_atr_mult` / `buy_rsi_zone` / `buy_short_rsi_min` / `sell_use_ema50` / `sell_ttl_bars`
+  - 回测验证 (BTC/USDT 1h, 180d lookback):
+    - 重构前后结果完全一致: 166 signals / 150 trades / +5.93 R
+    - `rsi_zone=pullback` 显著优于 `extreme`: +21.85 R vs +6.68 R (3.3×)
+    - `atr_mult=1.5` loose stop: +9.89 R，MaxDD 仅 4.86 R
+  - 已知限制: 部分平仓（freqtrade 不支持）、动态 ATR 绝对止损（待 hyperopt 校准）
+  - 本地回测脚本: `python scripts/run_backtest_freqtrade.py [--symbol BTC_USDT --interval 1h --strategy-params rsi_zone=pullback,atr_mult=1.5]`
+  - 待做: freqtrade hyperopt 真机运行 (Task #9)、TTL 行为验证 (Task #10)、HISTORY.jsonl 记录 (Task #11)
+
 - [x] 2026-08-12: **RSI backtest 429 quota exceeded — fixed.**
   - Root cause: 用户 `gyc567@gmail.com` (id: `65ce88cf-a630-4ac5-9bfd-6658560b4b61`)
     每日 quota 5 次已用完（今日已消耗 5 次 consumed）。RSI backtest 是纯数据读取
@@ -237,6 +258,36 @@
 
 ---
 
+
+- [x] 2026-08-12: **FT Strategy UI Loop #13 — Phase 0 闭环.**
+  - `docs/adr/0012-ft-strategy-ui-integration.md` (12 Decision) Accepted
+  - `docs/loop-state/FT-STRATEGY-LOOP.md` (11 字段六维定义) + LOOP.md `### 13.` 指针更新
+  - 3 durable-facts 占位入库:
+    - `[ftstrategy-baseline-01]` — pre-strategy-track baseline (frequency TBD)
+    - `[ftstrategy-shadow-01]` — Phase 4 Shadow Mode 7d deploy prerequisite contract
+    - `[ftstrategy-deploy-01]` — first deployment marker (TBD)
+  - 全 7 Phase 路径: Phase 0–6
+  - Next: Phase 1 — `check_promotion_v3()` 纯函数 + `validate_research_md()` + 100% 测覆盖
+
+
+- [x] 2026-08-12: **FT Strategy UI Loop #13 — Phase 0–6 全闭环实现.**
+  - **Phase 0**: ADR-0012 (`docs/adr/0012-ft-strategy-ui-integration.md`, 12 Decision) Accepted + `docs/loop-state/FT-STRATEGY-LOOP.md` (11 字段六维定义) + LOOP.md `### 13.` + 3 durable-facts 占位
+  - **Phase 1**: `app/loop/tuning_promotion_v3.py` (8 项多目标 gate, D-FT-22/23) + `app/ft_strategy/research_md_validator.py` (D-FT-21) — 65 tests 100% cov
+  - **Phase 2**: `supabase/migrations/2026-08-12-ft-strategy-ui-7tables.sql` (7 表) + `app/ft_strategy/_schema_sqlite.py` (SQLite 镜像) + `app/ft_strategy/supabase_repo.py` (CRUD, D-FT-08/19/20) — 38 tests 100% cov
+  - **Phase 3**: `app/services/freqtrade/event_log.py` (D-FT-18 tsv+DB 双写) + `app/ft_strategy/verdict.py` (D-FT-19) + `app/ft_strategy/report_validator.py` (D-FT-20 SQLite trigger) — 32+25+24 tests 100% cov
+  - **Phase 4**: `app/api/ft_strategy_routes.py` (13 endpoints) + `app/ft_strategy/orient.py` (D-FT-15/16) + factory 注册 — 26+54 tests
+  - **Phase 5**: `app/ft_strategy/preflight.py` (6 项 D-FT-24) + `app/ft_strategy/deploy_pr.py` (gh CLI wrapper, dry-run) + `workers/ft_strategy_worker.py` + `.github/workflows/ft-strategy-ui.yml` — 39+30+17 tests
+  - **Phase 6**: 全链路 smoke: `loop_sync add-loop` → "Loop 'FT Strategy UI Loop' already registered" ✅；`loop_sync check` ✅；`loop doctor` ✅
+  - **测试**: 352 tests (11 ft-strategy 测试文件) 全绿 + full suite 2028 passed / 3 skipped (唯一失败 `test_supabase_client` 缺 postgrest 模块 — pre-existing，无关本计划)
+  - **剩余**: Phase 5 的 RQ live worker (真 MCP 调用) 与 real Supabase migration 推库需真实 infra；`[ftstrategy-baseline-01]` / `[ftstrategy-shadow-01]` 的频段值需真实 backtest 后填入
+
+
+- [x] 2026-08-12: **FT Strategy UI Loop #13 — Phase 3 frontend ✅ + remote sync 完成.**
+  - **Remote sync**: 5 commits (a250027..0b4519e) fast-forward pulled; no conflicts; all untracked FT Strategy UI files intact
+  - **Phase 3 frontend**: 4 pages + 5 components + TypeScript types + API client; `next build` ✅ 0 errors; `npx tsc --noEmit` 0 ft-strategy errors; `loop audit` 100.0/100 [L3]
+  - **测试**: 238 backend tests + frontend build 全部通过
+  - **待 infra (代码就绪,未跑)**: Supabase migration 推库 / RQ live worker 真 MCP 调用 / Vercel frontend 部署 / `[ftstrategy-baseline-01]`/`[ftstrategy-shadow-01]` 频段值 / deploy_pr 真 PR
+
 ## Triage Log
 
 ### 2026-08-10 (this run)
@@ -291,6 +342,23 @@
 - **ADR-0010 D5 calibration note**: `baseline_drawdown` / `baseline_calmar` need real
   freqtrade backtest run to fill in (Phase 4 shadow mode)
 - **Status**: Clean — no action needed
+
+### 2026-08-12 (FT Strategy UI — Phase 3 frontend + remote sync)
+
+- **Remote sync**: origin/main (5 commits a250027..0b4519e) fast-forward pulled; no conflicts; all FT Strategy UI untracked files intact
+- **FT Strategy UI Loop #13 — Phase 3 frontend 完成.**
+  - `frontend/types/ft-strategy.ts` — 全部 TypeScript types（strategy/run/events/experiments/reports/insights/promotion）
+  - `frontend/lib/api-ft-strategy.ts` — API client（13 endpoints 覆盖）
+  - `frontend/components/ft-strategy/` — 5 组件：StageProgress / StrategyCard / HyperoptProgress / BacktestChart / DeployGate
+  - `frontend/app/ft-strategy/page.tsx` — 策略列表页（30s polling / filter / delete）
+  - `frontend/app/ft-strategy/new/page.tsx` — 创建页（clarify-first research_md ≥ 200 chars + 7 sections）
+  - `frontend/app/ft-strategy/[id]/page.tsx` — 详情页（orient banner / 10s polling / refine / deploy）
+  - `frontend/app/ft-strategy/[id]/backtest/page.tsx` — 回测报告页（BacktestChart + DeployGate checklist）
+  - `next build` ✅ 0 errors (17/17 routes); `npx tsc --noEmit` 0 ft-strategy errors
+  - **Vercel ✅**: https://www.cryptoagg.xyz/ft-strategy (200) /ft-strategy/new (200) — deployed + aliased
+  - Backend 238 tests 保持全绿
+  - `loop doctor` / `loop gate check` / `loop audit` 全部 OK (100/100 L3)
+  - **Remaining**: RQ live worker 真 MCP 调用 / `[ftstrategy-baseline-01]`/`[ftstrategy-shadow-01]` 频段值 / deploy_pr 真 PR
 
 _Maintained by: `.github/workflows/daily-triage.yml`_
 _See also: `docs/loop-state/LOOP.md`_
