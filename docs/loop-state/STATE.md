@@ -288,6 +288,14 @@
   - **测试**: 238 backend tests + frontend build 全部通过
   - **待 infra (代码就绪,未跑)**: Supabase migration 推库 / RQ live worker 真 MCP 调用 / Vercel frontend 部署 / `[ftstrategy-baseline-01]`/`[ftstrategy-shadow-01]` 频段值 / deploy_pr 真 PR
 
+- [x] 2026-08-12 (T13:44Z session): **strategy_core refactor regression fix + FT Strategy UI local commit sweep.**
+  - **Regression fix** (`65c27e7`): the recent `strategy_core → single source of truth` refactor (commit `160e769`) re-exported helper-level API from `rsi_trend.py` but omitted the underlying indicator primitives (`ema_series`, `rsi_series`, `atr_series`). `tests/test_rsi_trend.py` line 12 imported the three from `app.domain.rsi_trend` and the module-level import failed. Fix: add the three to the re-export list. `tests/test_rsi_trend.py` 28/28 green; full suite 2187 passed / 6 skipped.
+  - **Local commit sweep** (`a84c252` / `b2cae6a` / `4d411a1`): the FT Strategy UI Loop #13 work (backend Phase 0–5 + frontend Phase 3 + plan + durable-facts + factory blueprint + `.foundry/` + supabase migration + new `freqtrade-strategy-bidirectional-compat` plan) was sitting untracked in the working tree at session start — STATE.md claimed completion but git history was missing the changes. All 4 commits staged and committed locally; local main now 4 commits ahead of origin/main awaiting push approval.
+  - **Loop Readiness Score**: 100.0/100 [L3] (verified post-commit).
+  - **pytest**: 2187 passed, 6 skipped (futures datasource tests skipped — external `fapi.binance.com` proxy unreachable in this env; pre-existing infra flake, not code).
+  - **TypeScript**: 0 ft-strategy errors (21 unrelated test-file errors pre-existing).
+  - **Remaining**: push to origin (awaiting user approval); real `app/loop/driver.py` baseline run to fill `[ftstrategy-baseline-01]` / `[ftstrategy-shadow-01]` frequency values; Binance CLI Phase 0 baseline; FreqTrade 双向兼容 Phase A.
+
 ## Triage Log
 
 ### 2026-08-10 (this run)
