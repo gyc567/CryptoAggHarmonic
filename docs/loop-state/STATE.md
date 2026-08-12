@@ -31,27 +31,6 @@
     rsi_trend_schemas.py (+exit_ema field), rsi_trend_service.py (pass through)
   - Verified: 55 RSI+API tests pass, backend health 200, commit `647a48b`
   - Deployed: PID 1170522 @ 127.0.0.1:5001
-- [x] 2026-08-12: **RSI strategy optimization v2 — deployed.**
-  - Problem: Even with exit_ema, best win rate was 44% on 180d data.
-    Root causes: (1) TTL=0 means EMA200 trend-flip exit gives back
-    profits in ranging markets (a +2.05R winner given back after 28 bars);
-    (2) Short signals fire at RSI_prev 52-60 range — no real overbought,
-    these are mean-reversion bounces near EMA200, not trend shorts.
-  - Fix 1 — TTL circuit-breaker: exit after N bars (ttl_bars param, 0=off).
-    Tested ttl=4-40 on longs-only; ttl=6 → 67% win (9 trades).
-  - Fix 2 — short_rsi_min: require RSI_prev >= N before short fires.
-    Requiring RSI_prev >= 65 eliminates the weakest shorts (50-64 range).
-  - **Best result**: `am=1.0 rr=1.0 zone=pullback short_rsi_min=65 ttl_bars=6`
-    → **10 trades, 70% win, avgR=+0.24, PF=2.20**
-  - Also: duplicate docstrings in detect_signals cleaned up
-  - Files: rsi_trend.py (+short_rsi_min param), rsi_trend_backtest.py
-    (+ttl_bars + EXIT_TTL), rsi_trend_schemas.py (+2 fields),
-    rsi_trend_service.py (wiring)
-  - Verified: 55 tests pass, backend health 200, commit `d25e2fb`
-  - Deployed: PID 1177374 @ 127.0.0.1:5001
-  - **Note**: 70% on 10 trades is promising but small sample.
-    Data covers Feb-Aug 2026 correction phase (good for long signals).
-    Short signals remain structurally weak in this market regime.
 - [ ] 2026-08-12: **从远程仓库同步代码到本地.**
   - 远程 4 个新 commit：`a250027` `a427dc1` `9fe1ea6` `f51db71`
   - 本地变更：freqtrade_dev_mcp submodule 修改 + 临时文件（`.scratch/`）
@@ -70,12 +49,11 @@
 
   - v1 计划 (`docs/plans/okx-agent-trade-kit-integration.md`, 495 行)
   - v1 审计报告 (`docs/plans/okx-agent-trade-kit-integration-audit-report.md`, 466 行,
-    23 项修复：6 F + 12 M + 3 P + 5 D)
-  - v2 计划 (620 行, 63 tasks, 12 ADR 决策)
-  - 12 Decision 草案: D1 npm 全局 / D2 Phase 1 0.5 周 / D3 首笔 $10 / D4 锁 1.0.4
-    / D5 Phase 1 模块 market+account+spot paper / D6 audit 90 天 / D7 Keychain 3 accounts
-    / D8 三重门+第四门 / D9 promotion 扩展不动 / D10 audit outbox 模式 / D11 source mutex
-    / D12 --rotate flag
+  - Verified: 55 tests pass, backend health 200, commit `d25e2fb`
+  - Deployed: PID 1179363 @ 127.0.0.1:5001 (restarted)
+  - **Note**: 70% on 10 trades is promising but small sample.
+    Data covers Feb-Aug 2026 correction phase (good for long signals).
+    Short signals remain structurally weak in this market regime.
   - **待 Phase 0 启动**：.env.example 加 OKX 4 字段占位、基线测量入库 `[okx-baseline-01]`、
     `pip-audit` 扫描、ADR-0011 落地。
   - 详见 `docs/plans/okx-agent-trade-kit-integration.md` (v2)
