@@ -541,3 +541,29 @@
   - open interest becomes available without new REST code
   - source mutex: `binance_market` exempt from `freqtrade_hyperopt` ↔ `okx_*`互斥 (read-only)
 - **superseded_by**: _none_
+
+### [strategy-core-parity-01] — TA-Lib vs strategy_core indicator parity gap detected
+- **Created**: 2026-08-12
+- **Source**: `tests/test_strategy_parity_talib.py` (4 tests, all pass) + `freqtrade_dev_mcp/user_data/strategies/trend_rsi_strategy.py` lines 4, 33, 113-144
+- **Content**: The freqtrade IStrategy file's docstring claims "Single source of truth: app.domain.strategy_core", but the implementation actually uses `talib.abstract as ta` at line 33 and re-implements `populate_indicators` at lines 113-144. The "single source of truth" refactor (commit `160e769`) made `strategy_core` the source for the API scan path (`app/services/rsi_trend_service.py`); the freqtrade hyperopt path still re-implements with TA-Lib.
+
+  **Numerical gap after warmup=200** (synthetic 500-bar OHLCV, seed=42):
+  | Indicator | max_abs | mean_abs | Notes |
+  |---|---:|---:|---|
+  | RSI | 4e-6 | <1e-6 | ✅ machine-precision match (Wilder = pandas EWM `alpha=1/N`) |
+  | EMA | 0.09 | 0.057 | ✅ acceptable; same alpha formula, tiny floating-point drift |
+  | ATR | **1.50** | **0.53** | ❌ TA-Lib uses Wilder recursive smoothing; strategy_core uses simple rolling mean |
+  | RSI cross-up signal | — | — | 3 / 500 bars disagree (~0.6%) — driven by RSI edge-case at threshold |
+
+  **Why this matters**: a real backtest that mixes both implementations (e.g. running freqtrade hyperopt for parameter search, then validating via the API scan endpoint) will produce slightly different signals on ~0.6% of bars. The ATR divergence is the largest contributor to slippage differences because stop-loss / target prices are ATR-multiples.
+
+  **Resolution path** (ponytail ultra — test pinned, fix is a separate commit):
+  - Replace `populate_indicators` body in `freqtrade_dev_mcp/.../trend_rsi_strategy.py` with `df = strategy_core.compute_indicators(df)` + a thin freqtrade-specific wrapper that maps to `enter_long`/`enter_short` columns
+  - Switch `strategy_core.atr_series` to Wilder recursive smoothing (`pd.Series.ewm(alpha=1/N, adjust=False).mean()`) — eliminates ATR gap to <1e-6
+  - Tighten `test_parity_talib_vs_strategy_core_pins_current_divergence` bounds to < 1e-3 across the board
+  - Plan: `docs/plans/freqtrade-strategy-bidirectional-compat.md` §4.2 + §4.3 — Phase B (strategy_runner) is the natural place
+
+  **Risk if not fixed**: ATR-based stop-losses set by freqtrade hyperopt may not match backtest P&L shown by the API scan → tuning-promotion gate mis-judges candidate quality on the order of the ATR gap (≈ 1.5 price units ≈ 1–2% of typical BTC/USDT ATR).
+
+  **Status**: known limitation, test prevents divergence from widening.
+- **superseded_by**: _none_
