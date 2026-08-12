@@ -567,3 +567,46 @@
 
   **Status**: known limitation, test prevents divergence from widening.
 - **superseded_by**: _none_
+
+### [binance-cli-install-01] — `@binance/binance-cli` v1.3.0 installed (Loop #12 prerequisite)
+- **Created**: 2026-08-12 (T14:37Z)
+- **Source**: `npm install -g @binance/binance-cli` (user approval received)
+- **Content**: binance-cli installed at `/Users/jie/.hermes/node/bin/binance-cli`. Version 1.3.0; 127 packages added. Phase 0 prerequisite gap from `[binance-baseline-01]` resolved.
+
+  **Smoke verified**:
+  - `binance-cli futures-usds mark-price --symbol BTCUSDT` → markPrice 63557.41, lastFundingRate 0.00005516, nextFundingTime 1786550400000
+  - `binance-cli futures-usds open-interest --symbol BTCUSDT` → 108905.842 BTC
+  - `binance-cli futures-usds get-funding-rate-history --symbol BTCUSDT --limit 2` → 2 historical entries
+  - Latency p50: 720 ms (CLI spawn overhead vs ~400 ms direct REST; extra 320 ms is the cost of getting OI, structured output, and SDK-level retry)
+
+  **Read-only mode**: no API key required for `market`/`futures-usds` public data — exactly the scope Loop #12 targets. Write commands (`spot order`, `algo order`, `convert`, `margin-trading`) untouched.
+
+  **Next**: Phase 1 — `app/services/binance/` skeleton (`data_source.py` + `handshake.py` + `metrics.py`), `tuning_promotion.is_market_data_source()`, `BINANCE-LOOP.md` 6-axis, `loop_sync add-loop`, ADR-0012, gate.yaml denylist.
+- **superseded_by**: _none_
+
+### [vercel-ft-strategy-deploy-01] — FT Strategy UI live at www.cryptoagg.xyz/ft-strategy
+- **Created**: 2026-08-12 (T14:38Z → T14:41Z)
+- **Source**: `vercel --prod --yes` × 2 (initial deploy + post-NEXT_PUBLIC_API_BASE fix)
+- **Content**: Loop #13 FT Strategy UI now reachable at production domain.
+
+  **Deploy 1** (T14:37Z): `frontend-b30q24swb-gyc567s-projects.vercel.app`
+  - Routes verified built: `/ft-strategy`, `/ft-strategy/[id]`, `/ft-strategy/[id]/backtest`, `/ft-strategy/new` (all 4 FT pages + 5 components compiled)
+  - Build: 29s, deploy: 47s
+  - Alias: `frontend-tau-henna-1lupeau6rm.vercel.app`
+  - www.cryptoagg.xyz/ft-strategy → 200 (HTML served)
+  - **Issue found**: `/api/ft-strategies` 404 — Vercel rewrites pointed at `127.0.0.1:5000` (unreachable from Vercel serverless) and `NEXT_PUBLIC_API_BASE` was not set in production env
+
+  **Fix** (commit `edcba75`):
+  - Added `/api/ft-strategies` + `/api/ft-strategies/:path*` rewrites in `frontend/next.config.mjs`
+  - `vercel env add NEXT_PUBLIC_API_BASE production` = `https://hapi.cryptoagg.xyz`
+
+  **Deploy 2** (T14:41Z): `frontend-4rp3zasqb-gyc567s-projects.vercel.app`
+  - Build: 36s, deploy: 52s
+  - www.cryptoagg.xyz/ft-strategy → 200 (1.17s); HTML shows "FT 策略" + "+ 新建策略" button + filter tabs (全部/draft/analyzed/deployed/rejected)
+  - SPA now calls hapi.cryptoagg.xyz/api/ft-strategies directly via NEXT_PUBLIC_API_BASE
+  - Backend FT strategy routes (13 endpoints from `app/api/ft_strategy_routes.py` + factory.py registration) reachable through this proxy
+
+  **Why two deploys**: env vars don't apply to existing deployments in Vercel; need a fresh build to pick up NEXT_PUBLIC_API_BASE.
+
+  **Next**: supabase db push for the 7 FT tables + Vercel alias verification on the new deploy + manual e2e walkthrough (create strategy → backtest → hyperopt → deploy-pr dry-run).
+- **superseded_by**: _none_
