@@ -23,8 +23,9 @@
     - Frontend initial state (backtest-panel.tsx): 同步到最优参数
     - Frontend new controls: `exit_ema`, `ttl_bars`, `short_rsi_min` 滑块
     - api-rsi-strategy.ts: 添加 `RsiTrendDirection` 类型导出，修复结构错误
-  - Commit `f1272f3` pushed to remote
-  - **待**: 重启后端 + 前端 Vercel 重新部署（Vercel token 过期）
+  - Commit `f1272f3`, `3ba257e` pushed to remote
+  - 后端无需重启：gunicorn 直接从 `/root/code/CryptoAggHarmonic` 读代码，已是最新
+  - **待**: 前端 Vercel 重新部署（Vercel token 过期，需在 Vercel Dashboard 操作或刷新 token）
   - **验证**: 78 RSI 测试全通过，前端构建成功
 - [x] 2026-08-12: **Vercel Frontend 部署 — DNS 修复完成，www.cryptoagg.xyz 和 cryptoagg.xyz 均 200.**
   - `vercel --prod --yes` → `cryptoaggharmonic-i94uiiyqb-gyc567s-projects.vercel.app`（项目名已更名）
