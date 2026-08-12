@@ -15,6 +15,12 @@ denylist:
   - ".venv/"
   # Live TUNING promotion must go through human PR + SIGHUP, never auto-merge
   - "app/config/tuning.py"
+  # Loop #12 — binance-cli subprocess wrapper. Never auto-merge: a
+  # change to the argv list could invoke a write tool (D2 violation).
+  - "app/services/binance/"
+  # Loop #13 — FT Strategy UI backend routes. Same reasoning: a
+  # change to gate logic could allow a deploy without checklist.
+  - "app/ft_strategy/deploy_pr.py"
 
 # Patterns that are ALWAYS excluded (safety net)
 always_exclude:

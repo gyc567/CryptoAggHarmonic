@@ -184,3 +184,71 @@ def execution_allowed_for_tools(
 # site. ADR-0011 D9 mandates the existing signature stays unchanged.
 # The audit-log enforcement is layered in ``executor.py`` (Phase 2),
 # not here.
+
+
+# ── Binance market data gate (ADR-0013) ─────────────────────────────────────
+#
+# binance-cli is read-only public market data (mark price, funding rate,
+# open interest). Per ADR-0013 D2, write tools are not in scope here;
+# they would go through a separate gate (similar to OKX). The gate
+# below exists so a future caller knows what binance tool names are
+# allowed and that they DO NOT take part in the freqtrade ↔ OKX source
+# mutex (they're complementary read-only context).
+
+# binance-cli tool name allowlist for the binance-market-data source.
+# Names follow the pattern ``<module>_<command>`` from the CLI's own
+# help output. When the upstream CLI adds new market commands, append
+# here AND update tests/test_promotion_guard.py in the same PR.
+BINANCE_MARKET_TOOLS: frozenset[str] = frozenset({
+    # futures-usds read-only market data
+    "futures-usds_mark-price",
+    "futures-usds_open-interest",
+    "futures-usds_open-interest-statistics",
+    "futures-usds_get-funding-rate-history",
+    "futures-usds_get-funding-rate-info",
+    "futures-usds_mark-price-kline-candlestick-data",
+    "futures-usds_premium-index",  # synonym; kept for compatibility
+    # spot read-only (Phase 2+ scope; added now so the allowlist is
+    # complete from day one)
+    "spot_ticker",
+    "spot_klines",
+    "spot_depth",
+    "spot_avg-price",
+    "spot_trades",
+})
+
+
+def is_market_data_tool(name: str) -> bool:
+    """True if ``name`` is a binance-cli read-only market-data tool.
+
+    Mirror of ``is_live_execution_tool`` for the OKX write side. Any
+    tool NOT in ``BINANCE_MARKET_TOOLS`` returns False (conservative:
+    unknown names are not promoted to "market data" automatically).
+    """
+    return name in BINANCE_MARKET_TOOLS
+
+
+def market_data_allowed_for_tools(
+    names: list[str],
+) -> tuple[bool, str]:
+    """Return (ok, reason). True iff every tool in ``names`` is a
+    binance market-data tool.
+
+    Always returns (True, ...) — market data is read-only and needs no
+    paper/live flag. The function exists for symmetry with
+    ``execution_allowed_for_tools`` and so callers explicitly
+    acknowledge what they're invoking.
+
+    The function NEVER raises — it returns a tuple. ``names`` must be
+    a list (other types yield ``(False, ...)``).
+    """
+    if not isinstance(names, list):
+        return (
+            False,
+            f"market_data_allowed_for_tools: names must be list, "
+            f"got {type(names).__name__}",
+        )
+    unknown = [n for n in names if not is_market_data_tool(n)]
+    if unknown:
+        return False, f"market_data_allowed_for_tools: not in allowlist: {unknown}"
+    return True, f"market data (read-only): {names or '(empty)'}"

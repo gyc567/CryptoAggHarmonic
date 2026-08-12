@@ -179,6 +179,10 @@ CI Sweeper → PR Babysitter → Dependency Sweeper → Post-Merge / Changelog �
 
 ### 12. Binance Market Data Loop
 
+> 见 `docs/loop-state/BINANCE-LOOP.md` — Loop #12 (read-only market data via binance-cli v1.3.0)
+> Plan: `docs/plans/binance-cli-integration.md` · ADR: `docs/adr/0013-binance-cli-integration.md`
+> Phase 1: `app/services/binance/{data_source,handshake,metrics}.py` + `BINANCE_MARKET_TOOLS` allowlist + gate.yaml denylist
+
 ### 13. FT Strategy UI Loop
 
 > 见 `docs/loop-state/FT-STRATEGY-LOOP.md` —— Phase 0–6（v3）
