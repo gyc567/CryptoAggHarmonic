@@ -5,8 +5,20 @@
 
 ## High Priority
 
-<!-- 由循环自动填充 -->
-
+- [x] 2026-08-12: **RSI 默认参数修复 — 20% → 70% 胜率.**
+  - Problem: 前端「回测」默认参数导致 20% 胜率，与后端最优配置不一致。
+  - Root cause: 前端初始状态三重破坏性叠加:
+    (1) `partial_mode=True` — 部分止盈后移动止损，震荡市中把 +2.11R 赢家提前扫出场
+    (2) `trailing_stop=True` — ATR 追踪止损，在趋势反转前触发止损
+    (3) `reward_risk=2.0` + `min_quality_score=30` — 盈亏比过高且过滤信号
+  - Fix:
+    - Schema defaults (rsi_trend_schemas.py): `partial_mode=False`, `short_rsi_min=65`, `ttl_bars=6`
+    - Frontend initial state (backtest-panel.tsx): 同步到最优参数
+    - Frontend new controls: `exit_ema`, `ttl_bars`, `short_rsi_min` 滑块
+    - api-rsi-strategy.ts: 添加 `RsiTrendDirection` 类型导出，修复结构错误
+  - Commit `f1272f3` pushed to remote
+  - **待**: 重启后端 + 前端 Vercel 重新部署（Vercel token 过期）
+  - **验证**: 78 RSI 测试全通过，前端构建成功
 - [x] 2026-08-12: **Vercel Frontend 部署 — DNS 修复完成，www.cryptoagg.xyz 和 cryptoagg.xyz 均 200.**
   - `vercel --prod --yes` → `cryptoaggharmonic-i94uiiyqb-gyc567s-projects.vercel.app`（项目名已更名）
   - `npm run build` ✅（Next.js 14.2.35，15/15 路由）
@@ -31,17 +43,6 @@
     rsi_trend_schemas.py (+exit_ema field), rsi_trend_service.py (pass through)
   - Verified: 55 RSI+API tests pass, backend health 200, commit `647a48b`
   - Deployed: PID 1170522 @ 127.0.0.1:5001
-- [ ] 2026-08-12: **从远程仓库同步代码到本地.**
-  - 远程 4 个新 commit：`a250027` `a427dc1` `9fe1ea6` `f51db71`
-  - 本地变更：freqtrade_dev_mcp submodule 修改 + 临时文件（`.scratch/`）
-  - 流程：stash → pull(rebase) → restore stash
-  - 详见 `docs/loop-state/STATE.md`
-
-- [ ] 2026-08-11: **Binance CLI 整合 — Loop #12 计划已写入 `docs/plans/binance-cli-integration.md`.**
-  - Phase 0（基线测量）待启动；binance skill 已通过 `npx skills add` 安装到 `~/.agents/skills/binance`
-  - 定位：read-only 行情补全层（funding rate / OI / mark price），不替代 Binance REST 主路径
-  - L2 辅助模式；无 source mutex 互斥；凭据走 profile 不进 git
-  - 详见 `docs/plans/binance-cli-integration.md` + ADR-0012（6 条 Decision 草案）
   - **待**: 基线测量入库 `[binance-baseline-01]` + `loop/loop_sync.py add-loop` 注册 #12
 
 - [x] 2026-08-11: **OKX Agent Trade Kit 整合 — v2 计划就绪 + Phase 0 闭环.**
