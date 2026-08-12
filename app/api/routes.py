@@ -158,11 +158,14 @@ def analyze(user):
     if is_local_dev_mode() and not record_id:
         logging.warning("Local dev: analysis record creation skipped/failed")
 
-    # Reserve quota (after record creation so usage_ledger FK resolves).
+    # Reserve quota.
+    # If record creation failed (record_id is None), pass analysis_id=None so
+    # usage_ledger has no FK requirement — the quota check itself still works.
     if is_local_dev_mode():
         reserved, remaining, ledger_id = True, 100, None
     else:
-        reserved, remaining, ledger_id = check_quota(user_id, analysis_id, units=1)
+        quota_analysis_id = record_id if record_id else None
+        reserved, remaining, ledger_id = check_quota(user_id, quota_analysis_id, units=1)
     if not reserved:
         # Remove the placeholder record so we don't leave orphaned "created" rows.
         if record_id and not is_local_dev_mode():

@@ -139,10 +139,10 @@ def send_message(user, session_id):
         return _error("NOT_FOUND", "会话不存在", status=404)
 
     # Reserve quota.
-    run_id = str(uuid.uuid4())
+    # Reserve quota — pass analysis_id=None (vibe runs don't create analyses records)
     ledger_id = None
     if not is_local_dev_mode():
-        reserved, _, ledger_id = reserve_user_quota(user_id, run_id, units=1)
+        reserved, _, ledger_id = reserve_user_quota(user_id, None, units=1)
         if not reserved:
             return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429, retryable=False)
 
@@ -276,7 +276,7 @@ def invoke_tool(user, tool_name):
     invoke_id = str(uuid.uuid4())
     ledger_id = None
     if not is_local_dev_mode():
-        reserved, _, ledger_id = reserve_user_quota(user_id, invoke_id, units=1)
+        reserved, _, ledger_id = reserve_user_quota(user_id, None, units=1)
         if not reserved:
             return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429, retryable=False)
 
