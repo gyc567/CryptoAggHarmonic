@@ -5,8 +5,15 @@
 
 ## High Priority
 
+- [x] 2026-08-12: **RSI backtest 429 quota exceeded — fixed.**
+  - Root cause: 用户 `gyc567@gmail.com` (id: `65ce88cf-a630-4ac5-9bfd-6658560b4b61`)
+    每日 quota 5 次已用完（今日已消耗 5 次 consumed）。RSI backtest 是纯数据读取
+    （无 AI token 消耗），与其他 API analyze 共享同一配额池不合理。
+  - Fix: 将该用户 `daily_quota` 从 5 提升到 20（临时方案，已执行）。
+  - 根本方案（待做）: 给 RSI backtest/scan/plan 分配独立高配额池（50 次/天），
+    因为它们只读 Binance/TradingView 数据，不消耗 AI tokens。
+
 - [x] 2026-08-12: **RSI 默认参数修复 — 20% → 70% 胜率.**
-  - Problem: 前端「回测」默认参数导致 20% 胜率，与后端最优配置不一致。
   - Root cause: 前端初始状态三重破坏性叠加:
     (1) `partial_mode=True` — 部分止盈后移动止损，震荡市中把 +2.11R 赢家提前扫出场
     (2) `trailing_stop=True` — ATR 追踪止损，在趋势反转前触发止损
