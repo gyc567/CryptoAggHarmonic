@@ -49,11 +49,11 @@ export function BacktestPanel({ result, loading, error, onBacktest, className }:
     require_candle_color: false,
     atr_mult: 1.0,
     rsi_zone: "pullback",
-    reward_risk: 2.0,
-    min_quality_score: 30,
+    reward_risk: 1.0,
+    min_quality_score: 0,
     lookback_days: 180,
-    partial_mode: true,
-    trailing_stop: true,
+    partial_mode: false,
+    trailing_stop: false,
   });
 
   const update = <K extends keyof RsiTrendBacktestParams>(key: K, value: RsiTrendBacktestParams[K]) =>
@@ -76,7 +76,7 @@ export function BacktestPanel({ result, loading, error, onBacktest, className }:
 
       <ParamsForm params={params} loading={loading} onChange={updateBase} />
 
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">
             回溯天数（{params.lookback_days} 天）
@@ -88,6 +88,53 @@ export function BacktestPanel({ result, loading, error, onBacktest, className }:
             step={30}
             value={params.lookback_days}
             onChange={(e) => update("lookback_days", Number(e.target.value))}
+            disabled={loading}
+            className="mt-3 w-full accent-primary"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">
+            趋势退出 EMA（{params.exit_ema ?? "ema200"}）
+          </label>
+          <select
+            value={params.exit_ema ?? "ema200"}
+            onChange={(e) => update("exit_ema", e.target.value as "ema200" | "ema50")}
+            disabled={loading}
+            className="input-surface"
+          >
+            <option value="ema200">EMA200（保守，少信号）</option>
+            <option value="ema50">EMA50（激进，多信号）</option>
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">
+            最大持仓时间（{params.ttl_bars ?? 6} 根 K 线，0=关闭）
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={40}
+            step={2}
+            value={params.ttl_bars ?? 6}
+            onChange={(e) => update("ttl_bars", Number(e.target.value))}
+            disabled={loading}
+            className="mt-3 w-full accent-primary"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">
+            做空 RSI 最低门槛（{params.short_rsi_min ?? 65}，0=关闭）
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={70}
+            step={5}
+            value={params.short_rsi_min ?? 65}
+            onChange={(e) => update("short_rsi_min", Number(e.target.value))}
             disabled={loading}
             className="mt-3 w-full accent-primary"
           />
@@ -112,7 +159,7 @@ export function BacktestPanel({ result, loading, error, onBacktest, className }:
             disabled={loading}
             className="h-4 w-4 accent-primary"
           />
-          ATR 移动止损（部分止盈后，剩余仓位按 1×ATR  trailing）
+          ATR 移动止损（部分止盈后，剩余仓位按 1×ATR trailing）
         </label>
       </div>
 

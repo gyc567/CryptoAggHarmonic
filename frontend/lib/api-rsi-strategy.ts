@@ -8,14 +8,27 @@
  * Schema source of truth: app/domain/rsi_trend_schemas.py.
  *
  * This file was missing from the original commit
- * ``feat: 趋势RSI策略模块（EMA200过滤+RSI择时）及既有改动`` that introduced
- * ``hooks/use-rsi-strategy.ts`` — the hook imported a non-existent module,
  * which surfaced as a Next.js dev compile error and broke ``/``.
  */
 
 import { request } from "@/lib/api";
 import type { ApiResponse } from "@/types";
 
+export type RsiTrendDirection = "long" | "short";
+
+export interface RsiTrendFilters {
+  use_ema50: boolean;
+  require_candle_color: boolean;
+  atr_mult: number;
+  rsi_zone: RsiTrendZone;
+  reward_risk: number;
+  min_quality_score: number;
+  partial_mode?: boolean;
+  trailing_stop?: boolean;
+  exit_ema?: "ema200" | "ema50";
+  ttl_bars?: number;
+  short_rsi_min?: number;
+}
 // --- Request types ----------------------------------------------------------
 
 export type RsiTrendMarket = "binance" | "yahoo";
@@ -42,6 +55,12 @@ export interface RsiTrendBacktestParams extends RsiTrendRequestParams {
   lookback_days?: number;
   partial_mode?: boolean;
   trailing_stop?: boolean;
+  /** Circuit-breaker: exit after N bars. Defaults to 6 on the server. */
+  exit_ema?: "ema200" | "ema50";
+  /** Circuit-breaker: exit after N bars (0=off). Defaults to 6 on the server. */
+  ttl_bars?: number;
+  /** Short RSI_prev minimum threshold (0=off). Defaults to 65 on the server. */
+  short_rsi_min?: number;
 }
 
 // --- Response types ---------------------------------------------------------
@@ -57,10 +76,12 @@ export interface RsiTrendFilters {
   rsi_zone: RsiTrendZone;
   reward_risk: number;
   min_quality_score: number;
+  partial_mode?: boolean;
+  trailing_stop?: boolean;
+  exit_ema?: "ema200" | "ema50";
+  ttl_bars?: number;
+  short_rsi_min?: number;
 }
-
-export type RsiTrendDirection = "long" | "short";
-
 /** Latest trend/momentum snapshot — mirrors app.domain.rsi_trend.current_state(). */
 export interface RsiTrendState {
   time: string;

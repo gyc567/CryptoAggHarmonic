@@ -37,8 +37,8 @@ class RsiTrendBacktestRequest(RsiTrendScanRequest):
     """Backtest endpoint parameters."""
 
     lookback_days: int = Field(default=180, ge=60, le=365)
-    partial_mode: bool = False
-    trailing_stop: bool = False
+    partial_mode: bool = Field(default=False)
+    trailing_stop: bool = Field(default=False)
     exit_ema: Literal["ema200", "ema50"] = "ema200"
-    ttl_bars: int = Field(default=0, ge=0, le=200, description="Circuit-breaker: exit after N bars (0=off)")
-    short_rsi_min: float = Field(default=0.0, ge=0.0, le=80.0, description="Short RSI_prev minimum threshold (0=off)")
+    ttl_bars: int = Field(default=6, ge=0, le=200, description="Circuit-breaker: exit after N bars (0=off)")
+    short_rsi_min: float = Field(default=65.0, ge=0.0, le=80.0, description="Short RSI_prev minimum threshold (0=off)")
