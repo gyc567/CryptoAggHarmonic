@@ -610,3 +610,57 @@
 
   **Next**: supabase db push for the 7 FT tables + Vercel alias verification on the new deploy + manual e2e walkthrough (create strategy → backtest → hyperopt → deploy-pr dry-run).
 - **superseded_by**: _none_
+
+### [binance-cli-phase1-impl-01] — Loop #12 Phase 1 implementation complete
+- **Created**: 2026-08-12 (T23:08Z)
+- **Source**: `docs/plans/binance-cli-integration.md` Phase 1 + ADR-0013
+- **Content**: Loop #12 (Binance Market Data) Phase 1 implemented end-to-end.
+
+  **New files** (10):
+  - `app/services/binance/__init__.py` (empty package marker)
+  - `app/services/binance/data_source.py` (286 lines) — binance-cli
+    subprocess wrapper with MarkPrice / OpenInterest / FundingRate
+    dataclasses; argv-list + shell=False (ADR-0013 D3); EAGAIN-tolerant
+    JSON parser; BinanceCliError typed exception
+  - `app/services/binance/handshake.py` (143 lines) — appends
+    `source: binance_market` records to HISTORY.jsonl via
+    `state.append_history` (lifecycle + rotation inherited)
+  - `app/services/binance/metrics.py` (95 lines) — hand-rolled
+    counter + histogram (no `prometheus_client` dep)
+  - `tests/services/binance/test_data_source.py` (162 lines, 11 tests)
+  - `tests/services/binance/test_handshake.py` (145 lines, 7 tests)
+  - `tests/services/binance/test_metrics.py` (48 lines, 4 tests)
+  - `tests/services/binance/test_promotion_gate.py` (92 lines, 11 tests)
+  - `docs/loop-state/BINANCE-LOOP.md` (101 lines) — 6-axis loop definition
+  - `docs/adr/0013-binance-cli-integration.md` (92 lines, D1–D6)
+
+  **Modified files**:
+  - `app/loop/tuning_promotion.py` — `BINANCE_MARKET_TOOLS` frozenset
+    (12 read-only endpoints), `is_market_data_tool()` + 
+    `market_data_allowed_for_tools()` gate (mirrors OKX pattern)
+  - `docs/loop-state/LOOP.md` — Loop #12 pointer + plan/ADR references
+  - `docs/loop-state/gate.yaml` — added `app/services/binance/` and
+    `app/ft_strategy/deploy_pr.py` to denylist (defense in depth)
+
+  **Tests**: 35 new passed (all of `tests/services/binance/` green)
+  **Full suite**: 2226 passed / 6 skipped (was 2191 → 2226, delta +35)
+  **Loop readiness**: 100.0/100 [L3] (verified post-commit)
+  **Live smoke**: BTCUSDT mark_price + open_interest + funding history
+  all return valid dataclasses from the real binance-cli v1.3.0
+
+  **Source mutex policy** (ADR-0013 D5):
+  - `source: binance_market` exempt from `freqtrade_hyperopt` ↔ `okx_*`互斥
+  - Read-only; no candidate_id by default
+
+  **Phase 2 hooks** (next):
+  - `app/api/binance_routes.py` — Flask routes exposing the data source
+  - `/metrics` integration — emit `binance_market_fetch_total` /
+    `binance_market_latency_seconds` via existing
+    `app/api/metrics_routes.py`
+  - Outerloop correlation: tie candidate Sharpe to funding-rate regime
+
+  **Risk**: deployment requires `binance-cli` on the backend server.
+  Current local env: installed at `/Users/jie/.hermes/node/bin/binance-cli`.
+  Server env: TBD; deploy script should `npm install -g @binance/binance-cli`
+  before starting gunicorn (otherwise Flask 503s on first call).
+- **superseded_by**: _none_

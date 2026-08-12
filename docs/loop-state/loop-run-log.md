@@ -55,5 +55,7 @@
 ### 2026-08-12T14:38:00Z [vercel-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=ft-strategy-ui-deploy-1 url=frontend-b30q24swb build=29s deploy=47s alias=www.cryptoagg.xyz status=200-ok issue=api-ft-strategies-404-no-env-var
 ### 2026-08-12T14:40:00Z [vercel-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=ft-strategy-ui-deploy-2 url=frontend-4rp3zasqb build=36s deploy=52s fix=next.config-rewrite-+-vercel-env-NEXT_PUBLIC_API_BASE=https://hapi.cryptoagg.xyz alias=www.cryptoagg.xyz status=200-ok
 ### 2026-08-12T14:42:00Z [vercel-deploy] loop=1 candidates=0 cost=0.00 outcome=success scope=vercel-alias-update alias=www.cryptoagg.xyz target=frontend-4rp3zasqb-gyc567s-projects.vercel.app verify=https://www.cryptoagg.xyz/ft-strategy-200
+### 2026-08-12T23:04:00Z [binance-cli-phase1] loop=1 candidates=0 cost=0.00 outcome=success scope=loop-12-phase1-impl files=10-new+3-modified tests=35-passed full-suite=2226/6-skipped readiness=100-L3 source_mutex=exempt-binance_market verifies=mark-price-oi-funding-history-all-ok-from-real-cli-v1.3.0 pushed=59be613
+### 2026-08-12T23:08:00Z [code-health-audit] loop=1 candidates=0 cost=0.00 outcome=success scope=binance-cli-installation-verify binance_cli=installed-v1.3.0 npm_path=/Users/jie/.hermes/node/bin/binance-cli latency_p50=720ms-vs-direct-rest-400ms-diff-320ms extra_capability=open-interest
 ```
 | Value | Meaning |
