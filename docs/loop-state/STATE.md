@@ -14,6 +14,23 @@
   - 验证：https://www.cryptoagg.xyz/ → 200，标题 "CryptoAgg - Agent 化加密货币交易策略"
   - 详见 `docs/plans/vercel-frontend-deploy.md`
 
+- [x] 2026-08-12: **RSI strategy optimization — deployed.**
+  - Problem: 0% win rate on 500-candle (83-day) window due to range-bound
+    BTC market (May-Aug 2026 bull-phase exhaustion). Expanded to 180-day
+    (1080 candles) to cover Feb-Aug 2026 including the correction.
+  - Root cause of 0% win rate: EMA200 exit was too slow for the
+    range-bound market. A +2.05R winner was given back because price
+    flipped EMA200 ~28 bars later.
+  - **Best result** (180d 4H BTCUSDT, pullback zone, partial=True):
+    - `am=1.0 rr=1.0 exit_ema=ema200`: **9 trades, 44% win, avgR=+0.08, PF=1.19**
+    - `am=1.5 rr=2.0 exit_ema=ema200`: 5 trades, 40% win, avgR=+0.48, PF=2.54
+  - **New `exit_ema` parameter**: Literal["ema200", "ema50"], default ema200.
+    Users choose conservative (ema200, fewer signals) vs aggressive (ema50,
+    more signals, lower win rate). Threaded through run_backtest → _simulate_one.
+  - Files: rsi_trend_backtest.py (+exit_ema, clean rewrite),
+    rsi_trend_schemas.py (+exit_ema field), rsi_trend_service.py (pass through)
+  - Verified: 55 RSI+API tests pass, backend health 200, commit `647a48b`
+  - Deployed: PID 1170522 @ 127.0.0.1:5001
 - [ ] 2026-08-12: **从远程仓库同步代码到本地.**
   - 远程 4 个新 commit：`a250027` `a427dc1` `9fe1ea6` `f51db71`
   - 本地变更：freqtrade_dev_mcp submodule 修改 + 临时文件（`.scratch/`）
