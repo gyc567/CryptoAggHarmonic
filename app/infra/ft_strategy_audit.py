@@ -23,10 +23,15 @@ from typing import Any, Iterator
 #: Fixed source value. D-FT-12 invariant — callers cannot override it.
 SOURCE_FT_STRATEGY_UI = "ft_strategy_ui"
 
-#: Resolved audit log path. Re-read at every call so test fixtures that
-#: mutate ``LOOP_STATE_ROOT`` are honored without re-importing this module.
-def _audit_path() -> Path:
-    return Path(os.environ.get("LOOP_STATE_ROOT", ".scratch/loop_state")) / "ft_strategy" / "audit.jsonl"
+#: Default ``$LOOP_STATE_ROOT`` when the env var is unset. Matches
+#: ``app.loop.state.DEFAULT_ROOT`` convention.
+DEFAULT_LOOP_STATE_ROOT = ".scratch/loop_state"
+
+
+def audit_path() -> Path:
+    """Resolved audit log path. Re-read on every call so test fixtures that
+    mutate ``LOOP_STATE_ROOT`` are honored without re-importing this module."""
+    return Path(os.environ.get("LOOP_STATE_ROOT", DEFAULT_LOOP_STATE_ROOT)) / "ft_strategy" / "audit.jsonl"
 
 
 def _now_iso_utc() -> str:
@@ -61,7 +66,7 @@ def append_audit(
             continue
         record[key] = value
 
-    path = _audit_path()
+    path = audit_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
     line = json.dumps(record, ensure_ascii=False, sort_keys=True)
@@ -75,7 +80,7 @@ def append_audit(
 
 def read_audit() -> Iterator[dict[str, Any]]:
     """Yield audit records in append order. Missing file yields nothing."""
-    path = _audit_path()
+    path = audit_path()
     if not path.exists():
         return
     with open(path, "r", encoding="utf-8") as fh:
@@ -85,12 +90,3 @@ def read_audit() -> Iterator[dict[str, Any]]:
                 continue
             yield json.loads(line)
 
-
-#: Re-resolved on every access so test fixtures that mutate
-#: ``LOOP_STATE_ROOT`` are honored without re-importing this module.
-
-
-def __getattr__(name: str) -> Any:
-    if name == "AUDIT_PATH":
-        return _audit_path()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
