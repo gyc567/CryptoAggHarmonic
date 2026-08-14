@@ -86,6 +86,13 @@ class PromotionCandidate:
     has_final_report: bool = False
     open_crash_in_window_days: int = 0  # count of crash verdicts without decided_by in last 7d
 
+    # Shadow mode (ADR-0012 D4 item 7 / D-FT-22 9-item gate):
+    # True iff the 7-day shadow observation window has closed without
+    # anomalies vs the live reference. Default False forces explicit
+    # acknowledgment; deploy route derives this from
+    # [ftstrategy-shadow-01] durable-fact + event_log shadow_end row.
+    shadow_observed: bool = False
+
 
 @dataclass(frozen=True)
 class PromotionContext:
@@ -266,7 +273,16 @@ def check_promotion_v3(
         note="checked against {n} prior KEEP shape(s)".format(n=len(ctx.prior_keep_shapes)),
     ))
 
-    # 7. report_referenced
+    # 7. shadow_observed (ADR-0012 D4 item 7)
+    items.append(PromotionCheckItem(
+        label="shadow_observed",
+        passed=candidate.shadow_observed,
+        observed=bool(candidate.shadow_observed),
+        note="requires 7-day shadow dry-run vs live diff "
+             "([ftstrategy-shadow-01] durable-fact + event_log.shadow_end)",
+    ))
+
+    # 8. report_referenced
     items.append(PromotionCheckItem(
         label="report_referenced",
         passed=candidate.has_final_report,
@@ -275,7 +291,7 @@ def check_promotion_v3(
         note="requires ft_strategy_reports.authoring_state='final'",
     ))
 
-    # 8. no_open_crash_in_window (crash verdicts without decided_by in last 7d)
+    # 9. no_open_crash_in_window (crash verdicts without decided_by in last 7d)
     items.append(PromotionCheckItem(
         label="no_open_crash_in_window",
         passed=candidate.open_crash_in_window_days == 0,

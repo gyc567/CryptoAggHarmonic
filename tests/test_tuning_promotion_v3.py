@@ -43,6 +43,7 @@ def _candidate(
     per_timerange: tuple = (_regime(1.5, 2.0, 0.08),),
     has_final_report: bool = True,
     open_crash_in_window_days: int = 0,
+    shadow_observed: bool = True,
     version: int = 1,
     strategy_id: str = "strat-1",
 ) -> PromotionCandidate:
@@ -58,6 +59,7 @@ def _candidate(
         per_timerange=per_timerange,
         has_final_report=has_final_report,
         open_crash_in_window_days=open_crash_in_window_days,
+        shadow_observed=shadow_observed,
     )
 
 
@@ -67,13 +69,13 @@ def _candidate(
 
 
 class TestHappyPath:
-    def test_all_eight_pass_with_default_ctx(self):
+    def test_all_nine_pass_with_default_ctx(self):
         result = check_promotion_v3(_candidate())
         assert result.ok, [i.label for i in result.failing_items()]
-        assert len(result.items) == 8
+        assert len(result.items) == 9
         assert result.hard_blockers == ()
 
-    def test_passing_result_exposes_all_8_items(self):
+    def test_passing_result_exposes_all_9_items(self):
         result = check_promotion_v3(_candidate())
         labels = [i.label for i in result.items]
         assert labels == [
@@ -83,6 +85,7 @@ class TestHappyPath:
             "profit_floor",
             "min_position_size",
             "not_pareto_dominated",
+            "shadow_observed",
             "report_referenced",
             "no_open_crash_in_window",
         ]
@@ -427,3 +430,65 @@ class TestPerTimerangeResult:
         r = PerTimerangeResult("x", 1.0, 0.1, 1.0)
         with pytest.raises(Exception):
             r.sharpe = 99.0  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Shadow gate (ADR-0012 D4 item 7 / D-FT-22 9-item gate)
+# ---------------------------------------------------------------------------
+
+
+class TestShadowObserved:
+    """v4 9-item gate includes shadow mode (7-day dry-run vs live diff).
+
+    The shadow observation is tracked via the durable-fact
+    ``[ftstrategy-shadow-01]``. The deploy route derives ``shadow_observed``
+    from ``repo.has_shadow_end_event(strategy_id)`` (mirrored into
+    ``.scratch/loop_state/ft_strategy/{id}.tsv`` via event_log).
+    """
+
+    def test_fails_when_shadow_not_observed(self):
+        c = _candidate(shadow_observed=False)
+        result = check_promotion_v3(c)
+        item = next(i for i in result.items if i.label == "shadow_observed")
+        assert not item.passed
+
+    def test_passes_when_shadow_observed(self):
+        c = _candidate(shadow_observed=True)
+        result = check_promotion_v3(c)
+        item = next(i for i in result.items if i.label == "shadow_observed")
+        assert item.passed
+
+    def test_default_candidate_has_shadow_observed_false(self):
+        """Spec: shadow must be explicitly observed before deploy."""
+        c = PromotionCandidate(
+            strategy_id="strat-1",
+            version=1,
+            sharpe=1.5,
+            max_dd=0.08,
+            calmar=2.0,
+            win_rate=0.6,
+            profit_pct=0.10,
+            trades=50,
+        )
+        assert c.shadow_observed is False
+
+    def test_shadow_failure_is_hard_blocker(self):
+        c = _candidate(shadow_observed=False)
+        result = check_promotion_v3(c)
+        assert "shadow_observed" in result.hard_blockers
+        assert not result.ok
+
+    def test_9_items_emitted_including_shadow(self):
+        c = _candidate(shadow_observed=True)
+        result = check_promotion_v3(c)
+        labels = [i.label for i in result.items]
+        assert len(labels) == 9
+        assert "shadow_observed" in labels
+
+    def test_happy_path_requires_shadow_true(self):
+        """Default helper sets shadow_observed=True so existing 9-item happy path still passes."""
+        c = _candidate()
+        assert c.shadow_observed is True
+        result = check_promotion_v3(c)
+        assert result.ok
+        assert len(result.items) == 9
