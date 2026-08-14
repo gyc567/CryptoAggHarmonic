@@ -32,7 +32,7 @@ def isolated_loop_state(tmp_path, monkeypatch):
 
 def test_audit_path_is_under_ft_strategy_subdir(isolated_loop_state):
     """Default audit file is ``<root>/ft_strategy/audit.jsonl``."""
-    assert ft_strategy_audit.AUDIT_PATH == isolated_loop_state / "ft_strategy" / "audit.jsonl"
+    assert ft_strategy_audit.audit_path() == isolated_loop_state / "ft_strategy" / "audit.jsonl"
 
 
 def test_append_creates_parent_directory(tmp_path, monkeypatch):
@@ -50,7 +50,7 @@ def test_append_creates_parent_directory(tmp_path, monkeypatch):
     )
 
     assert (root / "ft_strategy").is_dir()
-    assert ft_strategy_audit.AUDIT_PATH.exists()
+    assert ft_strategy_audit.audit_path().exists()
     assert record["source"] == "ft_strategy_ui"
 
 
@@ -59,7 +59,7 @@ def test_append_writes_one_jsonl_line_per_call(isolated_loop_state):
     ft_strategy_audit.append_audit("refine", "s1", version=2)
     ft_strategy_audit.append_audit("deploy_pr", "s1", version=2, pr_url="x")
 
-    raw = ft_strategy_audit.AUDIT_PATH.read_text(encoding="utf-8")
+    raw = ft_strategy_audit.audit_path().read_text(encoding="utf-8")
     lines = [line for line in raw.splitlines() if line]
     assert len(lines) == 2
 
@@ -72,10 +72,10 @@ def test_append_writes_one_jsonl_line_per_call(isolated_loop_state):
 def test_append_preserves_prior_lines(isolated_loop_state):
     """Append-only: prior records remain readable after subsequent appends."""
     ft_strategy_audit.append_audit("refine", "s1", version=1)
-    first_line = ft_strategy_audit.AUDIT_PATH.read_text(encoding="utf-8").splitlines()[0]
+    first_line = ft_strategy_audit.audit_path().read_text(encoding="utf-8").splitlines()[0]
 
     ft_strategy_audit.append_audit("refine", "s1", version=2)
-    lines = ft_strategy_audit.AUDIT_PATH.read_text(encoding="utf-8").splitlines()
+    lines = ft_strategy_audit.audit_path().read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
     assert lines[0] == first_line
 
@@ -131,7 +131,7 @@ def test_concurrent_appends_do_not_lose_lines(isolated_loop_state):
     t1.start(); t2.start()
     t1.join(); t2.join()
 
-    lines = [json.loads(line) for line in ft_strategy_audit.AUDIT_PATH.read_text().splitlines() if line]
+    lines = [json.loads(line) for line in ft_strategy_audit.audit_path().read_text().splitlines() if line]
     assert len(lines) == 100
     assert {line["source"] for line in lines} == {"ft_strategy_ui"}
 
@@ -162,3 +162,15 @@ def test_append_to_missing_root_uses_default(tmp_path, monkeypatch):
     ft_strategy_audit.append_audit("refine", "s1", version=1)
 
     assert (new_root / "ft_strategy" / "audit.jsonl").exists()
+
+def test_read_audit_skips_blank_lines(isolated_loop_state):
+    """Blank lines in the file (e.g. from partial writes) are skipped,
+    not raised as JSON errors."""
+    ft_strategy_audit.append_audit("refine", "s1", version=1)
+    path = ft_strategy_audit.audit_path()
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write("\n\n   \n")
+
+    records = list(ft_strategy_audit.read_audit())
+    assert len(records) == 1
+    assert records[0]["event_type"] == "refine"
