@@ -50,12 +50,14 @@ def test_freqtrade_strategies_dir_is_symlink() -> None:
     ``freqtrade_dev_mcp/user_data/strategies/`` must be a symlink,
     not a real directory, so the two paths cannot drift.
     """
+    if not FREQ_DIR.exists():
+        pytest.skip(
+            "freqtrade_dev_mcp submodule not checked out; "
+            "symlink invariant can only be verified when the submodule is present"
+        )
     assert FREQ_DIR.is_symlink(), (
         f"expected {FREQ_DIR} to be a symlink, "
         f"but it is a real directory (drift risk)"
-    )
-    assert not FREQ_DIR.is_dir() or FREQ_DIR.is_symlink(), (
-        f"expected {FREQ_DIR} to be a symlink, not a regular directory"
     )
 
 
