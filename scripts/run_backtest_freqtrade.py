@@ -47,12 +47,17 @@ import pandas as pd
 # Project root
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
-FEATHER_DIR = Path("/Users/jie/code/fq-data-downloader/data/binance")
+
+# Feather data directory — set FEATHER_DIR env var or use freqtrade_dev_mcp/user_data/data
+FEATHER_DIR = Path(os.environ.get(
+    "FEATHER_DIR",
+    str(ROOT / "freqtrade_dev_mcp" / "user_data" / "data" / "binance"),
+))
+
 FREQTRADE_ROOT = ROOT / "freqtrade_dev_mcp"
 FREQTRADE_UD = FREQTRADE_ROOT / "user_data"
 STRAT_FILE = FREQTRADE_UD / "strategies" / "trend_rsi_strategy.py"
 STRAT_NAME = "TrendRSI"
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",

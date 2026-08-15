@@ -1,0 +1,47 @@
+fib_tp1: 0.382
+fib_tp2: 0.618
+fib_tp3: 1.272
+extended_patterns: ["butterfly", "crab", "deep butterfly", "deep crab", "deep shark", "shark"]
+htf_rule: {15m: "1h", 1h: "4h", 4h: "1D", 1d: "1W", 1w: "1ME"}
+atr_stop_buffer: {conservative: 1.0, standard: 0.3, aggressive: 0.25}
+atr_prz_sweep: 0.3
+tp_close_pcts: [50, 30, 20]
+fee_rate: 0.001
+slippage_rate: 0.0005
+max_d_age_bars: 20
+max_prz_distance_atr: 3.0
+max_forming_prz_width_atr: 1.0
+authenticity_halve: 40
+authenticity_veto: 25
+adverse_sharpe_threshold: 1.0
+regime_moderate: 35
+regime_high: 60
+target_atr_pct: 2.5
+default_ttl_bars: 40
+funding_confluence_default: 5
+confluence_weights: {price_action: 25, htf_trend: 25, rsi: 15, structure: 15, macd: 10, funding: 10}
+a_grade_min: 70
+a_grade_min_high_quant: 85
+high_quant_position_mult: 0.6
+pattern_base_score: {gartley: 5, bat: 2, butterfly: 0, crab: -3, deep crab: -5, shark: -8}
+stability_window: 5
+min_candles: 60
+atr_window: 14
+atr_long_window: 100
+rsi_window: 14
+volume_ma_window: 20
+swing_lookback: 60
+quant_trap_lookback: 60
+volume_authenticity_window: 60
+quant_regime_window: 100
+per_bar_sharpe_window: 20
+slope_trend_up: 0.5
+slope_trend_down: -0.5
+mult_trending_aligned: 1.0
+mult_ranging_aligned: 1.0
+mult_trending_inverse: 0.6
+mult_ranging_inverse: 0.5
+mult_extreme_inverse: 1.2
+mult_data_short: 0.8
+extreme_deviation_pct: 20.0
+min_daily_bars: 210
