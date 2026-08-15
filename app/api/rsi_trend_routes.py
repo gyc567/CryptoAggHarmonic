@@ -37,7 +37,7 @@ def _reserve_quota(user_id: str):
     """
     if is_local_dev_mode():
         return None
-    reserved, _, ledger_id = reserve_user_quota(user_id, analysis_id=None, units=1)
+    reserved, _, ledger_id = reserve_user_quota(user_id, analysis_id=None, units=1, pool="rsi_backtest")
     if not reserved:
         return False
     return ledger_id

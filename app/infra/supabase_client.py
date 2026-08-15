@@ -491,20 +491,27 @@ def reset_idem_cache() -> None:
         _idem_cache.clear()
 
 
-def reserve_user_quota(user_id: str, analysis_id: str | None, units: int = 1) -> tuple[bool, int, str | None]:
+def reserve_user_quota(
+    user_id: str,
+    analysis_id: str | None,
+    units: int = 1,
+    pool: str = "default",
+) -> tuple[bool, int, str | None]:
     """Reserve daily quota for user.
 
     Args:
         user_id: User UUID.
         analysis_id: Analysis UUID.
         units: Units to reserve.
+        pool: Quota pool — 'default' (LLM analyze) or 'rsi_backtest' (RSI scan/backtest/plan).
+            RSI operations should pass pool='rsi_backtest' to avoid consuming the LLM quota.
 
     Returns:
         (success, remaining, ledger_id)
     """
     try:
         client = get_supabase_client(use_service_role=True)
-        result = _reserve_quota_rpc(client, user_id, analysis_id, units)
+        result = _reserve_quota_rpc(client, user_id, analysis_id, units, pool)
 
         if not result.data:
             return False, 0, None
@@ -513,13 +520,13 @@ def reserve_user_quota(user_id: str, analysis_id: str | None, units: int = 1) ->
         reserved = row.get("reserved", False)
         remaining = row.get("remaining", 0)
 
-        # Get ledger ID — find the most-recently-created 'reserved' row for this user.
-        # analysis_id may be NULL (RSI-trend / vibe routes) so we can't filter on it.
+        # Get ledger ID — find the most-recently-created 'reserved' row for this user+pool.
         ledger_result = (
             client.table("usage_ledger")
             .select("id")
             .eq("user_id", user_id)
             .eq("status", "reserved")
+            .eq("pool", pool)
             .order("created_at", desc=True)
             .limit(1)
             .execute()
@@ -533,16 +540,9 @@ def reserve_user_quota(user_id: str, analysis_id: str | None, units: int = 1) ->
 
 
 def _reserve_quota_rpc(
-    client, user_id: str, analysis_id: str, units: int, retry_on_409: bool = True
-):
-    """Call the reserve_quota RPC. Retries once on PostgreSQL constraint/lock errors.
-
-    postgrest.APIError has no .response attribute — status code is not accessible.
-    PostgreSQL error codes 23xxx = constraint violations (FK, check); 40xxx =
-    transaction rollbacks (advisory lock conflicts). Both can occur when concurrent
-    requests race. Retry once; the outer reserve_user_quota() catches all failures
-    and returns (False, 0, None) so the caller gets a safe 429.
-    """
+    client, user_id: str, analysis_id: str, units: int, pool: str = "default", retry_on_409: bool = True
+) -> Any:
+    """Call the reserve_quota RPC. Retries once on PostgreSQL constraint/lock errors."""
     try:
         return client.rpc(
             "reserve_quota",
@@ -550,17 +550,14 @@ def _reserve_quota_rpc(
                 "p_user_id": user_id,
                 "p_analysis_id": analysis_id,
                 "p_units": units,
+                "p_pool": pool,
             },
         ).execute()
     except Exception as e:
-        # APIError has no .response attribute — inspect the error code string.
-        # PostgreSQL error codes: 23xxx = constraint violations (FK, check, etc.)
-        # These can occur when two concurrent requests race; retry once.
-        # 40xxx = transaction rollback (advisory lock conflicts, serialization).
         code = str(getattr(e, "code", "") or "")
         if retry_on_409 and len(code) >= 2 and code[:2] in ("23", "40"):
             logger.warning("reserve_quota RPC got PostgreSQL %s error, retrying once: %s", code, e)
-            return _reserve_quota_rpc(client, user_id, analysis_id, units, retry_on_409=False)
+            return _reserve_quota_rpc(client, user_id, analysis_id, units, pool, retry_on_409=False)
         raise
 
 

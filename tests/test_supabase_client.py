@@ -309,7 +309,7 @@ class TestQuotaFunctions:
         # Ledger lookup: user_id + status + created_at DESC (no analysis_id filter)
         mock_ledger_result = MagicMock()
         mock_ledger_result.data = [{"id": "ledger-123"}]
-        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = (
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = (
             mock_ledger_result
         )
 
@@ -348,7 +348,7 @@ class TestQuotaFunctions:
         # Ledger lookup: no analysis_id filter when analysis_id is None
         mock_ledger_result = MagicMock()
         mock_ledger_result.data = [{"id": "ledger-null-456"}]
-        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = (
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = (
             mock_ledger_result
         )
 
@@ -376,7 +376,7 @@ class TestQuotaFunctions:
         mock_client.rpc.return_value.execute.side_effect = execute_effect
         mock_ledger_result = MagicMock()
         mock_ledger_result.data = [{"id": "ledger-retry-789"}]
-        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = mock_ledger_result
+        mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = mock_ledger_result
         mock_get_client.return_value = mock_client
 
         success, remaining, ledger_id = reserve_user_quota("user-retry", "analysis-retry", 1)
