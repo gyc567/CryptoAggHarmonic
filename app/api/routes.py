@@ -23,6 +23,7 @@ from app.api.auth import check_quota, is_local_dev_mode, require_auth
 from app.api.errors import AppError
 from app.api.responses import error as _error
 from app.api.validation import parse_request
+from app.api.rate_limit import get_limiter
 from app.domain.enums import AnalysisType, ErrorCode, Interval, Market
 from app.domain.schemas import (
     AnalyzeRequest,
@@ -90,6 +91,7 @@ def get_markets():
 
 @api_bp.route("/api/analyze", methods=["POST"])
 @require_auth
+@get_limiter().limit("analyze")
 def analyze(user):
     """Structured analysis endpoint with auth and quota."""
     user_id = user.get("id")

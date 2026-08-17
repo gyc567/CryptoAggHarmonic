@@ -7,10 +7,6 @@ Output is a dict consumable by ``mcp_client.invoke_tool()`` — NOT a
 file, since OKX MCP tools take JSON args directly. ClOrdId is
 mandatory and must be unique per candidate (nonce, ADR-0011 M4).
 
-   — minimal signal representation
-  - ``OKXOrderParams``   — translated spot order params
-  - ``translate(signal, mode) -> OKXOrderParams``
-
 Phase 2 will add ``translate_swap`` / ``translate_futures`` (gated
 by ``OKX_ALLOW_LIVE=1`` + checklist).
 """
@@ -18,27 +14,13 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Literal, assert_never
+from typing import Literal
+
+from app.domain.signal_schemas import HarmonicSignal, Mode
 
 # OKX default instrument format. Examples: "BTC-USDT", "ETH-USDT".
 # spot module requires this exact format.
 INSTRUMENT_SPOT = "BTC-USDT"  # overwritten by translator
-
-Mode = Literal["pattern", "indicator", "regime"]
-
-
-@dataclass
-class HarmonicSignal:
-    """Minimal signal representation consumed by the OKX translator."""
-
-    pattern_type: str  # e.g. "Gartley", "Bat", "Butterfly"
-    entry_price: float | None
-    exit_price: float | None
-    stop_loss: float | None
-    zrpc_price: float | None  # Potential Reversal Zone price
-    confidence: float  # 0.0–1.0
-    regime: str | None  # e.g. "bullish", "bearish", "ranging"
-    instrument: str = INSTRUMENT_SPOT  # OKX instrument id
 
 
 @dataclass
@@ -79,7 +61,7 @@ def translate(signal: HarmonicSignal, mode: Mode = "pattern") -> OKXOrderParams:
         return _translate_indicator(signal)
     if mode == "regime":
         return _translate_regime(signal)
-    assert_never(mode)
+    raise ValueError(f"Unknown mode: {mode!r}")
 
 
 def _translate_pattern(signal: HarmonicSignal) -> OKXOrderParams:

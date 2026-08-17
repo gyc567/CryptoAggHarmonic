@@ -179,6 +179,12 @@ extend-ignore = ["S101", "S104", "S301"]
 [tool.ruff.lint.isort]
 known-first-party = ["app", "tests"]
 
+[tool.mutmut]
+source_paths = ["app"]
+require_test_setup = []
+runner = "python -m pytest"
+keep = true
+
 [tool.black]
 line-length = 132
 target-version = ["py311"]

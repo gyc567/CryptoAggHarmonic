@@ -17,23 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from app.domain.signal_schemas import HarmonicSignal, Mode
+
 STRATEGY_DIR = Path(".scratch/loop_state/freqtrade/strategies")
 STRATEGY_DIR.mkdir(parents=True, exist_ok=True)
-
-Mode = Literal["pattern", "indicator", "regime"]
-
-
-@dataclass
-class HarmonicSignal:
-    """Minimal signal representation consumed by the translator."""
-
-    pattern_type: str  # e.g. "Gartley", "Bat", "Butterfly"
-    entry_price: float | None
-    exit_price: float | None
-    stop_loss: float | None
-    zrpc_price: float | None  # Potential Reversal Zone price
-    confidence: float  # 0.0–1.0
-    regime: str | None  # e.g. "bullish", "bearish", "ranging"
 
 
 @dataclass

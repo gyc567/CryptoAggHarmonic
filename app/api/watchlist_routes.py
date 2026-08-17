@@ -148,7 +148,7 @@ def _is_admin(user: dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-_MAX_QUOTE_SYMBOLS = 100
+_MAX_QUOTE_SYMBOLS = 10
 
 
 @watchlist_bp.route("/markets/futures/quote", methods=["GET"])
