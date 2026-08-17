@@ -10,12 +10,15 @@ Call ``get_llm_client()`` to get the lazily-initialized singleton.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 # Module-level constants read from environment on first call to get_llm_client().
 _api_key: str | None = None
@@ -27,14 +30,23 @@ _client_lock = threading.Lock()
 
 
 def _ensure_env() -> None:
-    """Ensure environment variables are loaded. Idempotent."""
+    """Ensure environment variables are loaded. Idempotent.
+
+    Raises:
+        EnvironmentError: If OPENAI_API_KEY is not set.
+    """
     global _api_key, _api_base_url, _request_timeout
     if _api_key is None:
         # Import dotenv lazily to avoid polluting module namespace.
         from dotenv import load_dotenv
 
         load_dotenv()
-        _api_key = os.getenv("OPENAI_API_KEY") or "dummy-key-for-testing"
+        _api_key = os.getenv("OPENAI_API_KEY")
+        if not _api_key:
+            raise EnvironmentError(
+                "OPENAI_API_KEY environment variable is required. "
+                "Set it in your .env file or system environment."
+            )
         _api_base_url = os.getenv("OPENAI_API_BASE_URL")
         _request_timeout = int(os.getenv("OPENAI_REQUEST_TIMEOUT", "60"))
 
