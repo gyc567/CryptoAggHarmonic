@@ -107,7 +107,8 @@ class NotificationPrefsStore:
     def get_prefs(self, user_id: str) -> NotificationPrefs | None:
         """Return prefs for a user, or None if not configured."""
         if self._use_memory():
-            raw = _MEMORY_DB.get(user_id)
+            with _MEMORY_LOCK:
+                raw = _MEMORY_DB.get(user_id)
             return _dict_to_prefs(raw) if raw else None
 
         # Try Supabase first
@@ -179,7 +180,8 @@ class NotificationPrefsStore:
         }
 
         if self._use_memory():
-            _MEMORY_DB[user_id] = payload
+            with _MEMORY_LOCK:
+                _MEMORY_DB[user_id] = payload
             return _dict_to_prefs(payload)
 
         try:

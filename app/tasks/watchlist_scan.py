@@ -140,8 +140,13 @@ def scan_symbol(
     rr_ratio    = _compute_rr(entry_price, stop_price, target_1)
 
     # ── Step 5: Grade ──────────────────────────────────────────────
+    # P0 fix: defensively coerce pattern_score to float; None would cause TypeError
+    pattern_score_val = candidate.get("pattern_score")
+    if not isinstance(pattern_score_val, (int, float)) or pattern_score_val <= 0:
+        pattern_score_val = 0.5  # safe default when engine returns nothing
+
     grade_result = grade_signal(
-        pattern_score=candidate.get("pattern_score", 0.5),
+        pattern_score=float(pattern_score_val),
         rsi_divergence=rsi_div,
         volume_confirm=vol_confirm,
         regime_result=regime_result,
@@ -479,15 +484,26 @@ def _log_scan(user_id: str, symbol: str, result: ScanResult, is_sent: bool) -> N
 def _acquire_scan_lock(user_id: str, interval_hours: int) -> bool:
     """Acquire a short-lived Redis lock to prevent concurrent scans of the same user.
 
-    Returns True if lock acquired (or Redis unavailable).
+    Returns True if lock acquired (or Redis unavailable — fail-open to avoid
+    blocking the scan, but logs a warning so ops can monitor lock failures).
     """
     try:
         from app.infra.redis_client import get_redis_client
         redis = get_redis_client()
         if redis is None:
+            # P1 fix: Redis unavailable — fail-open but warn so ops is aware
+            logger.warning(
+                "Redis unavailable for scan lock — concurrent scan possible for user=%s",
+                user_id,
+            )
             return True
         key = f"scan_lock:{user_id}:{interval_hours}h"
         acquired = redis.set(key, "1", ex=LOCK_TTL_SECONDS, nx=True)
         return bool(acquired)
-    except Exception:
-        return True  # fail-open: allow scan if Redis is unavailable
+    except Exception as exc:
+        # P1 fix: log as error (not silently swallow), but still fail-open
+        logger.error(
+            "Scan lock acquisition failed for user=%s: %s — allowing scan (fail-open)",
+            user_id, exc,
+        )
+        return True  # fail-open to avoid blocking the entire scan run

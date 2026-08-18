@@ -9,6 +9,7 @@ Provides:
 
 from __future__ import annotations
 
+import re
 import logging
 import os
 from dataclasses import dataclass
@@ -18,6 +19,9 @@ from typing import Literal
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# P1 fix: validate symbol format before using in API URL
+_VALID_SYMBOL = re.compile(r"^[A-Z]{2,10}USDT?$")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -198,6 +202,10 @@ def is_event_clear(symbol: str, bars: pd.DataFrame | None = None) -> tuple[bool,
 
 def _fetch_4h_bars(symbol: str, limit: int = 100) -> pd.DataFrame:
     """Fetch 4H OHLCV bars from Binance public API (no auth required)."""
+    # P1 fix: validate symbol format to prevent injection
+    if not _VALID_SYMBOL.match(symbol):
+        logger.warning("Invalid symbol format rejected: %s", symbol)
+        return pd.DataFrame()
     try:
         import httpx
         url = (
