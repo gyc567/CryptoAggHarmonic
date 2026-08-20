@@ -385,9 +385,13 @@
 ### [ftstrategy-baseline-01] — FT Strategy UI baseline (pre-strategy-track)
 - **Created**: 2026-08-12
 - **Source**: `docs/plans/ft-strategy-ui-integration.md` v3 + `docs/adr/0012-ft-strategy-ui-integration.md` Phase 0
-- **Content**: Loop #13 (FT Strategy UI Loop) registered at `docs/loop-state/FT-STRATEGY-LOOP.md`. Worker schema 7 tables + events.tsv (`results.tsv` mirror) + `audit.jsonl` written. **Frequency TBD** — must be filled by human AFTER the first real backtest run (post Phase 5); placeholder values:
-  - `baseline_drawdown`: _TBD_ (real freqtrade backtest required per `[freqtrade-baseline-01]`)
-  - `baseline_calmar`: _TBD_
+- **Content**: Loop #13 (FT Strategy UI Loop) registered at `docs/loop-state/FT-STRATEGY-LOOP.md`. Worker schema 7 tables + events.tsv (`results.tsv` mirror) + `audit.jsonl` written. **Filled from real Mode A backtest** (`scripts/run_backtest_freqtrade.py --mode local --symbol BTC_USDT --interval 1h --strategy-params rsi_zone=pullback,atr_mult=1.5`):
+  - `baseline_drawdown`: **2.00 R** (Max Drawdown from local backtest)
+  - `baseline_calmar`: _TBD_ (requires freqtrade hyperopt --realcf for Calmar ratio)
+  - `baseline_win_rate`: **66.7%** (4 wins / 6 trades)
+  - `baseline_avg_r`: **+0.70 R**
+  - `baseline_profit_factor`: **3.09**
+  - `baseline_total_r`: **+4.19 R** (9 signals, 6 trades)
   - `profit_floor`: 0.05 (conservative default; calibratable in Phase 6 alongside maker_checker)
   - `STAGNATION_ROUNDS`: 3 (Auto-Quant V1 `program.md` §"Stagnation rule")
   - `RESEARCH_MD_MIN_LENGTH`: 200 (clarify-first, D-FT-21)
