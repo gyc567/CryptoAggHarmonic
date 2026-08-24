@@ -368,5 +368,82 @@
   - `loop doctor` / `loop gate check` / `loop audit` 全部 OK (100/100 L3)
   - **Remaining**: RQ live worker 真 MCP 调用 / `[ftstrategy-baseline-01]`/`[ftstrategy-shadow-01]` 频段值 / deploy_pr 真 PR
 
+### 2026-08-24 (audit-driven P0/P1 hardening + deploy gate wiring)
+
+- **Audit P0/P1 hardening — 8 findings fixed.**
+  - **Vibe 500** (`app/services/vibe/llm/client.py`): missing imports for `ErrorCode` /
+    `verify_user_token` / `reserve_user_quota` → 500 with valid token. Fixed by
+    lazy imports + surface `ErrorCode`/`verify_user_token` constants. Now 4xx
+    with proper error code instead of 500.
+  - **gunicorn auth** (`scripts/run_gunicorn.sh`): removed `DISABLE_AUTH=1` default
+    from production gunicorn.conf; opt-in only via env var. Auth required by default.
+  - **FT IDOR** (`app/api/ft_strategy_routes.py`): cross-user `strategy_id` → 404
+    (not 403) to avoid leaking strategy existence. Verified via ownership tests.
+  - **FT repo factory** (`app/factory.py`): default `FtStrategyRepo` no longer
+    raises `NotImplementedError`; SQLite fallback for dev mode.
+  - **Hyperopt** (`tests/services/ft_protocol/test_freqtrade_hyperopt.py` + new
+    `test_buy_atr_mult_filters_low_volatility_bars`): verifies the
+    `buy_atr_mult` THRESHOLD actually filters low-vol bars, not just the column
+    presence.
+  - **Translator stubs**: zero-frequency detector + TP/SL price-level filler
+    (was stubbed, now functional).
+  - **Backtest cost model**: `BacktestConfig` opt-in (zero default), explicit
+    `fee_pct` + `funding_pct` + `slippage_pct` → realistic r-multiples
+    (zero-cost r=4.0 → with-costs r=3.83, fees=0.23, funding=0.10).
+  - **Low-sample flag**: `is_low_sample` exposed in result JSON when
+    `trades < MIN_TRADES` (30).
+  - **Defensive fallback**: `populate_entry_trend` now computes
+    `atr_min_pct`/`atr_pct` locally if columns missing (avoids KeyError when
+    called without `populate_indicators` first).
+  - Commit `10ffebc` (17 files, +763/-97, 60 new tests).
+
+- **Real platform bug discovered during validation — deploy gate `shadow_observed` wiring gap.**
+  - **Symptom**: `TestDeploy::test_passed_gate_marks_pending_review` expects 200
+    but gets 422. Gate silently blocks every deploy even after a clean 7-day
+    shadow window.
+  - **Root cause**: commit `c89d0ad` added `shadow_observed` as the 9th v3
+    multi-objective gate item. `PromotionCandidate.shadow_observed` existed and
+    `check_promotion_v3` checked it, but `deploy_one` never populated it → always
+    defaulted to `False` → gate always failed.
+  - **Fix (commit `65d07b4`)**:
+    - `FtStrategyRepo.has_shadow_observation(strategy_id) -> bool` — new method,
+      queries `ft_strategy_events` for `event='shadow_end'` rows.
+    - Wired `shadow_observed=repo.has_shadow_observation(strategy_id)` in deploy
+      route.
+    - Stale docstring fixed ("8-item v3 gate" → "9-item v3 gate").
+    - 6 new tests: 4 unit (`TestRepoShadowObservation`) + 2 acceptance/edge
+      (`test_missing_shadow_end_blocks_deploy`,
+      `test_shadow_start_alone_does_not_unblock_deploy`).
+    - End-to-end smoke verified: day-0/day-3/day-8 orchestrator lifecycle
+      correctly drives the gate; cross-strategy isolation confirmed.
+
+- **Docstring cleanup — gate 8-item → 9-item consistency.**
+  - 3 stale "8-item" references after `c89d0ad`: module docstring +
+    `check_promotion_v3` docstring + `durable-facts.md:457`.
+  - All updated. No code/behavior change.
+  - Commit `2318810`.
+
+- **Test infrastructure — `tests/services/freqtrade` shadow dir fixed.**
+  - Symptom: full-suite pytest collection crashed with
+    `ModuleNotFoundError: No module named 'freqtrade.strategy'`.
+  - Root cause: `tests/services/freqtrade/__init__.py` shadowed the real
+    `freqtrade` package on `sys.path` during recursive collection.
+  - Fix (commit `10ffebc`): `git mv tests/services/freqtrade tests/services/ft_protocol`
+    + one docstring cross-ref update. Root-cause fix, not a conftest workaround.
+
+- **Validation summary**
+  - 3-way failure diff vs `c89d0ad`:
+    - HEAD (`c89d0ad`): 21 failures (all pre-existing infra/upstream)
+    - +`10ffebc` + `65d07b4` + `2318810`: 20 failures (deploy test now passes)
+    - All 20 remaining: pre-existing (11 binance geo-451, 3 binance cli, 1 502,
+      2 postgrest missing dep, 3 binance interval variants)
+  - 2333 tests pass (up from 2326 pre-audit)
+  - 67 new audit tests pass, 0 regressions
+
+- **Loop Readiness Score**: pending re-audit after push
+- **pytest**: 2333 passed, 20 pre-existing infra failures (identical to baseline)
+- **Ahead of origin/main**: 4 commits (`2318810`, `65d07b4`, `10ffebc`, + audit diff in 1 file)
+- **Status**: Clean — push pending
+
 _Maintained by: `.github/workflows/daily-triage.yml`_
 _See also: `docs/loop-state/LOOP.md`_
