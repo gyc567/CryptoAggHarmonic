@@ -416,7 +416,7 @@ def backtest_report(strategy_id: str, **kwargs):
 @ft_strategy_bp.post("/ft-strategies/<strategy_id>/deploy")
 @require_auth
 def deploy_one(strategy_id: str, **kwargs):
-    """D-FT-09/10/22: 8-item v3 gate + shadow mode + final report + crash closure.
+    """D-FT-09/10/22: 9-item v3 gate + shadow mode + final report + crash closure.
 
     Returns 422 with checklist when ANY gate fails; otherwise enqueues
     deploy PR creation. UI never directly modifies app/config/tuning.py.
@@ -442,6 +442,9 @@ def deploy_one(strategy_id: str, **kwargs):
         per_timerange=_coerce_per_timerange(latest.get("per_timerange", []) or []),
         has_final_report=has_final,
         open_crash_in_window_days=open_crashes,
+        # D-FT-22 9-item gate item 7: shadow observation closes the 7-day window
+        # via ``shadow_end`` event in the event_log (recorded by the orchestrator).
+        shadow_observed=repo.has_shadow_observation(strategy_id),
     )
     result = check_promotion_v3(candidate)
     if not result.ok:

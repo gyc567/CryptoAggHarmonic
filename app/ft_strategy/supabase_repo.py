@@ -563,6 +563,24 @@ class FtStrategyRepo:
                 break
         return count
 
+    def has_shadow_observation(self, strategy_id: str) -> bool:
+        """True iff a ``shadow_end`` event has been recorded for this strategy.
+
+        Used by the v3 promotion gate (D-FT-22 9-item, item 7 ``shadow_observed``).
+        A shadow observation is only "observed" once the 7-day shadow window has
+        closed without anomalies — i.e. the operator has emitted a ``shadow_end``
+        event via ``record_event(...)`` (typically the orchestrator on day 8).
+        """
+        cur = self.conn.execute(
+            """
+            SELECT 1 FROM ft_strategy_events
+             WHERE strategy_id = ? AND event = 'shadow_end'
+             LIMIT 1
+            """,
+            (strategy_id,),
+        )
+        return cur.fetchone() is not None
+
     def reset_stagnation(self, strategy_id: str) -> None:
         self.conn.execute(
             "UPDATE ft_strategies SET stagnation_count = 0 WHERE id = ?",

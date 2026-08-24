@@ -358,7 +358,7 @@ class TestDeploy:
             research_md=_good_brief(), idea_payload={},
         )
         repo.update_status(s.id, "analyzed")
-        # Provide metrics that pass all 8 items
+        # Provide metrics that pass all 9 gate items
         repo.update_latest_result(
             s.id,
             {
@@ -374,6 +374,10 @@ class TestDeploy:
         )
         r = repo.create_report(strategy_id=s.id, version=1, report_json={})
         repo.publish_report(r.id, "Sharpe 1.94 holds across all four regimes tested")
+        # D-FT-22 item 7: shadow_end event must be recorded before deploy can
+        # pass the gate. The orchestrator emits this on day 8 after a clean
+        # 7-day shadow window.
+        repo.record_event(strategy_id=s.id, event="shadow_end")
         r = client.post(
             f"/api/ft-strategies/{s.id}/deploy",
             headers=_auth_headers(),
@@ -381,6 +385,90 @@ class TestDeploy:
         assert r.status_code == 200
         body = r.get_json()["data"]
         assert body["status"] == "pending_review"
+
+    def test_missing_shadow_end_blocks_deploy(self, client, repo):
+        """Acceptance behavior: deploy is blocked when shadow_end is absent.
+
+        This is the gating counterpart to ``test_passed_gate_marks_pending_review``:
+        even when all numeric gates pass and the final report exists, deploy
+        must still be blocked until the 7-day shadow window has closed and the
+        orchestrator has emitted ``shadow_end``. Without the wiring fix in
+        commit ``8991b3d``, this gate would silently pass (shadow_observed
+        defaulted to False via dataclass but wasn't checked because it was
+        never wired in).
+        """
+        from app.ft_strategy.supabase_repo import FtStrategyRepo
+        s = repo.create_strategy(
+            user_id="local-dev-user", name="S1",
+            research_md=_good_brief(), idea_payload={},
+        )
+        repo.update_status(s.id, "analyzed")
+        repo.update_latest_result(
+            s.id,
+            {
+                "sharpe": 1.5, "max_dd": 0.05, "calmar": 2.0,
+                "win_rate": 0.6, "profit_pct": 0.20, "trades": 100,
+                "per_timerange": [
+                    {"regime": "bull", "sharpe": 1.5, "max_dd": 0.04, "calmar": 2.5},
+                    {"regime": "winter", "sharpe": 0.5, "max_dd": 0.10, "calmar": 1.5},
+                    {"regime": "recovery", "sharpe": 1.0, "max_dd": 0.06, "calmar": 2.0},
+                    {"regime": "full_5y", "sharpe": 1.94, "max_dd": 0.078, "calmar": 2.1},
+                ],
+            },
+        )
+        r = repo.create_report(strategy_id=s.id, version=1, report_json={})
+        repo.publish_report(r.id, "Sharpe 1.94 holds across all four regimes tested")
+        # Intentionally do NOT record shadow_end. Deploy must fail.
+        r = client.post(
+            f"/api/ft-strategies/{s.id}/deploy",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 422
+        body = r.get_json()["data"]
+        assert body["error"] == "promotion_gate_failed"
+        failed_labels = {item["label"] for item in body["items"] if not item["passed"]}
+        assert "shadow_observed" in failed_labels, (
+            "shadow_observed must be a failing gate item — proves the wiring "
+            "is consulting has_shadow_observation() (commit 8991b3d), not "
+            "silently defaulting to True."
+        )
+
+    def test_shadow_start_alone_does_not_unblock_deploy(self, client, repo):
+        """Edge case: shadow_start emitted but shadow_end not yet — still blocked.
+
+        Mirrors the orchestrator's day-0 (window opens) vs day-8 (window closes)
+        distinction. Only ``shadow_end`` proves the 7-day window has elapsed
+        without anomalies.
+        """
+        s = repo.create_strategy(
+            user_id="local-dev-user", name="S1",
+            research_md=_good_brief(), idea_payload={},
+        )
+        repo.update_status(s.id, "analyzed")
+        repo.update_latest_result(
+            s.id,
+            {
+                "sharpe": 1.5, "max_dd": 0.05, "calmar": 2.0,
+                "win_rate": 0.6, "profit_pct": 0.20, "trades": 100,
+                "per_timerange": [
+                    {"regime": "bull", "sharpe": 1.5, "max_dd": 0.04, "calmar": 2.5},
+                    {"regime": "winter", "sharpe": 0.5, "max_dd": 0.10, "calmar": 1.5},
+                    {"regime": "recovery", "sharpe": 1.0, "max_dd": 0.06, "calmar": 2.0},
+                    {"regime": "full_5y", "sharpe": 1.94, "max_dd": 0.078, "calmar": 2.1},
+                ],
+            },
+        )
+        r = repo.create_report(strategy_id=s.id, version=1, report_json={})
+        repo.publish_report(r.id, "Sharpe 1.94 holds across all four regimes tested")
+        # Day-0 of shadow window — orchestrator only emitted shadow_start.
+        repo.record_event(strategy_id=s.id, event="shadow_start")
+        r = client.post(
+            f"/api/ft-strategies/{s.id}/deploy",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 422
+        failed_labels = {item["label"] for item in r.get_json()["data"]["items"] if not item["passed"]}
+        assert "shadow_observed" in failed_labels
 
     def test_unknown_strategy_returns_404(self, client, repo):
         r = client.post(
@@ -393,6 +481,56 @@ class TestDeploy:
 # ---------------------------------------------------------------------------
 # Jobs / History / BacktestReport / Preflight
 # ---------------------------------------------------------------------------
+
+
+class TestRepoShadowObservation:
+    """Direct unit tests for ``FtStrategyRepo.has_shadow_observation``.
+
+    The deploy gate's ``shadow_observed`` flag (D-FT-22 item 7) is wired
+    through this method. These tests pin the SQL contract independently of
+    the HTTP layer so a future migration / schema change cannot silently
+    break promotion.
+    """
+
+    def test_no_events_returns_false(self, repo):
+        s = repo.create_strategy(
+            user_id="local-dev-user", name="S1",
+            research_md=_good_brief(), idea_payload={},
+        )
+        assert repo.has_shadow_observation(s.id) is False
+
+    def test_other_events_do_not_count(self, repo):
+        s = repo.create_strategy(
+            user_id="local-dev-user", name="S1",
+            research_md=_good_brief(), idea_payload={},
+        )
+        # Non-shadow events must NOT promote the flag to True
+        for ev in ("shadow_start", "stable", "stable", "fork"):
+            repo.record_event(strategy_id=s.id, event=ev)
+        assert repo.has_shadow_observation(s.id) is False
+
+    def test_shadow_end_makes_true(self, repo):
+        s = repo.create_strategy(
+            user_id="local-dev-user", name="S1",
+            research_md=_good_brief(), idea_payload={},
+        )
+        repo.record_event(strategy_id=s.id, event="shadow_start")
+        repo.record_event(strategy_id=s.id, event="stable")
+        repo.record_event(strategy_id=s.id, event="shadow_end")
+        assert repo.has_shadow_observation(s.id) is True
+
+    def test_shadow_end_scoped_per_strategy(self, repo):
+        a = repo.create_strategy(
+            user_id="local-dev-user", name="A",
+            research_md=_good_brief(), idea_payload={},
+        )
+        b = repo.create_strategy(
+            user_id="local-dev-user", name="B",
+            research_md=_good_brief(), idea_payload={},
+        )
+        repo.record_event(strategy_id=a.id, event="shadow_end")
+        assert repo.has_shadow_observation(a.id) is True
+        assert repo.has_shadow_observation(b.id) is False
 
 
 class TestMisc:
