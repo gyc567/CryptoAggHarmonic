@@ -147,6 +147,7 @@ def send_message(user, session_id):
             return _error("QUOTA_EXCEEDED", "每日额度已用完", status=429, retryable=False)
 
     # Create run record.
+    run_id = str(uuid.uuid4())
     run_record = {
         "id": run_id,
         "session_id": session_id,

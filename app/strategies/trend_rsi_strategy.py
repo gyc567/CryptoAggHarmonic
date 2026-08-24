@@ -68,6 +68,16 @@ class TrendRSI(IStrategy):
     # Hyperopt will tune this via the stoploss space.
     stoploss: float = -0.03
 
+    # Trailing stop wiring — controlled by ``sell_trailing_stop`` (a
+    # BooleanParameter that was previously declared but never read; see
+    # audit T5). When True, freqtrade's built-in trailing mechanism engages
+    # with a positive_offset / trailing_stop_positive of 0.5x the stoploss
+    # distance. When False, exits stay fully under custom_stoploss /
+    # custom_exit control.
+    trailing_stop: bool = False
+    trailing_stop_positive: float = 0.015
+    trailing_stop_positive_offset: float = 0.03
+
     # ── Hyperoptable buy-space parameters ────────────────────────────────
     # (prefix buy_ / enter_ → "buy" space)
     buy_atr_mult: DecimalParameter = DecimalParameter(
@@ -119,6 +129,13 @@ class TrendRSI(IStrategy):
 
         # ── ATR ──────────────────────────────────────────────────────────
         dataframe["atr"] = ta.ATR(dataframe, timeperiod=self.atr_window)
+        # ATR normalised by close — used as a volatility filter so we don't
+        # enter when the market is dead. ``buy_atr_mult`` is a hyperopt space
+        # that scales the minimum-volatility threshold (default mult=1.0 →
+        # 0.5% min ATR/close). Previously the param was declared but never
+        # read — see audit T5.
+        dataframe["atr_pct"] = dataframe["atr"] / dataframe["close"]
+        dataframe["atr_min_pct"] = 0.005 * float(self.buy_atr_mult.value)
 
         # ── EMAs ────────────────────────────────────────────────────────
         dataframe["ema200"] = ta.EMA(dataframe, timeperiod=self.ema_trend_span)
@@ -152,10 +169,26 @@ class TrendRSI(IStrategy):
 
         use_ema50 = self.sell_use_ema50.value
 
+        # ``atr_min_pct`` is normally added by ``populate_indicators`` (which
+        # freqtrade always calls first). Compute it locally as a defensive
+        # fallback so unit tests or alternative callers that bypass
+        # ``populate_indicators`` still work.
+        if "atr_min_pct" in dataframe.columns:
+            atr_min_pct = float(dataframe["atr_min_pct"].iloc[0]) if len(dataframe) else 0.0
+        else:
+            atr_min_pct = 0.005 * self.buy_atr_mult.value
+        if "atr_pct" not in dataframe.columns:
+            dataframe["atr_pct"] = (
+                dataframe["atr"] / dataframe["close"]
+                if "atr" in dataframe.columns
+                else 0.0
+            )
+
         # ── Long conditions ─────────────────────────────────────────────
         long_cond = (
             (dataframe["close"] > dataframe["ema200"])
             & dataframe["rsi_cross_up"]
+            & (dataframe["atr_pct"] >= atr_min_pct)
             & ((not use_ema50) | (dataframe["close"] > dataframe["ema50"]))
             & (
                 (not self.require_candle_color)
@@ -168,6 +201,7 @@ class TrendRSI(IStrategy):
         short_cond = (
             (dataframe["close"] < dataframe["ema200"])
             & dataframe["rsi_cross_down"]
+            & (dataframe["atr_pct"] >= atr_min_pct)
             & ((not use_ema50) | (dataframe["close"] < dataframe["ema50"]))
             & (dataframe["rsi_prev"] >= self.buy_short_rsi_min.value)
             & (dataframe["volume"] > 0)
@@ -291,4 +325,10 @@ class TrendRSI(IStrategy):
     def bot_loop_start(
         self, current_time: datetime.datetime, **kwargs
     ) -> None:
+        # Sync ``trailing_stop`` to the hyperopt space. freqtrade reads
+        # ``self.trailing_stop`` once per loop tick; rebinding it here is the
+        # supported way to make a BooleanParameter drive the trailing
+        # mechanism. ``sell_trailing_stop`` was declared but never read —
+        # see audit T5.
+        self.trailing_stop = bool(self.sell_trailing_stop.value)
         return

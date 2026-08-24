@@ -71,10 +71,33 @@ ft_strategy_bp = Blueprint("ft_strategy", __name__, url_prefix="/api")
 
 
 def _default_repo_factory() -> FtStrategyRepo:
-    raise NotImplementedError(
-        "Production repo factory is wired in app.api.routes via "
-        "set_repo_factory — never call this directly."
+    """Default repo factory — opens a sqlite DB at ``$FT_STRATEGY_DB_PATH``.
+
+    The audit caught this: previous versions raised ``NotImplementedError`` for
+    any caller that didn't wire ``set_repo_factory(...)`` first. That left the
+    entire FT Strategy surface 501 in production.
+
+    We now provide a working default backed by sqlite (the schema layer in
+    ``app.ft_strategy._schema_sqlite`` is sqlite-only, and tests already use
+    this pattern). Production deployments should override with
+    ``set_repo_factory(<Postgres repo>)`` when the Supabase Postgres repo is
+    ready; until then, this fallback keeps the API contract intact and gives
+    callers real (per-process) persistence instead of a NotImplementedError.
+
+    Honors the ``FT_STRATEGY_DB_PATH`` env var; defaults to
+    ``.scratch/ft_strategy.sqlite`` so dev/test never touches the project root.
+    """
+    import os
+    import sqlite3
+    from pathlib import Path
+
+    db_path = os.environ.get(
+        "FT_STRATEGY_DB_PATH",
+        str(Path(".scratch") / "ft_strategy.sqlite"),
     )
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    return FtStrategyRepo(conn)
 
 
 _repo_factory = _default_repo_factory
@@ -129,11 +152,19 @@ def _row(row) -> Any:
     return row
 
 
-def _user_id_from_request() -> Optional[str]:
-    return (
-        request.headers.get("X-User-Id")
-        or request.environ.get("ft_user_id")
-    )
+def _resolve_user_id(kwargs: dict) -> Optional[str]:
+    """Pull the authenticated user id injected by ``require_auth``.
+
+    Security: prior versions of this module accepted ``X-User-Id`` headers and
+    ``user_id`` query parameters. Both are spoofable and create an IDOR path
+    where any caller can read or mutate another user's strategies. Always use
+    the value injected by ``require_auth``.
+    """
+    user = kwargs.get("user")
+    if not isinstance(user, dict):
+        return None
+    uid = user.get("id")
+    return str(uid) if uid else None
 
 
 def _iso_now() -> str:
@@ -146,6 +177,25 @@ def _validation_failed_response(detail: dict[str, Any]) -> tuple[Any, int]:
         jsonify({"success": False, "data": detail}),
         422,
     )
+
+
+def _load_owned_strategy(repo, strategy_id: str, kwargs: dict):
+    """Return the strategy if it exists AND belongs to the authenticated user.
+
+    Returns ``None`` and an error response when the strategy is missing or
+    owned by someone else. The 404 (not 403) on ownership mismatch avoids
+    leaking the existence of strategies belonging to other users.
+    """
+    user_id = _resolve_user_id(kwargs)
+    if not user_id:
+        return None, _error("UNAUTHORIZED", "authentication required", status=401)
+    try:
+        s = repo.get_strategy(strategy_id)
+    except StrategyNotFound:
+        return None, _error("NOT_FOUND", f"strategy not found: {strategy_id}", status=404)
+    if getattr(s, "user_id", None) != user_id:
+        return None, _error("NOT_FOUND", f"strategy not found: {strategy_id}", status=404)
+    return s, None
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +238,9 @@ def orient_one(strategy_id: str, **kwargs):
 @require_auth
 def list_strategies(**kwargs):
     repo = _repo()
-    user_id = request.args.get("user_id") or _user_id_from_request()
+    user_id = _resolve_user_id(kwargs)
     if not user_id:
-        return _error("UNAUTHORIZED", "user_id required", status=401)
+        return _error("UNAUTHORIZED", "authentication required", status=401)
     cur = repo.conn.execute(
         "SELECT * FROM ft_strategies WHERE user_id = ? ORDER BY created_at DESC",
         (user_id,),
@@ -214,7 +264,9 @@ def create_strategy_route(**kwargs):
     if not val.ok:
         return _validation_failed_response(val.to_dict())
 
-    user_id = _user_id_from_request() or "anonymous"
+    user_id = _resolve_user_id(kwargs)
+    if not user_id:
+        return _error("UNAUTHORIZED", "authentication required", status=401)
     repo = _repo()
     try:
         s = repo.create_strategy(
@@ -252,10 +304,9 @@ def create_strategy_route(**kwargs):
 @require_auth
 def get_one(strategy_id: str, **kwargs):
     repo = _repo()
-    try:
-        s = repo.get_strategy(strategy_id)
-    except StrategyNotFound:
-        return _error("NOT_FOUND", f"strategy not found: {strategy_id}", status=404)
+    s, err = _load_owned_strategy(repo, strategy_id, kwargs)
+    if err is not None:
+        return err
     return _success(_strategy_to_dict(s))
 
 
@@ -263,6 +314,9 @@ def get_one(strategy_id: str, **kwargs):
 @require_auth
 def delete_one(strategy_id: str, **kwargs):
     repo = _repo()
+    s, err = _load_owned_strategy(repo, strategy_id, kwargs)
+    if err is not None:
+        return err
     try:
         repo.conn.execute("DELETE FROM ft_strategies WHERE id = ?", (strategy_id,))
         repo.conn.commit()
@@ -275,6 +329,9 @@ def delete_one(strategy_id: str, **kwargs):
 @require_auth
 def jobs_one(strategy_id: str, **kwargs):
     repo = _repo()
+    s, err = _load_owned_strategy(repo, strategy_id, kwargs)
+    if err is not None:
+        return err
     try:
         cur = repo.conn.execute(
             "SELECT * FROM ft_jobs WHERE strategy_id = ? ORDER BY created_at DESC",
@@ -297,10 +354,9 @@ def refine_one(strategy_id: str, **kwargs):
     assert isinstance(req, RefineRequest)
 
     repo = _repo()
-    try:
-        s = repo.get_strategy(strategy_id)
-    except StrategyNotFound:
-        return _error("NOT_FOUND", f"strategy not found: {strategy_id}", status=404)
+    s, err = _load_owned_strategy(repo, strategy_id, kwargs)
+    if err is not None:
+        return err
 
     stagnation = repo.recent_stable_count(strategy_id)
     if stagnation >= STAGNATION_ROUNDS and req.intended_event is None:
@@ -335,10 +391,9 @@ def refine_one(strategy_id: str, **kwargs):
 def backtest_report(strategy_id: str, **kwargs):
     """D-FT-17: returns BacktestReport shape (§3.5 plan)."""
     repo = _repo()
-    try:
-        s = repo.get_strategy(strategy_id)
-    except StrategyNotFound:
-        return _error("NOT_FOUND", f"strategy not found: {strategy_id}", status=404)
+    s, err = _load_owned_strategy(repo, strategy_id, kwargs)
+    if err is not None:
+        return err
     latest = s.latest_result or {}
     return _success({
         "strategy_id": strategy_id,
@@ -367,10 +422,9 @@ def deploy_one(strategy_id: str, **kwargs):
     deploy PR creation. UI never directly modifies app/config/tuning.py.
     """
     repo = _repo()
-    try:
-        s = repo.get_strategy(strategy_id)
-    except StrategyNotFound:
-        return _error("NOT_FOUND", f"strategy not found: {strategy_id}", status=404)
+    s, err = _load_owned_strategy(repo, strategy_id, kwargs)
+    if err is not None:
+        return err
 
     latest = s.latest_result or {}
     open_crashes = repo.list_open_crashes(strategy_id)
@@ -419,10 +473,9 @@ def deploy_one(strategy_id: str, **kwargs):
 def history_one(strategy_id: str, **kwargs):
     """Returns .tsv event log + runs (D-FT-18 mirror)."""
     repo = _repo()
-    try:
-        repo.get_strategy(strategy_id)
-    except StrategyNotFound:
-        return _error("NOT_FOUND", f"strategy not found: {strategy_id}", status=404)
+    s, err = _load_owned_strategy(repo, strategy_id, kwargs)
+    if err is not None:
+        return err
 
     try:
         from app.services.freqtrade.event_log import read_tsv_events
@@ -450,10 +503,9 @@ def history_one(strategy_id: str, **kwargs):
 def preflight_one(strategy_id: str, **kwargs):
     """Phase 5 placeholder — concrete 6-item preflight in Phase 5."""
     repo = _repo()
-    try:
-        repo.get_strategy(strategy_id)
-    except StrategyNotFound:
-        return _error("NOT_FOUND", f"strategy not found: {strategy_id}", status=404)
+    s, err = _load_owned_strategy(repo, strategy_id, kwargs)
+    if err is not None:
+        return err
     return _success({
         "strategy_id": strategy_id,
         "preflight": "pending_phase_5_implementation",

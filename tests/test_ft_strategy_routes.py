@@ -45,7 +45,12 @@ def client(repo, monkeypatch):
     return app.test_client()
 
 
-def _auth_headers(user_id="u1"):
+def _auth_headers(user_id="local-dev-user"):
+    """Headers for a request. ``X-User-Id`` is ignored by the routes (audit T3
+    closed that IDOR). We keep it here only so test fixtures still look like a
+    real request; the actual authenticated id comes from LOCAL_DEV_USER because
+    the ``client`` fixture sets ``DISABLE_AUTH=1``.
+    """
     return {"X-User-Id": user_id}
 
 
@@ -187,7 +192,7 @@ class TestCreateStrategy:
 class TestGetDelete:
     def test_list_for_user(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(),
             idea_payload={},
         )
@@ -198,21 +203,21 @@ class TestGetDelete:
 
     def test_list_filters_by_user(self, client, repo):
         repo.create_strategy(
-            user_id="u1", name="A",
+            user_id="local-dev-user", name="A",
             research_md=_good_brief(), idea_payload={},
         )
         repo.create_strategy(
-            user_id="u2", name="B",
+            user_id="other-user", name="B",
             research_md=_good_brief(), idea_payload={},
         )
-        r = client.get("/api/ft-strategies", headers=_auth_headers("u1"))
+        r = client.get("/api/ft-strategies", headers=_auth_headers())
         items = r.get_json()["data"]["items"]
-        # u1 should only see their strategies
-        assert all(i["user_id"] == "u1" for i in items)
+        # local-dev-user should only see their strategies (audit T3)
+        assert all(i["user_id"] == "local-dev-user" for i in items)
 
     def test_get_one(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         r = client.get(f"/api/ft-strategies/{s.id}", headers=_auth_headers())
@@ -225,7 +230,7 @@ class TestGetDelete:
 
     def test_delete_one(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="Doomed",
+            user_id="local-dev-user", name="Doomed",
             research_md=_good_brief(), idea_payload={},
         )
         r = client.delete(
@@ -236,7 +241,7 @@ class TestGetDelete:
     def test_cascade_delete_removes_events(self, client, repo):
         from app.services.freqtrade.event_log import record_event_dual
         s = repo.create_strategy(
-            user_id="u1", name="X",
+            user_id="local-dev-user", name="X",
             research_md=_good_brief(), idea_payload={},
         )
         record_event_dual(
@@ -259,7 +264,7 @@ class TestGetDelete:
 class TestRefine:
     def test_basic_refine(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         r = client.post(
@@ -274,7 +279,7 @@ class TestRefine:
         from app.services.freqtrade.event_log import record_event_dual
         from app.loop.tuning_promotion_v3 import STAGNATION_ROUNDS
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         for _ in range(STAGNATION_ROUNDS):
@@ -294,7 +299,7 @@ class TestRefine:
         from app.services.freqtrade.event_log import record_event_dual
         from app.loop.tuning_promotion_v3 import STAGNATION_ROUNDS
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         for _ in range(STAGNATION_ROUNDS):
@@ -319,7 +324,7 @@ class TestRefine:
 class TestDeploy:
     def test_no_final_report_blocks_deploy(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         repo.update_status(s.id, "analyzed")
@@ -333,7 +338,7 @@ class TestDeploy:
 
     def test_zero_metrics_blocks_deploy(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         repo.update_status(s.id, "analyzed")
@@ -349,7 +354,7 @@ class TestDeploy:
     def test_passed_gate_marks_pending_review(self, client, repo):
         from app.ft_strategy.supabase_repo import FtStrategyRepo
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         repo.update_status(s.id, "analyzed")
@@ -393,7 +398,7 @@ class TestDeploy:
 class TestMisc:
     def test_jobs_lists_recent_runs(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         repo.conn.execute(
@@ -414,7 +419,7 @@ class TestMisc:
     def test_history_returns_tsv_and_runs(self, client, repo):
         from app.services.freqtrade.event_log import record_event_dual
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         record_event_dual(
@@ -431,7 +436,7 @@ class TestMisc:
 
     def test_backtest_report_shape(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         repo.update_latest_result(
@@ -448,7 +453,7 @@ class TestMisc:
 
     def test_preflight_phase_5_stub(self, client, repo):
         s = repo.create_strategy(
-            user_id="u1", name="S1",
+            user_id="local-dev-user", name="S1",
             research_md=_good_brief(), idea_payload={},
         )
         r = client.post(
@@ -457,3 +462,84 @@ class TestMisc:
         )
         assert r.status_code == 200
         assert r.get_json()["data"]["preflight"].startswith("pending")
+
+
+# ---------------------------------------------------------------------------
+# Audit T3: ownership / IDOR guardrails
+# ---------------------------------------------------------------------------
+
+
+class TestOwnership:
+    """Audit T3: every endpoint that takes a strategy_id must verify the
+    authenticated user owns the strategy. A different user must get a 404
+    (not 403, to avoid leaking strategy existence).
+    """
+
+    @pytest.mark.parametrize(
+        "method,path_suffix",
+        [
+            ("GET", ""),
+            ("DELETE", ""),
+            ("GET", "/jobs"),
+            ("GET", "/backtest-report"),
+            ("GET", "/history"),
+            ("POST", "/preflight"),
+        ],
+    )
+    def test_other_user_gets_404(self, client, repo, method, path_suffix):
+        """Strategy owned by ``other-user`` is invisible to ``local-dev-user``."""
+        s = repo.create_strategy(
+            user_id="other-user", name="Hidden",
+            research_md=_good_brief(), idea_payload={},
+        )
+        url = f"/api/ft-strategies/{s.id}{path_suffix}"
+        if method == "GET":
+            r = client.get(url, headers=_auth_headers())
+        elif method == "DELETE":
+            r = client.delete(url, headers=_auth_headers())
+        else:
+            r = client.post(url, headers=_auth_headers(), json={})
+        assert r.status_code == 404, f"{method} {url} returned {r.status_code}"
+
+    def test_refine_blocked_for_other_user(self, client, repo):
+        s = repo.create_strategy(
+            user_id="other-user", name="Hidden",
+            research_md=_good_brief(), idea_payload={},
+        )
+        r = client.post(
+            f"/api/ft-strategies/{s.id}/refine",
+            headers=_auth_headers(),
+            json={"intended_event": "evolve"},
+        )
+        assert r.status_code == 404
+
+    def test_deploy_blocked_for_other_user(self, client, repo):
+        s = repo.create_strategy(
+            user_id="other-user", name="Hidden",
+            research_md=_good_brief(), idea_payload={},
+        )
+        r = client.post(
+            f"/api/ft-strategies/{s.id}/deploy",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 404
+
+    def test_create_records_authenticated_user_not_header(self, client, repo):
+        """Audit T3: ``X-User-Id`` is ignored; user_id comes from auth."""
+        body = {
+            "name": "Owner",
+            "research_md": _good_brief(),
+            "idea_payload": {"kind": "template"},
+        }
+        # Even with spoofed X-User-Id, the DB row is owned by LOCAL_DEV_USER.
+        r = client.post(
+            "/api/ft-strategies",
+            headers={"X-User-Id": "attacker"},
+            json=body,
+        )
+        assert r.status_code == 201
+        sid = r.get_json()["data"]["id"]
+        cur = repo.conn.execute(
+            "SELECT user_id FROM ft_strategies WHERE id = ?", (sid,)
+        )
+        assert cur.fetchone()[0] == "local-dev-user"

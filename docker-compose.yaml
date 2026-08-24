@@ -4,7 +4,14 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Security: default DISABLE_AUTH=0 (off). Local dev must explicitly opt in.
+      - DISABLE_AUTH=${DISABLE_AUTH:-0}
+      # Production-safe defaults; .env file overrides per deployment.
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SUPABASE_URL=${SUPABASE_URL:?SUPABASE_URL is required}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:?SUPABASE_ANON_KEY is required}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY is required}
       - REDIS_URL=redis://redis:6379/0
       - TRADINGVIEW_BRIDGE_URL=http://tradingview-bridge:5002
       - USE_TRADINGVIEW=true
@@ -13,6 +20,12 @@ services:
     depends_on:
       - redis
       - tradingview-bridge
+    # Refuse to boot if any required env is empty (belt-and-suspenders).
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   tradingview-bridge:
     build:

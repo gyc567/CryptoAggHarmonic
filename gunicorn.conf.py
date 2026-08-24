@@ -17,12 +17,19 @@
 - 每个 worker 都会加载 pandas/plotly（约 200-300MB 内存），workers 不要盲目调大。
 - 若 pip 源可安装 greenlet，可将 GUNICORN_WORKER_CLASS=gevent 获得更高的
   连接密度（协程比线程轻量），无需改代码。
+
+安全约定:
+- DISABLE_AUTH 默认 0（关闭）。只有明确需要本地开发绕过时才设 1。
+- 在 ENVIRONMENT=production 下，gunicorn 启动会 fail-fast 拒绝 DISABLE_AUTH=1
+  / FLASK_DEBUG=1（见 app/factory.py）。本文件不再做本地旁路注入，避免与
+  生产策略不一致。
 """
 import multiprocessing
 import os
 
-# Local dev: skip auth
-os.environ.setdefault("DISABLE_AUTH", "1")
+# 安全默认：不注入 DISABLE_AUTH=1。如果调用方未设置，则为未设置状态，由
+# app/api/auth.py:is_local_dev_mode() 严格判断（只有显式 DISABLE_AUTH=1 才放行）。
+# Local dev 用户应在 .env 或 shell 中显式 export DISABLE_AUTH=1。
 
 bind = f"0.0.0.0:{os.getenv('PORT', '5000')}"
 

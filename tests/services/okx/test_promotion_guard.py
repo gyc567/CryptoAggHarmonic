@@ -2,7 +2,7 @@
 
 Path-level gate (is_live_tuning_path / promotion_allowed_for_files /
 promotion_checklist) is intentionally NOT touched — covered by
-tests/services/freqtrade/test_promotion_guard.py.
+tests/services/ft_protocol/test_promotion_guard.py.
 """
 from __future__ import annotations
 
