@@ -84,6 +84,14 @@ def _create_app() -> "Flask":
     app.register_blueprint(watchlist_bp)
     app.register_blueprint(ft_strategy_bp)
 
+    # Loop #12 — Binance market data blueprint (Phase 2)
+    # Read-only public endpoints; no auth required.
+    try:
+        from app.api.binance_routes import make_binance_blueprint
+        app.register_blueprint(make_binance_blueprint())
+    except Exception as e:
+        logger.warning("Failed to register binance blueprint: %s", e)
+
     # Loop engineering: Prometheus metrics endpoint
     try:
         from app.api.metrics_routes import make_metrics_blueprint
