@@ -1,6 +1,6 @@
 """v3 multi-objective promotion gate — pure function (D-FT-23).
 
-ADR-0012 D4: deploy-prerequisite 8-item multi-objective gate. Lives alongside
+ADR-0012 D4: deploy-prerequisite 9-item multi-objective gate. Lives alongside
 ``app/loop/tuning_promotion.py`` (which owns v2 ``promotion_checklist()`` and
 existing path-level/tool-level gates). v3 adds a single pure function
 ``check_promotion_v3()`` so UI, agent, CLI share one source of truth.
@@ -9,7 +9,7 @@ Design constraints (D-FT-23):
 - Pure function: no I/O, no exceptions raised for legitimate-false returns.
 - Returns a structured ``PromotionResult`` (dataclass), not strings, so the
   same object can be serialized for UI / durable-facts / agent logs.
-- All eight items in §6.5 of the plan map to one boolean in the result, with
+- All nine items in §6.5 of the plan map to one boolean in the result, with
   the underlying metric retained for transparency.
 - Promotion to live TUNING is forbidden here — that path-level gate is owned
   by ``promotion_allowed_for_files()`` in ``tuning_promotion.py``.
@@ -155,7 +155,7 @@ def check_promotion_v3(
     candidate: PromotionCandidate,
     ctx: Optional[PromotionContext] = None,
 ) -> PromotionResult:
-    """Evaluate the 8-item v3 multi-objective gate. Pure function. No I/O.
+    """Evaluate the 9-item v3 multi-objective gate. Pure function. No I/O.
 
     1. ``robust_sharpe_min`` — min(per_timerange.sharpe) >= ctx.robust_sharpe_min
     2. ``robust_calmar_min`` — min(per_timerange.calmar) >= ctx.robust_calmar_min
@@ -163,8 +163,9 @@ def check_promotion_v3(
     4. ``profit_floor`` — candidate.profit_pct >= ctx.profit_floor
     5. ``min_position_size`` — candidate.trades >= ctx.min_position_size
     6. ``not pareto_dominated_by`` — candidate not strictly dominated by any prior KEEP
-    7. ``report_referenced`` — candidate.has_final_report is True
-    8. ``no_open_crash_in_window`` — candidate.open_crash_in_window_days == 0
+    7. ``shadow_observed`` — candidate.shadow_observed is True (7-day dry-run window closed)
+    8. ``report_referenced`` — candidate.has_final_report is True
+    9. ``no_open_crash_in_window`` — candidate.open_crash_in_window_days == 0
 
     Defensive: does not raise for legitimate-false returns; type-check failures
     yield a structured PromotionResult.ok=False result (D-FT-23).

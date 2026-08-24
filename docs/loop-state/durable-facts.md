@@ -454,7 +454,7 @@
   - **Phase 6 (收尾)** — CLOSED
     - loop_sync / loop doctor ✅；STATE.md + durable-facts 记录
 - **Code-side state at pause**:
-  - `app/loop/tuning_promotion_v3.py` — 337 行; 8-item gate + constants
+  - `app/loop/tuning_promotion_v3.py` — 337 行; 9-item gate + constants
   - `app/ft_strategy/{__init__,research_md_validator,supabase_repo,
     verdict,report_validator,preflight,deploy_pr,orient}.py` — 8 files
   - `app/api/ft_strategy_routes.py` — 13 endpoints blueprint
