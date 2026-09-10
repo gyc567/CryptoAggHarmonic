@@ -712,3 +712,156 @@ def log_audit_event(
     except Exception:
         logger.exception("Audit logging failed")
         return False
+
+
+# =============================================================================
+# Invite Code Management
+# =============================================================================
+
+
+def create_invite_code(
+    email: str | None,
+    quota: int = 5,
+    rsi_quota: int = 50,
+    max_uses: int = 1,
+    created_by: str | None = None,
+    days_valid: int = 7,
+) -> dict[str, Any] | None:
+    """Create a new invite code.
+
+    Args:
+        email: Optional pre-assigned email.
+        quota: Daily analysis quota.
+        rsi_quota: Daily RSI quota.
+        max_uses: Maximum number of times code can be used.
+        created_by: UUID of admin creating the code.
+        days_valid: Days until expiry.
+
+    Returns:
+        Dict with id, code, quota or None on failure.
+    """
+    try:
+        client = get_supabase_client(use_service_role=True)
+        result = client.rpc("create_invite_code", {
+            "p_email": email,
+            "p_quota": quota,
+            "p_rsi_quota": rsi_quota,
+            "p_max_uses": max_uses,
+            "p_created_by": created_by,
+            "p_days_valid": days_valid,
+        }).execute()
+
+        if result.data:
+            return result.data[0]
+        return None
+    except Exception:
+        logger.exception("Create invite code failed")
+        return None
+
+
+def check_invite_code(code: str) -> dict[str, Any] | None:
+    """Check if an invite code is valid.
+
+    Args:
+        code: The invite code to check.
+
+    Returns:
+        Dict with valid, quota, rsi_quota or None on error.
+    """
+    try:
+        client = get_supabase_client(use_service_role=True)
+        result = client.rpc("check_invite_code", {"p_code": code}).execute()
+
+        if result.data:
+            row = result.data[0]
+            return {
+                "valid": row.get("valid", False),
+                "quota": row.get("quota", 5),
+                "rsi_quota": row.get("rsi_quota", 50),
+            }
+        return None
+    except Exception:
+        logger.exception("Check invite code failed")
+        return None
+
+
+def revoke_invite(invite_id: str) -> bool:
+    """Revoke an invite code.
+
+    Args:
+        invite_id: UUID of the invite to revoke.
+
+    Returns:
+        True on success.
+    """
+    try:
+        client = get_supabase_client(use_service_role=True)
+        client.rpc("revoke_invite", {"p_invite_id": invite_id}).execute()
+        return True
+    except Exception:
+        logger.exception("Revoke invite failed")
+        return False
+
+
+# =============================================================================
+# User Management
+# =============================================================================
+
+
+def get_user_by_id(user_id: str) -> dict[str, Any] | None:
+    """Get user profile by ID.
+
+    Args:
+        user_id: User UUID.
+
+    Returns:
+        Profile dict or None.
+    """
+    try:
+        client = get_supabase_client(use_service_role=True)
+        result = client.table("profiles").select("*").eq("id", user_id).single().execute()
+        return result.data if result.data else None
+    except Exception:
+        logger.exception("Get user by ID failed")
+        return None
+
+
+def update_user_profile(
+    user_id: str,
+    daily_quota: int | None = None,
+    rsi_daily_quota: int | None = None,
+    status: str | None = None,
+    role: str | None = None,
+) -> bool:
+    """Update user profile fields.
+
+    Args:
+        user_id: User UUID.
+        daily_quota: New daily analysis quota.
+        rsi_daily_quota: New daily RSI quota.
+        status: New status ("active" or "suspended").
+        role: New role ("user" or "admin").
+
+    Returns:
+        True on success.
+    """
+    try:
+        client = get_supabase_client(use_service_role=True)
+        updates: dict[str, Any] = {}
+        if daily_quota is not None:
+            updates["daily_quota"] = daily_quota
+        if rsi_daily_quota is not None:
+            updates["rsi_daily_quota"] = rsi_daily_quota
+        if status is not None:
+            updates["status"] = status
+        if role is not None:
+            updates["role"] = role
+
+        if not updates:
+            return False
+
+        client.table("profiles").update(updates).eq("id", user_id).execute()
+        return True
+    except Exception:
+        logger.exception("Update user profile failed")
+        return False

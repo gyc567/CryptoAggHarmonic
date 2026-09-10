@@ -78,11 +78,15 @@ def _create_app() -> "Flask":
     # Loop #13 — FT Strategy UI blueprint (Phase 4)
     from app.api.ft_strategy_routes import ft_strategy_bp
 
+    # Auth system: Admin API for invites and user management
+    from app.api.admin_routes import admin_bp
+
     app.register_blueprint(api_bp)
     app.register_blueprint(vibe_bp)
     app.register_blueprint(rsi_trend_bp)
     app.register_blueprint(watchlist_bp)
     app.register_blueprint(ft_strategy_bp)
+    app.register_blueprint(admin_bp)
 
     # Loop #12 — Binance market data blueprint (Phase 2)
     # Read-only public endpoints; no auth required.

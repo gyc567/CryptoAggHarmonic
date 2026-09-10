@@ -21,6 +21,7 @@ export interface UserProfile {
   role: "user" | "admin";
   status: "active" | "suspended";
   daily_quota: number;
+  rsi_daily_quota?: number;
   used_quota: number;
   last_seen_at?: string;
   created_at?: string;

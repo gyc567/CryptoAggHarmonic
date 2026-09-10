@@ -20,6 +20,12 @@ const nextConfig = {
       // Loop #13 — FT Strategy UI (Phase 4)
       { source: "/api/ft-strategies", destination: `${apiBase}/api/ft-strategies` },
       { source: "/api/ft-strategies/:path*", destination: `${apiBase}/api/ft-strategies/:path*` },
+
+      // Auth system - Admin API
+      { source: "/api/admin/invites", destination: `${apiBase}/api/admin/invites` },
+      { source: "/api/admin/invites/:path*", destination: `${apiBase}/api/admin/invites/:path*` },
+      { source: "/api/admin/users", destination: `${apiBase}/api/admin/users` },
+      { source: "/api/admin/users/:path*", destination: `${apiBase}/api/admin/users/:path*` },
     ];
   },
   images: {
