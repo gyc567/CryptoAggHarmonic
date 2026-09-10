@@ -22,6 +22,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next({ request });
   }
 
+  // Local dev: skip auth validation when DISABLE_AUTH is set
+  if (process.env.NEXT_PUBLIC_DISABLE_AUTH === "1") {
+    return NextResponse.next({ request });
+  }
+
   // Create Supabase client to validate session
   const response = NextResponse.next({ request });
 

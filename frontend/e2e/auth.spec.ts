@@ -18,12 +18,12 @@ test.describe("认证流程", () => {
     await mockSupabaseOtp(page);
     await page.goto("/login");
 
-    await expect(page.getByRole("heading", { name: "CryptoAgg" })).toBeVisible();
+    await expect(page.getByText("魔法链接")).toBeVisible();
     await expect(page.getByPlaceholder("you@example.com")).toBeVisible();
-    await expect(page.getByRole("button", { name: "发送魔法链接" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "发送登录链接" })).toBeVisible();
 
     await page.getByPlaceholder("you@example.com").fill("e2e-user@cryptoagg.app");
-    await page.getByRole("button", { name: "发送魔法链接" }).click();
+    await page.getByRole("button", { name: "发送登录链接" }).click();
 
     await expect(page.getByText("魔法链接已发送")).toBeVisible();
     await expect(page.getByText("e2e-user@cryptoagg.app")).toBeVisible();
