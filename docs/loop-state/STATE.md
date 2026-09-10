@@ -36,7 +36,8 @@
     - ② max_uses 上限: clamp 到 1–100，docstring 已更新
     - ③ Service role 注释: 内联注释说明 admin-only 路由安全使用
   - **测试报告**: `docs/auth-system-test-report.md` + `docs/auth-system-audit-v2.md`
-  - **剩余**: 集成测试（需真实 Supabase instance）、生产部署
+  - **剩余**: 集成测试（需真实 Supabase instance 生产凭证）、生产部署
+  - **Commits**: `d24439e`(feat) / `3103727`(test) / `7e1a45d`(docs)
 
 - [x] 2026-08-12: **RSI strategy → Freqtrade IStrategy 重构完成.**
   - 背景: `app/domain/rsi_trend.py` 纯 Python 信号检测逻辑需要同时支持 (a) 实时扫描 API 和 (b) Freqtrade IStrategy hyperopt/回测。
