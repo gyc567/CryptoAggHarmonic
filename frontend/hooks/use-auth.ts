@@ -59,12 +59,62 @@ export function useAuth() {
 
   const signInWithOtp = useCallback(
     async (email: string) => {
-      const redirectTo = `${window.location.origin}/dashboard`;
+      const redirectTo = `${window.location.origin}/auth/callback`;
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: redirectTo },
       });
       return { error };
+    },
+    [supabase]
+  );
+
+  const signInWithPassword = useCallback(
+    async (email: string, password: string) => {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (!error && data.session) {
+        // Fetch profile to get quota info
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", data.user.id)
+          .single();
+        if (profileData) {
+          setProfile({
+            id: profileData.id,
+            email: profileData.email,
+            role: profileData.role || "user",
+            status: profileData.status || "active",
+            daily_quota: profileData.daily_quota || 5,
+            used_quota: 0,
+          });
+        }
+      }
+      return { error };
+    },
+    [supabase]
+  );
+
+  const signUp = useCallback(
+    async (email: string, password: string, inviteCode?: string | null) => {
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      const options: Record<string, unknown> = { emailRedirectTo: redirectTo };
+
+      // Pass invite code in metadata for trigger to use
+      if (inviteCode) {
+        options.data = { invite_code: inviteCode };
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: options as { emailRedirectTo: string; data?: { invite_code: string } },
+      });
+
+      return { data, error };
     },
     [supabase]
   );
@@ -88,6 +138,8 @@ export function useAuth() {
     loading,
     isAuthenticated: !!user,
     signInWithOtp,
+    signInWithPassword,
+    signUp,
     signOut,
     getToken,
   };

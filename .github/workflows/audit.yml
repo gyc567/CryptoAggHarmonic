@@ -8,12 +8,16 @@ on:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
             docs/loop-state
             docs/adr
+            docs/plans
             loop
 
       - name: Set up Python
@@ -35,6 +39,7 @@ jobs:
         run: python -m loop.loop sync check .
 
       - name: Post audit result
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -49,10 +54,13 @@ jobs:
               (passed ? 'Loop engineering infrastructure is ready.' : 'Loop infrastructure needs attention. Run `python -m loop.loop audit . --suggest` for details.');
 
             github.rest.issues.createComment({
-              issue_number: context.issue.number,
+              issue_number: context.payload.pull_request.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: body
+            }).catch(err => {
+              // PR comment may fail on forks; don't block the workflow
+              console.warn("Could not post comment:", err.message);
             });
 
             if (!passed) {

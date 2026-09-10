@@ -42,7 +42,13 @@ def check_files_referenced(loop_md: Path) -> list[dict]:
         content,
     )
     issues = []
+    # Top-level dirs that are intentionally excluded from checks (e.g. docs/plans/
+    # is a denylist path, docs/adr/ is large and stable, neither needs audit).
+    EXCLUDED_TOP_LEVELS = {"docs/plans", "docs/adr", "docs/plans/", "docs/adr/"}
     for ref in set(skill_refs):
+        if ref.rstrip("/") in EXCLUDED_TOP_LEVELS:
+            issues.append({"ref": ref, "exists": True, "type": "excluded"})
+            continue
         p = Path(ref)
         if not p.exists() and not p.suffix:
             issues.append({"ref": ref, "exists": False, "type": "skill_or_path"})

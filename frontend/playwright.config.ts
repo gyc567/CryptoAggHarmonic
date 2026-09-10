@@ -24,7 +24,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `${PROJECT_ROOT}/.venv/bin/python -m app.main`,
+      command: `/Users/jie/.hermes/hermes-agent/venv/bin/python -m app.main`,
       cwd: PROJECT_ROOT,
       env: {
         PORT: "5050",

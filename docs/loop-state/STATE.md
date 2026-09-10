@@ -5,6 +5,40 @@
 
 ## High Priority
 
+- [x] 2026-09-10: **Auth System — Complete (注册/登录/邀请码/管理员).**
+  - **背景**: 项目原无完整用户注册登录系统。实现完整方案：开放注册（邮箱验证）、OTP（Magic Link）+ 密码双登录方式、邀请码机制（admin 生成 `?invite_code=xxx` URL 提升配额）、管理员用户管理。
+  - **后端**:
+    - `migrations/20260910_001_auth_complete.sql` — 数据库迁移：invites 表扩展（code/max_uses/quota）、profiles 表扩展（invited_by/rsi_daily_quota）、reserve_quota 修复竞态条件、5 个 RPC 函数（create/check/revoke_invite_code + list/update_users）
+    - `app/api/admin_routes.py` — Admin API blueprint：POST/GET/DELETE /api/admin/invites + GET/PATCH /api/admin/users
+    - `app/infra/supabase_client.py` — 新增 5 个 helper 函数：create_invite_code / check_invite_code / revoke_invite / get_user_by_id / update_user_profile
+    - `app/factory.py` — 注册 admin_bp blueprint
+  - **前端**:
+    - `frontend/app/register/page.tsx` — 注册页（email/password + invite_code URL 参数）
+    - `frontend/app/login/page.tsx` — 登录页（OTP / 密码 tab 切换）
+    - `frontend/app/auth/callback/route.ts` — Auth callback（错误处理 + 重定向）
+    - `frontend/hooks/use-auth.ts` — signUp / signInWithPassword 新增
+    - `frontend/lib/supabase/server.ts` — 服务端 Supabase 客户端
+    - `frontend/middleware.ts` — 真实 session 校验 + 路由保护
+    - `frontend/next.config.mjs` — /api/admin/invites + /api/admin/users rewrite
+    - `frontend/app/admin/invites/page.tsx` — 邀请码管理页（创建/撤销/列表）
+    - `frontend/app/admin/users/page.tsx` — 用户管理页（分页/编辑配额/停用）
+  - **测试**: 31 tests 全绿（16 admin_routes + 15 supabase_client_auth）
+  - **E2E 测试**: 10/10 auth e2e tests pass（register + login pages）
+    - 新增 `frontend/e2e/auth-complete.spec.ts`（7 tests）：注册表单验证、OTP/密码 tab 切换、页面导航
+    - 修复 `frontend/e2e/auth.spec.ts` 按钮文字（"发送魔法链接" → "发送登录链接"）
+    - 修复 `frontend/app/register/page.tsx` password input `minLength=8` 移除（避免浏览器原生验证拦截 React 验证逻辑）
+    - `frontend/middleware.ts` 新增 `NEXT_PUBLIC_DISABLE_AUTH=1` 开发环境 bypass
+    - `frontend/playwright.config.ts` webServer venv 路径修正
+    - 新增 `frontend/playwright.e2e-local.config.ts`（无 webServer，供本地手动启动服务器时使用）
+  - **本地环境**: `.env` / `frontend/.env.local` 已创建（placeholder Supabase credentials）
+  - **审计修复**:
+    - ① 速率限制: `@get_limiter().limit("admin")` — 10 req/min per user，429 + Retry-After
+    - ② max_uses 上限: clamp 到 1–100，docstring 已更新
+    - ③ Service role 注释: 内联注释说明 admin-only 路由安全使用
+  - **测试报告**: `docs/auth-system-test-report.md` + `docs/auth-system-audit-v2.md`
+  - **剩余**: 集成测试（需真实 Supabase instance 生产凭证）、生产部署
+  - **Commits**: `d24439e`(feat) / `3103727`(test) / `7e1a45d`(docs)
+
 - [x] 2026-08-12: **RSI strategy → Freqtrade IStrategy 重构完成.**
   - 背景: `app/domain/rsi_trend.py` 纯 Python 信号检测逻辑需要同时支持 (a) 实时扫描 API 和 (b) Freqtrade IStrategy hyperopt/回测。
   - 方案: 新建 `app/domain/strategy_core.py` 作为单一事实来源，`rsi_trend.py` 改为透传包装。
