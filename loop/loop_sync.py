@@ -43,7 +43,9 @@ def check_files_referenced(loop_md: Path) -> list[dict]:
     )
     issues = []
     for ref in set(skill_refs):
-        p = Path(ref)
+        # Strip trailing slashes so directory refs (e.g. "docs/plans/")
+        # resolve correctly without being treated as non-existent paths.
+        p = Path(ref.rstrip("/"))
         if not p.exists() and not p.suffix:
             issues.append({"ref": ref, "exists": False, "type": "skill_or_path"})
         elif p.exists():
