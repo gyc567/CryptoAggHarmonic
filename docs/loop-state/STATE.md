@@ -23,6 +23,14 @@
     - `frontend/app/admin/invites/page.tsx` — 邀请码管理页（创建/撤销/列表）
     - `frontend/app/admin/users/page.tsx` — 用户管理页（分页/编辑配额/停用）
   - **测试**: 31 tests 全绿（16 admin_routes + 15 supabase_client_auth）
+  - **E2E 测试**: 10/10 auth e2e tests pass（register + login pages）
+    - 新增 `frontend/e2e/auth-complete.spec.ts`（7 tests）：注册表单验证、OTP/密码 tab 切换、页面导航
+    - 修复 `frontend/e2e/auth.spec.ts` 按钮文字（"发送魔法链接" → "发送登录链接"）
+    - 修复 `frontend/app/register/page.tsx` password input `minLength=8` 移除（避免浏览器原生验证拦截 React 验证逻辑）
+    - `frontend/middleware.ts` 新增 `NEXT_PUBLIC_DISABLE_AUTH=1` 开发环境 bypass
+    - `frontend/playwright.config.ts` webServer venv 路径修正
+    - 新增 `frontend/playwright.e2e-local.config.ts`（无 webServer，供本地手动启动服务器时使用）
+  - **本地环境**: `.env` / `frontend/.env.local` 已创建（placeholder Supabase credentials）
   - **审计修复**:
     - ① 速率限制: `@get_limiter().limit("admin")` — 10 req/min per user，429 + Retry-After
     - ② max_uses 上限: clamp 到 1–100，docstring 已更新
